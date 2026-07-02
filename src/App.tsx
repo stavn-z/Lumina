@@ -4,7 +4,7 @@ import {
   Users, Building2, BarChart3, LogOut, RotateCcw, 
   Filter, AlertTriangle, GripVertical, Download, 
   Play, Square, CheckCircle2, User, CheckSquare,
-  HelpCircle, ChevronDown
+  HelpCircle, ChevronDown, LayoutDashboard
 } from "lucide-react";
 
 // --- Configurações e Dados Iniciais ---
@@ -13,7 +13,8 @@ const COLUMNS = [
   { id: "backlog", name: "Backlog", dot: "bg-indigo-500", accent: "border-indigo-500", bg: "bg-indigo-500/10", btn: "bg-indigo-600 hover:bg-indigo-500", help: "Ideias, novas demandas e solicitações que ainda não foram priorizadas ou analisadas pela equipe." },
   { id: "todo", name: "A Fazer", dot: "bg-amber-500", accent: "border-amber-500", bg: "bg-amber-500/10", btn: "bg-amber-500 hover:bg-amber-400 text-black", help: "Tarefas priorizadas, com responsável definido e prontas para serem iniciadas. A equipe sabe exatamente o que fazer a seguir." },
   { id: "inprogress", name: "Em Andamento", dot: "bg-blue-500", accent: "border-blue-500", bg: "bg-blue-500/10", btn: "bg-blue-600 hover:bg-blue-500", help: "Tarefas que estão sendo executadas de forma ativa neste exato momento." },
-  { id: "paused", name: "Pausado", dot: "bg-orange-500", accent: "border-orange-500", bg: "bg-orange-500/10", btn: "bg-orange-600 hover:bg-orange-500", help: "Tarefas temporariamente interrompidas aguardando a resolução de algum bloqueio, dúvida ou pendência do cliente." },
+  { id: "paused", name: "Pausado", dot: "bg-orange-500", accent: "border-orange-500", bg: "bg-orange-500/10", btn: "bg-orange-600 hover:bg-orange-500", help: "Tarefas temporariamente interrompidas aguardando a resolução de algum bloqueio." },
+  { id: "waiting", name: "Aguardando Retorno", dot: "bg-pink-500", accent: "border-pink-500", bg: "bg-pink-500/10", btn: "bg-pink-600 hover:bg-pink-500", help: "Aguardando validação, arquivo ou resposta do Cliente ou do Time Rubeus." },
   { id: "review", name: "Em Revisão", dot: "bg-purple-500", accent: "border-purple-500", bg: "bg-purple-500/10", btn: "bg-purple-600 hover:bg-purple-500", help: "Tarefas concluídas pela equipe técnica que aguardam aprovação ou validação do cliente/gestor." },
   { id: "done", name: "Concluído", dot: "bg-green-500", accent: "border-green-500", bg: "bg-green-500/10", btn: "bg-green-600 hover:bg-green-500", help: "Tarefas totalmente finalizadas e validadas." },
   { id: "cancelled", name: "Cancelado", dot: "bg-red-500", accent: "border-red-500", bg: "bg-red-500/10", btn: "bg-red-600 hover:bg-red-500", help: "Tarefas que foram despriorizadas, descartadas ou que não serão mais executadas." },
@@ -48,45 +49,12 @@ const initialTasks = [
     status: "backlog",
     durationMin: 120,
     dueDate: "",
+    waitingFor: "",
     checklist: [{ id: 1, text: "Validar com o time rubeus", done: false }],
     timerRunning: false,
     timerStart: null,
     timerElapsed: 0,
-  },
-  {
-    id: 102,
-    title: "Erro de contratos",
-    description: "Erro na FV de contratos e na ação de enviar a flag de contrato aceito para o Totvs RM",
-    priority: "Alta",
-    clientId: "c1",
-    responsibleId: "r1",
-    status: "cancelled",
-    durationMin: 60,
-    dueDate: "",
-    checklist: [
-      { id: 1, text: "Analise/debug erro de contrato", done: true },
-      { id: 2, text: "Envio retroativo da flag de contrato", done: true },
-      { id: 3, text: "Envio retroativo dos contratos via FV", done: true },
-    ],
-    timerRunning: false,
-    timerStart: null,
-    timerElapsed: 0,
-  },
-  {
-    id: 103,
-    title: "Teste de cliente",
-    description: "Testando",
-    priority: "Média",
-    clientId: "c3",
-    responsibleId: "r2",
-    status: "cancelled",
-    durationMin: 30,
-    dueDate: "",
-    checklist: [{ id: 1, text: "Testando", done: true }],
-    timerRunning: false,
-    timerStart: null,
-    timerElapsed: 0,
-  },
+  }
 ];
 
 // --- Funções Auxiliares ---
@@ -193,6 +161,8 @@ function KanbanMain({ user, onLogout }) {
   const [modal, setModal] = useState(null); 
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [validationError, setValidationError] = useState(null);
+  const [waitingPrompt, setWaitingPrompt] = useState(null);
+  const [dragOverId, setDragOverId] = useState(null);
   const [now, setNow] = useState(Date.now());
 
   // Salvamento Automático
@@ -213,8 +183,6 @@ function KanbanMain({ user, onLogout }) {
     return t.timerElapsed;
   };
 
-  const toggleTab = (tab) => setActiveTab(prev => prev === tab ? 'board' : tab);
-
   // Filtros
   const filteredTasks = tasks.filter(
     (t) =>
@@ -228,7 +196,7 @@ function KanbanMain({ user, onLogout }) {
   const overallProgress = activeTasksCount ? Math.round((doneCount / activeTasksCount) * 100) : 0;
 
   // Modais e Ações
-  const emptyForm = { title: "", description: "", priority: "Média", durationMin: "", clientId: "", responsibleId: "", dueDate: "", status: "", checklist: [] };
+  const emptyForm = { title: "", description: "", priority: "Média", durationMin: "", clientId: "", responsibleId: "", dueDate: "", status: "", waitingFor: "", checklist: [] };
 
   function openAddModal(status) {
     setValidationError(null);
@@ -248,6 +216,7 @@ function KanbanMain({ user, onLogout }) {
     const missing = [];
     if (!f.title.trim()) missing.push("Título");
     if (!f.responsibleId) missing.push("Responsável");
+    if (f.status === 'waiting' && !f.waitingFor) missing.push("Aguardando Retorno De");
     
     if (missing.length > 0) {
       setValidationError(missing);
@@ -276,7 +245,6 @@ function KanbanMain({ user, onLogout }) {
           let timerElapsed = t.timerElapsed;
           let timerStart = t.timerStart;
 
-          // Desliga timer se editado para concluído ou cancelado
           if ((f.status === 'done' || f.status === 'cancelled') && timerRunning) {
             timerRunning = false;
             timerElapsed += (Date.now() - timerStart) / 1000;
@@ -310,25 +278,6 @@ function KanbanMain({ user, onLogout }) {
     );
   }
 
-  function updateTaskStatus(id, newStatus) {
-    setTasks(prev => prev.map(t => {
-      if (t.id.toString() !== id.toString()) return t;
-      
-      let timerRunning = t.timerRunning;
-      let timerElapsed = t.timerElapsed;
-      let timerStart = t.timerStart;
-
-      // Desliga o timer se for movido para concluído ou cancelado
-      if ((newStatus === 'done' || newStatus === 'cancelled') && timerRunning) {
-        timerRunning = false;
-        timerElapsed += (Date.now() - timerStart) / 1000;
-        timerStart = null;
-      }
-
-      return { ...t, status: newStatus, timerRunning, timerElapsed, timerStart };
-    }));
-  }
-
   const toggleChecklistItem = (taskId, itemId) => {
     setTasks(prev => prev.map(t => {
       if (t.id !== taskId) return t;
@@ -355,17 +304,62 @@ function KanbanMain({ user, onLogout }) {
     }));
   };
 
-  // HTML5 Drag and Drop
+  // Movimentação Global de Tarefas (Lógica centralizada para Drag & Drop e Botões)
+  const moveTask = (draggedId, targetId, newStatus) => {
+    if (!draggedId) return;
+    
+    setTasks(prev => {
+      const fromIndex = prev.findIndex(t => t.id.toString() === draggedId.toString());
+      if (fromIndex === -1) return prev;
+      
+      const taskToMove = { ...prev[fromIndex] };
+      const originalStatus = taskToMove.status;
+      let timerRunning = taskToMove.timerRunning;
+      let timerElapsed = taskToMove.timerElapsed;
+      let timerStart = taskToMove.timerStart;
+      
+      if (originalStatus !== newStatus) {
+        if ((newStatus === 'done' || newStatus === 'cancelled') && timerRunning) {
+          timerRunning = false;
+          timerElapsed += (Date.now() - timerStart) / 1000;
+          timerStart = null;
+        }
+        
+        // Abre o pop-up de "Aguardando Quem"
+        if (newStatus === 'waiting' && !taskToMove.waitingFor) {
+          setTimeout(() => setWaitingPrompt(taskToMove.id), 10);
+        }
+      }
+      
+      taskToMove.status = newStatus;
+      taskToMove.timerRunning = timerRunning;
+      taskToMove.timerElapsed = timerElapsed;
+      taskToMove.timerStart = timerStart;
+      
+      const newTasks = [...prev];
+      newTasks.splice(fromIndex, 1); // Remove da posição atual
+      
+      if (targetId) {
+        const toIndex = newTasks.findIndex(t => t.id.toString() === targetId.toString());
+        if (toIndex !== -1) {
+          newTasks.splice(toIndex, 0, taskToMove); // Insere antes do target
+        } else {
+          newTasks.push(taskToMove);
+        }
+      } else {
+        newTasks.push(taskToMove); // Joga pro final da coluna
+      }
+      return newTasks;
+    });
+  };
+
+  function updateTaskStatus(id, newStatus) {
+    moveTask(id, null, newStatus);
+  }
+
+  // HTML5 Drag and Drop Handlers
   const handleDragStart = (e, taskId) => {
     e.dataTransfer.setData("taskId", taskId);
-  };
-  const handleDragOver = (e) => {
-    e.preventDefault();
-  };
-  const handleDrop = (e, status) => {
-    e.preventDefault();
-    const taskId = e.dataTransfer.getData("taskId");
-    if (taskId) updateTaskStatus(taskId, status);
   };
 
   return (
@@ -392,10 +386,11 @@ function KanbanMain({ user, onLogout }) {
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <HeaderBtn icon={<Clock size={14} />} label="Cronômetro" active={activeTab === 'timer'} onClick={() => toggleTab('timer')} color="amber" />
-          <HeaderBtn icon={<Users size={14} />} label="Responsáveis" active={activeTab === 'responsibles'} onClick={() => toggleTab('responsibles')} color="indigo" />
-          <HeaderBtn icon={<Building2 size={14} />} label="Clientes" active={activeTab === 'clients'} onClick={() => toggleTab('clients')} color="purple" />
-          <HeaderBtn icon={<BarChart3 size={14} />} label="Relatórios" active={activeTab === 'reports'} onClick={() => toggleTab('reports')} color="blue" />
+          <HeaderBtn icon={<LayoutDashboard size={14} />} label="Quadro Inicial" active={activeTab === 'board'} onClick={() => setActiveTab('board')} color="indigo" />
+          <HeaderBtn icon={<Clock size={14} />} label="Cronômetro" active={activeTab === 'timer'} onClick={() => setActiveTab('timer')} color="amber" />
+          <HeaderBtn icon={<Users size={14} />} label="Responsáveis" active={activeTab === 'responsibles'} onClick={() => setActiveTab('responsibles')} color="indigo" />
+          <HeaderBtn icon={<Building2 size={14} />} label="Clientes" active={activeTab === 'clients'} onClick={() => setActiveTab('clients')} color="purple" />
+          <HeaderBtn icon={<BarChart3 size={14} />} label="Relatórios" active={activeTab === 'reports'} onClick={() => setActiveTab('reports')} color="blue" />
           <div className="w-px h-6 bg-[#2a2d3d] mx-1"></div>
           <HeaderBtn icon={<LogOut size={14} />} label="Sair" onClick={onLogout} />
         </div>
@@ -421,8 +416,8 @@ function KanbanMain({ user, onLogout }) {
           <ReportsPanel tasks={tasks} clients={clients} responsibles={responsibles} now={now} getElapsed={getElapsed} />
         )}
 
-        {/* Estatísticas (Sempre visível abaixo dos painéis) */}
-        <div className="shrink-0 px-5 pt-5 pb-3">
+        {/* Estatísticas (Sempre visível no Board) */}
+        <div className={`shrink-0 px-5 pt-5 pb-3 ${activeTab !== 'board' ? 'hidden' : ''}`}>
           <div className="w-full rounded-xl bg-[#161821] border border-[#2a2d3d] px-5 py-4 mb-4 shadow-sm">
             <div className="flex items-center justify-between text-xs text-neutral-400 mb-2.5">
               <span className="font-medium">Progresso Geral</span>
@@ -435,7 +430,7 @@ function KanbanMain({ user, onLogout }) {
         </div>
 
         {/* Filtros */}
-        <div className="shrink-0 flex flex-wrap items-center gap-3 px-5 pb-4">
+        <div className={`shrink-0 flex flex-wrap items-center gap-3 px-5 pb-4 ${activeTab !== 'board' ? 'hidden' : ''}`}>
           <Filter size={16} className="text-neutral-500 shrink-0" />
           <FilterSelect value={filterClient} onChange={setFilterClient} options={clients} defaultLabel="Todos os clientes" />
           <FilterSelect value={filterResp} onChange={setFilterResp} options={responsibles} defaultLabel="Todos os responsáveis" />
@@ -443,7 +438,7 @@ function KanbanMain({ user, onLogout }) {
         </div>
 
         {/* Quadro Kanban (Scroll Horizontal) */}
-        <div className="flex-1 overflow-x-auto px-5 pb-5 kp-scroll">
+        <div className={`flex-1 overflow-x-auto px-5 pb-5 kp-scroll ${activeTab !== 'board' ? 'hidden' : ''}`}>
           <div className="flex gap-4 items-start h-full min-w-max pb-2">
             {COLUMNS.map((col) => {
               const colTasks = filteredTasks.filter((t) => t.status === col.id);
@@ -451,8 +446,11 @@ function KanbanMain({ user, onLogout }) {
                 <div 
                   key={col.id} 
                   className={`w-[320px] shrink-0 rounded-xl bg-[#161821] border-t-[3px] ${col.accent} border-[#2a2d3d] border-x border-b flex flex-col max-h-full shadow-sm`}
-                  onDragOver={handleDragOver}
-                  onDrop={(e) => handleDrop(e, col.id)}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    moveTask(e.dataTransfer.getData("taskId"), null, col.id);
+                  }}
                 >
                   {/* Header Coluna com Tooltip de Ajuda */}
                   <div className="px-3.5 pt-3.5 pb-2.5 flex items-center justify-between">
@@ -487,7 +485,7 @@ function KanbanMain({ user, onLogout }) {
                   {/* Lista de Cards */}
                   <div className="px-3 pb-3 flex-1 overflow-y-auto kp-scroll flex flex-col gap-2.5">
                     {colTasks.length === 0 && (
-                      <div className="text-center text-xs text-neutral-600 py-6 select-none border border-dashed border-[#2a2d3d] rounded-lg">
+                      <div className="text-center text-xs text-neutral-600 py-6 select-none border border-dashed border-[#2a2d3d] rounded-lg pointer-events-none">
                         Arraste cards para cá
                       </div>
                     )}
@@ -503,9 +501,20 @@ function KanbanMain({ user, onLogout }) {
                       return (
                         <div 
                           key={t.id} 
-                          className={`rounded-xl bg-[#1c1e29] border border-[#2a2d3d] p-3.5 transition-colors cursor-grab active:cursor-grabbing group ${isDoneOrCancelled ? 'opacity-80 hover:opacity-100 hover:border-[#3f4359]' : 'hover:border-[#3f4359]'}`}
+                          className={`rounded-xl bg-[#1c1e29] border p-3.5 transition-all cursor-grab active:cursor-grabbing group 
+                            ${isDoneOrCancelled ? 'opacity-80 hover:opacity-100 hover:border-[#3f4359]' : 'hover:border-[#3f4359]'}
+                            ${dragOverId === t.id ? 'border-indigo-500 shadow-[0_-2px_0_#6366f1]' : 'border-[#2a2d3d]'}
+                          `}
                           draggable
                           onDragStart={(e) => handleDragStart(e, t.id)}
+                          onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOverId(t.id); }}
+                          onDragLeave={() => setDragOverId(null)}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setDragOverId(null);
+                            moveTask(e.dataTransfer.getData("taskId"), t.id, col.id);
+                          }}
                         >
                           <div className="flex gap-2 items-start mb-2">
                             <GripVertical size={14} className="text-neutral-600 shrink-0 mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -533,6 +542,13 @@ function KanbanMain({ user, onLogout }) {
                             )}
                           </div>
 
+                          {t.status === 'waiting' && t.waitingFor && (
+                            <div className="flex items-center gap-1.5 text-[10px] mb-3 pl-5 font-medium w-fit bg-pink-500/10 border border-pink-500/20 px-2 py-1 rounded-md text-pink-400">
+                              <Clock size={12} />
+                              Aguardando: {t.waitingFor}
+                            </div>
+                          )}
+
                           {total > 0 && (
                             <div className="mb-3 pl-5">
                               <div className="flex items-center justify-between text-[10px] text-neutral-400 mb-1.5 font-medium">
@@ -558,10 +574,29 @@ function KanbanMain({ user, onLogout }) {
                             </div>
                           )}
 
-                          {(t.timerRunning || t.timerElapsed > 0) && (
+                          {/* Timer Dinâmico para Em Andamento */}
+                          {(t.timerRunning || t.timerElapsed > 0) && !isDoneOrCancelled && (
                             <div className="flex items-center gap-1.5 text-[11px] mb-3 pl-5 font-mono font-medium w-fit bg-[#0f1015] border border-[#2a2d3d] px-2 py-1 rounded-md text-neutral-400">
                               <Clock size={12} className={t.timerRunning ? "text-amber-500 animate-pulse" : "text-neutral-500"} />
                               {formatTime(getElapsed(t))}
+                            </div>
+                          )}
+
+                          {/* Timer Fixo para Concluídos/Cancelados */}
+                          {isDoneOrCancelled && (t.timerElapsed > 0 || t.durationMin) && (
+                            <div className="flex flex-col gap-1.5 mb-3 pl-5 bg-[#0f1015]/50 border border-[#2a2d3d]/50 p-2 rounded-lg w-fit">
+                              {t.timerElapsed > 0 && (
+                                <div className="flex items-center gap-1.5 text-[10px] font-mono text-neutral-400">
+                                  <CheckCircle2 size={12} className="text-green-500" />
+                                  Tempo Gasto: {formatTime(t.timerElapsed)}
+                                </div>
+                              )}
+                              {t.durationMin && (
+                                <div className="flex items-center gap-1.5 text-[10px] text-neutral-500">
+                                  <TimerIcon size={12} />
+                                  Estimado: {t.durationMin} min
+                                </div>
+                              )}
                             </div>
                           )}
 
@@ -591,6 +626,44 @@ function KanbanMain({ user, onLogout }) {
           </div>
         </div>
       </div>
+
+      {/* Pop-up: Aguardando Retorno de Quem? */}
+      {waitingPrompt && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-[70] fade-in">
+          <div className="w-full max-w-sm rounded-xl bg-[#161821] border border-[#2a2d3d] p-6 shadow-2xl relative">
+            <button onClick={() => setWaitingPrompt(null)} className="absolute top-4 right-4 text-neutral-500 hover:text-white transition-colors">
+              <X size={18} />
+            </button>
+            <div className="flex items-center gap-3 mb-4 text-pink-500">
+              <div className="p-2 bg-pink-500/10 rounded-lg"><HelpCircle size={20} /></div>
+              <h3 className="font-semibold text-base">Aguardando Retorno</h3>
+            </div>
+            <p className="text-sm text-neutral-400 mb-6 leading-relaxed">
+              O card foi movido para <b>Aguardando Retorno</b>. De quem você está aguardando uma resposta ou ação?
+            </p>
+            <div className="flex items-center gap-3">
+              <button 
+                onClick={() => {
+                  setTasks(prev => prev.map(t => t.id === waitingPrompt ? { ...t, waitingFor: 'Cliente' } : t));
+                  setWaitingPrompt(null);
+                }}
+                className="flex-1 py-2.5 rounded-lg border border-[#2a2d3d] hover:border-[#3f4359] hover:bg-[#2a2d3d] text-white font-medium transition-colors text-sm"
+              >
+                Cliente
+              </button>
+              <button 
+                onClick={() => {
+                  setTasks(prev => prev.map(t => t.id === waitingPrompt ? { ...t, waitingFor: 'Time Rubeus' } : t));
+                  setWaitingPrompt(null);
+                }}
+                className="flex-1 py-2.5 rounded-lg bg-pink-600 hover:bg-pink-500 text-white font-medium transition-colors text-sm"
+              >
+                Time Rubeus
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal Adicionar/Editar */}
       {modal && (
@@ -685,6 +758,27 @@ function FilterSelect({ value, onChange, options, defaultLabel }) {
         ))}
       </select>
       <ChevronDown size={14} className="absolute right-2.5 text-neutral-500 pointer-events-none" />
+    </div>
+  );
+}
+
+// Novo componente para Selects padronizados no Modal
+function CustomSelect({ label, value, onChange, options, hasError, required }) {
+  return (
+    <div>
+      <label className="text-[11px] text-neutral-400 mb-1.5 block uppercase font-medium">
+        {label} {required && <span className="text-red-500">*</span>}
+      </label>
+      <div className="relative flex items-center">
+        <select
+          value={value}
+          onChange={onChange}
+          className={`appearance-none w-full bg-[#0f1015] border rounded-lg pl-4 pr-10 py-2.5 text-sm text-white outline-none focus:border-indigo-500 transition-colors cursor-pointer ${hasError ? 'border-red-500' : 'border-[#2a2d3d]'}`}
+        >
+          {options}
+        </select>
+        <ChevronDown size={16} className="absolute right-3 text-neutral-500 pointer-events-none" />
+      </div>
     </div>
   );
 }
@@ -1052,18 +1146,12 @@ function TaskModal({ modal, setModal, clients, responsibles, closeModal, saveMod
           </div>
           
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="text-[11px] text-neutral-400 mb-1.5 block uppercase font-medium">Prioridade</label>
-              <select
-                value={modal.form.priority}
-                onChange={(e) => updateForm({ priority: e.target.value })}
-                className="w-full bg-[#0f1015] border border-[#2a2d3d] rounded-lg px-4 py-2.5 text-sm text-white outline-none focus:border-indigo-500"
-              >
-                <option value="Baixa">Baixa</option>
-                <option value="Média">Média</option>
-                <option value="Alta">Alta</option>
-              </select>
-            </div>
+            <CustomSelect
+              label="Prioridade"
+              value={modal.form.priority}
+              onChange={(e) => updateForm({ priority: e.target.value })}
+              options={<><option value="Baixa">Baixa</option><option value="Média">Média</option><option value="Alta">Alta</option></>}
+            />
             <div>
               <label className="text-[11px] text-neutral-400 mb-1.5 block uppercase font-medium">Duração (Min)</label>
               <input
@@ -1077,30 +1165,20 @@ function TaskModal({ modal, setModal, clients, responsibles, closeModal, saveMod
           </div>
           
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="text-[11px] text-neutral-400 mb-1.5 block uppercase font-medium">Responsável *</label>
-              <select
-                value={modal.form.responsibleId}
-                onChange={(e) => updateForm({ responsibleId: e.target.value })}
-                className={`w-full bg-[#0f1015] border rounded-lg px-4 py-2.5 text-sm text-white outline-none focus:border-indigo-500 ${
-                  validationError?.includes("Responsável") ? "border-red-500" : "border-[#2a2d3d]"
-                }`}
-              >
-                <option value="">Selecione...</option>
-                {responsibles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="text-[11px] text-neutral-400 mb-1.5 block uppercase font-medium">Cliente</label>
-              <select
-                value={modal.form.clientId}
-                onChange={(e) => updateForm({ clientId: e.target.value })}
-                className="w-full bg-[#0f1015] border border-[#2a2d3d] rounded-lg px-4 py-2.5 text-sm text-white outline-none focus:border-indigo-500"
-              >
-                <option value="">Nenhum</option>
-                {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-            </div>
+            <CustomSelect
+              label="Responsável"
+              required
+              hasError={validationError?.includes("Responsável")}
+              value={modal.form.responsibleId}
+              onChange={(e) => updateForm({ responsibleId: e.target.value })}
+              options={<><option value="">Selecione...</option>{responsibles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</>}
+            />
+            <CustomSelect
+              label="Cliente"
+              value={modal.form.clientId}
+              onChange={(e) => updateForm({ clientId: e.target.value })}
+              options={<><option value="">Nenhum</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</>}
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -1113,17 +1191,26 @@ function TaskModal({ modal, setModal, clients, responsibles, closeModal, saveMod
                 className="w-full bg-[#0f1015] border border-[#2a2d3d] rounded-lg px-4 py-2 text-sm text-white outline-none focus:border-indigo-500 [color-scheme:dark]"
               />
             </div>
-            <div>
-              <label className="text-[11px] text-neutral-400 mb-1.5 block uppercase font-medium">Etapa / Status</label>
-              <select
-                value={modal.form.status}
-                onChange={(e) => updateForm({ status: e.target.value })}
-                className="w-full bg-[#0f1015] border border-[#2a2d3d] rounded-lg px-4 py-2.5 text-sm text-white outline-none focus:border-indigo-500 transition-colors"
-              >
-                {COLUMNS.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-            </div>
+            <CustomSelect
+              label="Etapa / Status"
+              value={modal.form.status}
+              onChange={(e) => updateForm({ status: e.target.value, waitingFor: e.target.value === 'waiting' ? modal.form.waitingFor : "" })}
+              options={COLUMNS.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            />
           </div>
+
+          {modal.form.status === 'waiting' && (
+            <div className="animate-fade-in">
+              <CustomSelect
+                label="Aguardando Retorno De"
+                required
+                hasError={validationError?.includes("Aguardando Retorno")}
+                value={modal.form.waitingFor || ""}
+                onChange={(e) => updateForm({ waitingFor: e.target.value })}
+                options={<><option value="">Selecione a pendência...</option><option value="Cliente">Cliente</option><option value="Time Rubeus">Time Rubeus</option></>}
+              />
+            </div>
+          )}
           
           <div>
             <div className="flex items-center justify-between mb-2">

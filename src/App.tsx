@@ -4,7 +4,7 @@ import {
   Users, Building2, BarChart3, LogOut, RotateCcw, 
   Filter, AlertTriangle, GripVertical, Download, 
   Play, Square, CheckCircle2, User, CheckSquare,
-  HelpCircle, ChevronDown, LayoutDashboard
+  HelpCircle, ChevronDown, LayoutDashboard, Mail, Check
 } from "lucide-react";
 
 // --- Configurações e Dados Iniciais ---
@@ -16,7 +16,8 @@ const COLUMNS = [
   { id: "paused", name: "Pausado", dot: "bg-orange-500", accent: "border-orange-500", bg: "bg-orange-500/10", btn: "bg-orange-600 hover:bg-orange-500", help: "Tarefas temporariamente interrompidas aguardando a resolução de algum bloqueio." },
   { id: "waiting", name: "Aguardando Retorno", dot: "bg-pink-500", accent: "border-pink-500", bg: "bg-pink-500/10", btn: "bg-pink-600 hover:bg-pink-500", help: "Aguardando validação, arquivo ou resposta do Cliente ou do Time Rubeus." },
   { id: "review", name: "Em Revisão", dot: "bg-purple-500", accent: "border-purple-500", bg: "bg-purple-500/10", btn: "bg-purple-600 hover:bg-purple-500", help: "Tarefas concluídas pela equipe técnica que aguardam aprovação ou validação do cliente/gestor." },
-  { id: "done", name: "Concluído", dot: "bg-green-500", accent: "border-green-500", bg: "bg-green-500/10", btn: "bg-green-600 hover:bg-green-500", help: "Tarefas totalmente finalizadas e validadas." },
+  { id: "done", name: "Concluído", dot: "bg-green-500", accent: "border-green-500", bg: "bg-green-500/10", btn: "bg-green-600 hover:bg-green-500", help: "Tarefas totalmente finalizadas e validadas pela equipe." },
+  { id: "formalize", name: "Formalizar", dot: "bg-teal-500", accent: "border-teal-500", bg: "bg-teal-500/10", btn: "bg-teal-600 hover:bg-teal-500", help: "Tarefas finalizadas que aguardam ou já tiveram o relatório enviado para o cliente." },
   { id: "cancelled", name: "Cancelado", dot: "bg-red-500", accent: "border-red-500", bg: "bg-red-500/10", btn: "bg-red-600 hover:bg-red-500", help: "Tarefas que foram despriorizadas, descartadas ou que não serão mais executadas." },
 ];
 
@@ -162,6 +163,7 @@ function KanbanMain({ user, onLogout }) {
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [validationError, setValidationError] = useState(null);
   const [waitingPrompt, setWaitingPrompt] = useState(null);
+  const [closureModal, setClosureModal] = useState(false);
   const [dragOverId, setDragOverId] = useState(null);
   const [now, setNow] = useState(Date.now());
 
@@ -192,8 +194,9 @@ function KanbanMain({ user, onLogout }) {
   );
 
   const activeTasksCount = tasks.filter((t) => t.status !== "cancelled").length;
-  const doneCount = tasks.filter((t) => t.status === "done").length;
+  const doneCount = tasks.filter((t) => t.status === "done" || t.status === "formalize").length;
   const overallProgress = activeTasksCount ? Math.round((doneCount / activeTasksCount) * 100) : 0;
+  const doneTasks = tasks.filter(t => t.status === 'done');
 
   // Modais e Ações
   const emptyForm = { title: "", description: "", priority: "Média", durationMin: "", clientId: "", responsibleId: "", dueDate: "", status: "", waitingFor: "", checklist: [] };
@@ -245,7 +248,7 @@ function KanbanMain({ user, onLogout }) {
           let timerElapsed = t.timerElapsed;
           let timerStart = t.timerStart;
 
-          if ((f.status === 'done' || f.status === 'cancelled') && timerRunning) {
+          if ((f.status === 'done' || f.status === 'cancelled' || f.status === 'formalize') && timerRunning) {
             timerRunning = false;
             timerElapsed += (Date.now() - timerStart) / 1000;
             timerStart = null;
@@ -291,7 +294,7 @@ function KanbanMain({ user, onLogout }) {
       let timerStart = t.timerStart;
 
       // Auto Move para Concluído se todos os itens forem checados
-      if (allDone && t.status !== 'done' && t.status !== 'cancelled') {
+      if (allDone && t.status !== 'done' && t.status !== 'cancelled' && t.status !== 'formalize') {
         newStatus = 'done';
         if (timerRunning) {
           timerRunning = false;
@@ -304,7 +307,7 @@ function KanbanMain({ user, onLogout }) {
     }));
   };
 
-  // Movimentação Global de Tarefas (Lógica centralizada para Drag & Drop e Botões)
+  // Movimentação Global de Tarefas
   const moveTask = (draggedId, targetId, newStatus) => {
     if (!draggedId) return;
     
@@ -319,7 +322,7 @@ function KanbanMain({ user, onLogout }) {
       let timerStart = taskToMove.timerStart;
       
       if (originalStatus !== newStatus) {
-        if ((newStatus === 'done' || newStatus === 'cancelled') && timerRunning) {
+        if ((newStatus === 'done' || newStatus === 'cancelled' || newStatus === 'formalize') && timerRunning) {
           timerRunning = false;
           timerElapsed += (Date.now() - timerStart) / 1000;
           timerStart = null;
@@ -337,17 +340,17 @@ function KanbanMain({ user, onLogout }) {
       taskToMove.timerStart = timerStart;
       
       const newTasks = [...prev];
-      newTasks.splice(fromIndex, 1); // Remove da posição atual
+      newTasks.splice(fromIndex, 1); 
       
       if (targetId) {
         const toIndex = newTasks.findIndex(t => t.id.toString() === targetId.toString());
         if (toIndex !== -1) {
-          newTasks.splice(toIndex, 0, taskToMove); // Insere antes do target
+          newTasks.splice(toIndex, 0, taskToMove); 
         } else {
           newTasks.push(taskToMove);
         }
       } else {
-        newTasks.push(taskToMove); // Joga pro final da coluna
+        newTasks.push(taskToMove); 
       }
       return newTasks;
     });
@@ -357,7 +360,6 @@ function KanbanMain({ user, onLogout }) {
     moveTask(id, null, newStatus);
   }
 
-  // HTML5 Drag and Drop Handlers
   const handleDragStart = (e, taskId) => {
     e.dataTransfer.setData("taskId", taskId);
   };
@@ -429,12 +431,24 @@ function KanbanMain({ user, onLogout }) {
           </div>
         </div>
 
-        {/* Filtros */}
-        <div className={`shrink-0 flex flex-wrap items-center gap-3 px-5 pb-4 ${activeTab !== 'board' ? 'hidden' : ''}`}>
-          <Filter size={16} className="text-neutral-500 shrink-0" />
-          <FilterSelect value={filterClient} onChange={setFilterClient} options={clients} defaultLabel="Todos os clientes" />
-          <FilterSelect value={filterResp} onChange={setFilterResp} options={responsibles} defaultLabel="Todos os responsáveis" />
-          <FilterSelect value={filterPriority} onChange={setFilterPriority} options={[{id: 'Baixa', name: 'Baixa'}, {id: 'Média', name: 'Média'}, {id: 'Alta', name: 'Alta'}]} defaultLabel="Todas as prioridades" />
+        {/* Filtros e Botões Globais */}
+        <div className={`shrink-0 flex flex-wrap items-center justify-between gap-3 px-5 pb-4 ${activeTab !== 'board' ? 'hidden' : ''}`}>
+          <div className="flex items-center gap-3">
+            <Filter size={16} className="text-neutral-500 shrink-0" />
+            <FilterSelect value={filterClient} onChange={setFilterClient} options={clients} defaultLabel="Todos os clientes" />
+            <FilterSelect value={filterResp} onChange={setFilterResp} options={responsibles} defaultLabel="Todos os responsáveis" />
+            <FilterSelect value={filterPriority} onChange={setFilterPriority} options={[{id: 'Baixa', name: 'Baixa'}, {id: 'Média', name: 'Média'}, {id: 'Alta', name: 'Alta'}]} defaultLabel="Todas as prioridades" />
+          </div>
+          
+          {/* Botão de Fechamento Semanal */}
+          {doneTasks.length > 0 && (
+            <button 
+              onClick={() => setClosureModal(true)} 
+              className="flex items-center gap-2 px-4 py-2 bg-purple-600/10 text-purple-400 border border-purple-500/30 hover:bg-purple-600/20 rounded-lg text-xs font-semibold transition-colors animate-fade-in"
+            >
+              <Mail size={14}/> Fechamento Semanal
+            </button>
+          )}
         </div>
 
         {/* Quadro Kanban (Scroll Horizontal) */}
@@ -496,7 +510,7 @@ function KanbanMain({ user, onLogout }) {
                       const client = clients.find(c => c.id === t.clientId);
                       const resp = responsibles.find(r => r.id === t.responsibleId);
                       const prStyle = PRIORITY_STYLE[t.priority] || PRIORITY_STYLE.Média;
-                      const isDoneOrCancelled = t.status === "done" || t.status === "cancelled";
+                      const isDoneOrCancelled = t.status === "done" || t.status === "cancelled" || t.status === "formalize";
 
                       return (
                         <div 
@@ -574,7 +588,7 @@ function KanbanMain({ user, onLogout }) {
                             </div>
                           )}
 
-                          {/* Timer Dinâmico para Em Andamento */}
+                          {/* Timer Dinâmico */}
                           {(t.timerRunning || t.timerElapsed > 0) && !isDoneOrCancelled && (
                             <div className="flex items-center gap-1.5 text-[11px] mb-3 pl-5 font-mono font-medium w-fit bg-[#0f1015] border border-[#2a2d3d] px-2 py-1 rounded-md text-neutral-400">
                               <Clock size={12} className={t.timerRunning ? "text-amber-500 animate-pulse" : "text-neutral-500"} />
@@ -582,7 +596,7 @@ function KanbanMain({ user, onLogout }) {
                             </div>
                           )}
 
-                          {/* Timer Fixo para Concluídos/Cancelados */}
+                          {/* Timer Fixo */}
                           {isDoneOrCancelled && (t.timerElapsed > 0 || t.durationMin) && (
                             <div className="flex flex-col gap-1.5 mb-3 pl-5 bg-[#0f1015]/50 border border-[#2a2d3d]/50 p-2 rounded-lg w-fit">
                               {t.timerElapsed > 0 && (
@@ -627,7 +641,7 @@ function KanbanMain({ user, onLogout }) {
         </div>
       </div>
 
-      {/* Pop-up: Aguardando Retorno de Quem? */}
+      {/* Pop-up: Aguardando Retorno */}
       {waitingPrompt && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-[70] fade-in">
           <div className="w-full max-w-sm rounded-xl bg-[#161821] border border-[#2a2d3d] p-6 shadow-2xl relative">
@@ -663,6 +677,19 @@ function KanbanMain({ user, onLogout }) {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Modal de Fechamento Semanal (Automação de E-mails) */}
+      {closureModal && (
+        <ClosureModal 
+          tasks={doneTasks}
+          clients={clients}
+          onClose={() => setClosureModal(false)}
+          onFormalize={() => {
+            setTasks(prev => prev.map(t => t.status === 'done' ? { ...t, status: 'formalize' } : t));
+            setClosureModal(false);
+          }}
+        />
       )}
 
       {/* Modal Adicionar/Editar */}
@@ -762,7 +789,6 @@ function FilterSelect({ value, onChange, options, defaultLabel }) {
   );
 }
 
-// Novo componente para Selects padronizados no Modal
 function CustomSelect({ label, value, onChange, options, hasError, required }) {
   return (
     <div>
@@ -783,7 +809,106 @@ function CustomSelect({ label, value, onChange, options, hasError, required }) {
   );
 }
 
-// --- Painéis Expansíveis ---
+// --- Componente: Fechamento Semanal (Automação de E-mails) ---
+function ClosureModal({ tasks, clients, onClose, onFormalize }) {
+  // Agrupar tarefas por cliente
+  const tasksByClient = useMemo(() => {
+    return tasks.reduce((acc, task) => {
+      const cId = task.clientId || 'no_client';
+      if (!acc[cId]) acc[cId] = [];
+      acc[cId].push(task);
+      return acc;
+    }, {});
+  }, [tasks]);
+
+  const generateEmailLink = (clientTasks, clientData) => {
+    const clientName = clientData ? clientData.name : 'Cliente';
+    const emailTo = clientData ? clientData.email : '';
+    const subject = `Atualização Semanal de Demandas - ${clientName}`;
+    
+    let body = `Olá equipe ${clientName},\n\nAbaixo está o resumo das demandas executadas e finalizadas nesta semana:\n\n`;
+    
+    clientTasks.forEach(t => {
+      body += `• ${t.title}\n`;
+      if (t.description) body += `  ${t.description}\n`;
+      body += `\n`;
+    });
+    
+    body += `Qualquer dúvida, estamos à disposição.\n\nAtenciosamente.`;
+    
+    // Link direto do Gmail Web (Abre na mesma aba/janela do navegador atual)
+    // Se quiser voltar para o Outlook ou Mail do Windows, troque para: return `mailto:${emailTo}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    return `https://mail.google.com/mail/?view=cm&fs=1&to=${emailTo}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-[80] fade-in">
+      <div className="w-full max-w-2xl rounded-2xl bg-[#161821] border border-[#2a2d3d] flex flex-col max-h-[90vh] shadow-2xl overflow-hidden">
+        
+        <div className="px-6 py-5 border-b border-[#2a2d3d] flex items-center justify-between bg-[#1a1c24]">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-purple-500/10 rounded-lg text-purple-400"><Mail size={20} /></div>
+            <div>
+              <h3 className="font-bold text-base text-white">Fechamento Semanal</h3>
+              <p className="text-[11px] text-neutral-400 mt-0.5">Dispare os e-mails e formalize as demandas concluídas.</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg text-neutral-500 hover:text-white hover:bg-[#2a2d3d] transition-colors">
+            <X size={18} />
+          </button>
+        </div>
+        
+        <div className="p-6 overflow-y-auto kp-scroll flex flex-col gap-4 flex-1">
+          {Object.entries(tasksByClient).map(([clientId, clientTasks]) => {
+            const clientData = clients.find(c => c.id === clientId);
+            const clientName = clientData ? clientData.name : 'Sem Cliente Atribuído';
+            
+            return (
+              <div key={clientId} className="bg-[#0f1015] border border-[#2a2d3d] rounded-xl p-4">
+                <div className="flex items-center justify-between mb-3 border-b border-[#2a2d3d] pb-3">
+                  <h4 className="font-semibold text-sm text-white flex items-center gap-2">
+                    <Building2 size={14} className="text-purple-400" /> {clientName}
+                  </h4>
+                  <span className="text-[10px] bg-neutral-800 text-neutral-300 px-2 py-0.5 rounded-md">{clientTasks.length} tarefas</span>
+                </div>
+                
+                <div className="text-xs text-neutral-400 mb-4 max-h-32 overflow-y-auto pr-2 kp-scroll font-mono">
+                  {clientTasks.map(t => (
+                    <div key={t.id} className="mb-2">
+                      <div className="text-neutral-200 font-medium">• {t.title}</div>
+                      {t.description && <div className="pl-3 opacity-70 truncate">{t.description}</div>}
+                    </div>
+                  ))}
+                </div>
+                
+                <a 
+                  href={generateEmailLink(clientTasks, clientData)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-[#2a2d3d] hover:bg-[#3f4359] text-white rounded-lg text-xs font-medium transition-colors"
+                >
+                  <Mail size={14} /> Abrir no Gmail (Web)
+                </a>
+              </div>
+            );
+          })}
+        </div>
+        
+        <div className="px-6 py-4 border-t border-[#2a2d3d] flex items-center justify-between bg-[#1a1c24]">
+          <span className="text-xs text-neutral-400">Total: {tasks.length} tarefas prontas para formalização.</span>
+          <button 
+            onClick={onFormalize} 
+            className="flex items-center gap-2 text-sm px-6 py-2.5 rounded-lg bg-teal-600 hover:bg-teal-500 text-white font-medium transition-colors"
+          >
+            <Check size={16} /> Mover todos para Formalizar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- Demais Painéis (Timer, Responsables, Clients, Reports, TaskModal) permanecem idênticos ao código anterior ---
 
 function TimerPanel({ tasks, now, getElapsed, onToggleTimer }) {
   const activeTasks = tasks.filter(t => t.timerRunning || t.timerElapsed > 0).sort((a,b) => b.timerRunning - a.timerRunning);
@@ -803,7 +928,7 @@ function TimerPanel({ tasks, now, getElapsed, onToggleTimer }) {
           </div>
         )}
         {activeTasks.map(t => {
-          const isDoneOrCancelled = t.status === "done" || t.status === "cancelled";
+          const isDoneOrCancelled = t.status === "done" || t.status === "cancelled" || t.status === "formalize";
           return (
             <div key={t.id} className="bg-[#161821] border border-[#2a2d3d] rounded-xl p-5 flex flex-col items-center text-center relative overflow-hidden group hover:border-[#3f4359] transition-colors">
               {t.timerRunning && <div className="absolute top-0 left-0 w-full h-1 bg-amber-500 animate-pulse" />}
@@ -843,17 +968,8 @@ function TimerPanel({ tasks, now, getElapsed, onToggleTimer }) {
 
 function ResponsiblesPanel({ responsibles, setResponsibles, tasks, setTasks }) {
   const [name, setName] = useState('');
-  
-  const add = () => {
-    if (!name.trim()) return;
-    setResponsibles([...responsibles, { id: 'r'+Date.now(), name: name.trim() }]);
-    setName('');
-  };
-
-  const remove = (id) => {
-    setResponsibles(prev => prev.filter(r => r.id !== id));
-    setTasks(prev => prev.map(t => t.responsibleId === id ? { ...t, responsibleId: '' } : t));
-  };
+  const add = () => { if (!name.trim()) return; setResponsibles([...responsibles, { id: 'r'+Date.now(), name: name.trim() }]); setName(''); };
+  const remove = (id) => { setResponsibles(prev => prev.filter(r => r.id !== id)); setTasks(prev => prev.map(t => t.responsibleId === id ? { ...t, responsibleId: '' } : t)); };
 
   return (
     <div className="p-6 border-b border-[#2a2d3d] bg-[#1a1c24] fade-in shadow-inner">
@@ -861,21 +977,13 @@ function ResponsiblesPanel({ responsibles, setResponsibles, tasks, setTasks }) {
         <Users size={20} />
         <h2 className="text-lg font-semibold text-white">Responsáveis</h2>
       </div>
-      
       <div className="bg-[#161821] p-4 rounded-xl border border-[#2a2d3d] mb-6 flex gap-3 max-w-xl items-end">
         <div className="flex-1">
           <label className="text-xs text-neutral-400 mb-1.5 block uppercase tracking-wider">Nome do responsável</label>
-          <input 
-            value={name} onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key === 'Enter' && add()}
-            className="w-full bg-[#0f1015] border border-[#2a2d3d] rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-indigo-500"
-            placeholder="Ex: João da Silva"
-          />
+          <input value={name} onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key === 'Enter' && add()} className="w-full bg-[#0f1015] border border-[#2a2d3d] rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-indigo-500" placeholder="Ex: João da Silva" />
         </div>
-        <button onClick={add} className="h-[38px] px-5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2">
-          <Plus size={16}/> Adicionar
-        </button>
+        <button onClick={add} className="h-[38px] px-5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"><Plus size={16}/> Adicionar</button>
       </div>
-
       <div className="flex flex-wrap gap-3">
         {responsibles.map(r => {
           const count = tasks.filter(t => t.responsibleId === r.id).length;
@@ -884,9 +992,7 @@ function ResponsiblesPanel({ responsibles, setResponsibles, tasks, setTasks }) {
               <User size={14} className="text-indigo-400" />
               <span className="text-sm font-medium text-neutral-200">{r.name}</span>
               <span className="text-[10px] bg-[#0f1015] border border-[#2a2d3d] px-2 py-0.5 rounded-md text-neutral-400">{count}</span>
-              <button onClick={() => remove(r.id)} className="p-1.5 text-neutral-500 hover:text-red-400 hover:bg-red-500/10 rounded-md transition-colors opacity-0 group-hover:opacity-100">
-                <X size={14}/>
-              </button>
+              <button onClick={() => remove(r.id)} className="p-1.5 text-neutral-500 hover:text-red-400 hover:bg-red-500/10 rounded-md transition-colors opacity-0 group-hover:opacity-100"><X size={14}/></button>
             </div>
           )
         })}
@@ -897,17 +1003,8 @@ function ResponsiblesPanel({ responsibles, setResponsibles, tasks, setTasks }) {
 
 function ClientsPanel({ clients, setClients, tasks, setTasks }) {
   const [form, setForm] = useState({ name: '', contact: '', email: '' });
-  
-  const add = () => {
-    if (!form.name.trim()) return;
-    setClients([...clients, { id: 'c'+Date.now(), ...form }]);
-    setForm({ name: '', contact: '', email: '' });
-  };
-
-  const remove = (id) => {
-    setClients(prev => prev.filter(c => c.id !== id));
-    setTasks(prev => prev.map(t => t.clientId === id ? { ...t, clientId: '' } : t));
-  };
+  const add = () => { if (!form.name.trim()) return; setClients([...clients, { id: 'c'+Date.now(), ...form }]); setForm({ name: '', contact: '', email: '' }); };
+  const remove = (id) => { setClients(prev => prev.filter(c => c.id !== id)); setTasks(prev => prev.map(t => t.clientId === id ? { ...t, clientId: '' } : t)); };
 
   return (
     <div className="p-6 border-b border-[#2a2d3d] bg-[#1a1c24] fade-in shadow-inner">
@@ -915,58 +1012,39 @@ function ClientsPanel({ clients, setClients, tasks, setTasks }) {
         <Building2 size={20} />
         <h2 className="text-lg font-semibold text-white">Clientes</h2>
       </div>
-      
       <div className="bg-[#161821] p-5 rounded-xl border border-[#2a2d3d] mb-6">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
           <div>
             <label className="text-[11px] text-neutral-400 mb-1.5 block uppercase tracking-wider font-medium">Nome *</label>
-            <input 
-              value={form.name} onChange={e=>setForm({...form, name: e.target.value})}
-              className="w-full bg-[#0f1015] border border-[#2a2d3d] rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-purple-500" placeholder="Ex: Acme Corp"
-            />
+            <input value={form.name} onChange={e=>setForm({...form, name: e.target.value})} className="w-full bg-[#0f1015] border border-[#2a2d3d] rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-purple-500" placeholder="Ex: Acme Corp" />
           </div>
           <div>
             <label className="text-[11px] text-neutral-400 mb-1.5 block uppercase tracking-wider font-medium">Contato</label>
-            <input 
-              value={form.contact} onChange={e=>setForm({...form, contact: e.target.value})}
-              className="w-full bg-[#0f1015] border border-[#2a2d3d] rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-purple-500" placeholder="Ex: João Silva"
-            />
+            <input value={form.contact} onChange={e=>setForm({...form, contact: e.target.value})} className="w-full bg-[#0f1015] border border-[#2a2d3d] rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-purple-500" placeholder="Ex: João Silva" />
           </div>
           <div className="flex gap-3 items-end">
             <div className="flex-1">
               <label className="text-[11px] text-neutral-400 mb-1.5 block uppercase tracking-wider font-medium">E-mail</label>
-              <input 
-                value={form.email} onChange={e=>setForm({...form, email: e.target.value})} onKeyDown={e=>e.key === 'Enter' && add()}
-                className="w-full bg-[#0f1015] border border-[#2a2d3d] rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-purple-500" placeholder="Ex: joao@acme.com"
-              />
+              <input value={form.email} onChange={e=>setForm({...form, email: e.target.value})} onKeyDown={e=>e.key === 'Enter' && add()} className="w-full bg-[#0f1015] border border-[#2a2d3d] rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-purple-500" placeholder="Ex: joao@acme.com" />
             </div>
-            <button onClick={add} className="h-[38px] px-5 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2">
-              <Plus size={16}/> Adicionar
-            </button>
+            <button onClick={add} className="h-[38px] px-5 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"><Plus size={16}/> Adicionar</button>
           </div>
         </div>
       </div>
-
       <div className="flex flex-col gap-2 max-w-4xl">
         {clients.map(c => {
           const count = tasks.filter(t => t.clientId === c.id).length;
           return (
             <div key={c.id} className="flex items-center justify-between bg-[#161821] border border-[#2a2d3d] rounded-lg p-3 hover:border-[#3f4359] transition-colors group">
               <div className="flex items-center gap-4">
-                <div className="p-2 bg-[#0f1015] rounded-md border border-[#2a2d3d]">
-                  <Building2 size={16} className="text-purple-400" />
-                </div>
+                <div className="p-2 bg-[#0f1015] rounded-md border border-[#2a2d3d]"><Building2 size={16} className="text-purple-400" /></div>
                 <div>
                   <div className="text-sm font-semibold text-neutral-200">{c.name}</div>
-                  {(c.contact || c.email) && (
-                    <div className="text-[11px] text-neutral-500 mt-0.5">{c.contact} {c.contact && c.email && '•'} {c.email}</div>
-                  )}
+                  {(c.contact || c.email) && <div className="text-[11px] text-neutral-500 mt-0.5">{c.contact} {c.contact && c.email && '•'} {c.email}</div>}
                 </div>
                 <span className="text-[10px] bg-purple-500/10 text-purple-400 border border-purple-500/20 px-2 py-0.5 rounded-md ml-2">{count} tarefas</span>
               </div>
-              <button onClick={() => remove(c.id)} className="p-2 text-neutral-500 hover:text-red-400 hover:bg-red-500/10 rounded-md transition-colors opacity-0 group-hover:opacity-100">
-                <X size={16}/>
-              </button>
+              <button onClick={() => remove(c.id)} className="p-2 text-neutral-500 hover:text-red-400 hover:bg-red-500/10 rounded-md transition-colors opacity-0 group-hover:opacity-100"><X size={16}/></button>
             </div>
           )
         })}
@@ -976,7 +1054,6 @@ function ClientsPanel({ clients, setClients, tasks, setTasks }) {
 }
 
 function ReportsPanel({ tasks, clients, responsibles, now, getElapsed }) {
-  
   const exportTasksCSV = () => {
     const headers = ["ID", "Título", "Status", "Prioridade", "Cliente", "Responsável", "Duração Estimada (min)", "Tempo Gasto (h)"];
     const rows = tasks.map(t => {
@@ -988,7 +1065,6 @@ function ReportsPanel({ tasks, clients, responsibles, now, getElapsed }) {
     });
     downloadCSV([headers.join(','), ...rows], 'tarefas.csv');
   };
-
   const exportHoursCSV = () => {
     const headers = ["Responsável", "Tarefas", "Horas Totais"];
     const rows = responsibles.map(r => {
@@ -998,7 +1074,6 @@ function ReportsPanel({ tasks, clients, responsibles, now, getElapsed }) {
     });
     downloadCSV([headers.join(','), ...rows], 'horas.csv');
   };
-
   const exportClientsCSV = () => {
     const headers = ["Cliente", "Contato", "E-mail", "Total Tarefas"];
     const rows = clients.map(c => {
@@ -1014,9 +1089,7 @@ function ReportsPanel({ tasks, clients, responsibles, now, getElapsed }) {
         <BarChart3 size={20} />
         <h2 className="text-lg font-semibold text-white">Relatórios</h2>
       </div>
-
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
-        {/* POR STATUS */}
         <div>
           <h3 className="text-[11px] text-neutral-400 mb-3 uppercase tracking-wider font-semibold">Por Status</h3>
           <div className="flex flex-col gap-2">
@@ -1024,18 +1097,13 @@ function ReportsPanel({ tasks, clients, responsibles, now, getElapsed }) {
               const count = tasks.filter(t => t.status === col.id).length;
               return (
                 <div key={col.id} className="flex justify-between items-center bg-[#161821] border border-[#2a2d3d] p-3 rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <span className={`w-2 h-2 rounded-full ${col.dot}`} />
-                    <span className="text-sm text-neutral-300 font-medium">{col.name}</span>
-                  </div>
+                  <div className="flex items-center gap-2"><span className={`w-2 h-2 rounded-full ${col.dot}`} /><span className="text-sm text-neutral-300 font-medium">{col.name}</span></div>
                   <span className="text-sm font-bold text-white">{count}</span>
                 </div>
               )
             })}
           </div>
         </div>
-
-        {/* POR RESPONSÁVEL */}
         <div>
           <h3 className="text-[11px] text-neutral-400 mb-3 uppercase tracking-wider font-semibold">Por Responsável</h3>
           <div className="flex flex-col gap-2">
@@ -1045,17 +1113,12 @@ function ReportsPanel({ tasks, clients, responsibles, now, getElapsed }) {
               return (
                 <div key={r.id} className="bg-[#161821] border border-[#2a2d3d] p-3 rounded-lg">
                   <div className="text-sm text-neutral-200 font-semibold mb-1">{r.name}</div>
-                  <div className="flex items-center gap-3 text-[11px] text-neutral-500 font-medium">
-                    <span>{rTasks.length} tarefas</span>
-                    <span>{hours.toFixed(1)}h totais</span>
-                  </div>
+                  <div className="flex items-center gap-3 text-[11px] text-neutral-500 font-medium"><span>{rTasks.length} tarefas</span><span>{hours.toFixed(1)}h totais</span></div>
                 </div>
               )
             })}
           </div>
         </div>
-
-        {/* POR CLIENTE */}
         <div>
           <h3 className="text-[11px] text-neutral-400 mb-3 uppercase tracking-wider font-semibold">Por Cliente</h3>
           <div className="flex flex-col gap-2 max-h-[300px] overflow-y-auto kp-scroll pr-2">
@@ -1066,207 +1129,87 @@ function ReportsPanel({ tasks, clients, responsibles, now, getElapsed }) {
               return (
                 <div key={c.id} className="bg-[#161821] border border-[#2a2d3d] p-3 rounded-lg">
                   <div className="text-sm text-neutral-200 font-semibold mb-1">{c.name}</div>
-                  <div className="flex items-center gap-3 text-[11px] text-neutral-500 font-medium">
-                    <span>{cTasks.length} tarefas</span>
-                    <span>{hours.toFixed(1)}h totais</span>
-                  </div>
+                  <div className="flex items-center gap-3 text-[11px] text-neutral-500 font-medium"><span>{cTasks.length} tarefas</span><span>{hours.toFixed(1)}h totais</span></div>
                 </div>
               )
             })}
           </div>
         </div>
       </div>
-
       <div className="flex flex-wrap gap-3 pt-6 border-t border-[#2a2d3d]">
-        <button onClick={exportTasksCSV} className="flex items-center gap-2 px-4 py-2 bg-green-600/10 text-green-400 border border-green-500/30 hover:bg-green-600/20 rounded-lg text-xs font-semibold transition-colors">
-          <Download size={14}/> Exportar Tarefas (CSV)
-        </button>
-        <button onClick={exportHoursCSV} className="flex items-center gap-2 px-4 py-2 bg-blue-600/10 text-blue-400 border border-blue-500/30 hover:bg-blue-600/20 rounded-lg text-xs font-semibold transition-colors">
-          <Download size={14}/> Exportar Horas (CSV)
-        </button>
-        <button onClick={exportClientsCSV} className="flex items-center gap-2 px-4 py-2 bg-purple-600/10 text-purple-400 border border-purple-500/30 hover:bg-purple-600/20 rounded-lg text-xs font-semibold transition-colors">
-          <Download size={14}/> Exportar Clientes (CSV)
-        </button>
+        <button onClick={exportTasksCSV} className="flex items-center gap-2 px-4 py-2 bg-green-600/10 text-green-400 border border-green-500/30 hover:bg-green-600/20 rounded-lg text-xs font-semibold transition-colors"><Download size={14}/> Exportar Tarefas (CSV)</button>
+        <button onClick={exportHoursCSV} className="flex items-center gap-2 px-4 py-2 bg-blue-600/10 text-blue-400 border border-blue-500/30 hover:bg-blue-600/20 rounded-lg text-xs font-semibold transition-colors"><Download size={14}/> Exportar Horas (CSV)</button>
+        <button onClick={exportClientsCSV} className="flex items-center gap-2 px-4 py-2 bg-purple-600/10 text-purple-400 border border-purple-500/30 hover:bg-purple-600/20 rounded-lg text-xs font-semibold transition-colors"><Download size={14}/> Exportar Clientes (CSV)</button>
       </div>
     </div>
   );
 }
 
-// --- Modal de Tarefa ---
-
 function TaskModal({ modal, setModal, clients, responsibles, closeModal, saveModal, validationError, setValidationError }) {
-  
-  const updateForm = (patch) => {
-    setModal(m => ({ ...m, form: { ...m.form, ...patch } }));
-    if (validationError) setValidationError(null);
-  };
-
-  const addChecklistRow = () => {
-    setModal(m => ({ ...m, form: { ...m.form, checklist: [...m.form.checklist, { id: nextId(), text: "", done: false }] } }));
-  };
-  
+  const updateForm = (patch) => { setModal(m => ({ ...m, form: { ...m.form, ...patch } })); if (validationError) setValidationError(null); };
+  const addChecklistRow = () => { setModal(m => ({ ...m, form: { ...m.form, checklist: [...m.form.checklist, { id: nextId(), text: "", done: false }] } })); };
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 fade-in">
       <div className="w-full max-w-lg rounded-2xl bg-[#161821] border border-[#2a2d3d] flex flex-col max-h-[90vh] shadow-2xl overflow-hidden">
-        
-        {/* Header Modal */}
         <div className="px-6 py-4 border-b border-[#2a2d3d] flex items-center justify-between bg-[#1a1c24]">
-          <h3 className="font-bold text-base text-white">
-            {modal.mode === "add" ? "Nova Tarefa" : "Editar Tarefa"}
-          </h3>
-          <button onClick={closeModal} className="p-1.5 rounded-lg text-neutral-500 hover:text-white hover:bg-[#2a2d3d] transition-colors">
-            <X size={18} />
-          </button>
+          <h3 className="font-bold text-base text-white">{modal.mode === "add" ? "Nova Tarefa" : "Editar Tarefa"}</h3>
+          <button onClick={closeModal} className="p-1.5 rounded-lg text-neutral-500 hover:text-white hover:bg-[#2a2d3d] transition-colors"><X size={18} /></button>
         </div>
-        
-        {/* Body Modal */}
         <div className="p-6 overflow-y-auto kp-scroll flex flex-col gap-5">
           <div>
             <label className="text-[11px] text-neutral-400 mb-1.5 block uppercase font-medium">Título *</label>
-            <input
-              autoFocus
-              value={modal.form.title}
-              onChange={(e) => updateForm({ title: e.target.value })}
-              className={`w-full bg-[#0f1015] border rounded-lg px-4 py-2.5 text-sm text-white outline-none focus:border-indigo-500 transition-colors ${
-                validationError?.includes("Título") ? "border-red-500" : "border-[#2a2d3d]"
-              }`}
-              placeholder="Nome da tarefa"
-            />
+            <input autoFocus value={modal.form.title} onChange={(e) => updateForm({ title: e.target.value })} className={`w-full bg-[#0f1015] border rounded-lg px-4 py-2.5 text-sm text-white outline-none focus:border-indigo-500 transition-colors ${validationError?.includes("Título") ? "border-red-500" : "border-[#2a2d3d]"}`} placeholder="Nome da tarefa" />
           </div>
-          
           <div>
             <label className="text-[11px] text-neutral-400 mb-1.5 block uppercase font-medium">Descrição</label>
-            <textarea
-              value={modal.form.description}
-              onChange={(e) => updateForm({ description: e.target.value })}
-              rows={3}
-              className="w-full bg-[#0f1015] border border-[#2a2d3d] rounded-lg px-4 py-2.5 text-sm text-white outline-none focus:border-indigo-500 resize-none transition-colors"
-              placeholder="Detalhes opcionais"
-            />
+            <textarea value={modal.form.description} onChange={(e) => updateForm({ description: e.target.value })} rows={3} className="w-full bg-[#0f1015] border border-[#2a2d3d] rounded-lg px-4 py-2.5 text-sm text-white outline-none focus:border-indigo-500 resize-none transition-colors" placeholder="Detalhes opcionais" />
           </div>
-          
           <div className="grid grid-cols-2 gap-4">
-            <CustomSelect
-              label="Prioridade"
-              value={modal.form.priority}
-              onChange={(e) => updateForm({ priority: e.target.value })}
-              options={<><option value="Baixa">Baixa</option><option value="Média">Média</option><option value="Alta">Alta</option></>}
-            />
+            <CustomSelect label="Prioridade" value={modal.form.priority} onChange={(e) => updateForm({ priority: e.target.value })} options={<><option value="Baixa">Baixa</option><option value="Média">Média</option><option value="Alta">Alta</option></>} />
             <div>
               <label className="text-[11px] text-neutral-400 mb-1.5 block uppercase font-medium">Duração (Min)</label>
-              <input
-                type="number"
-                value={modal.form.durationMin}
-                onChange={(e) => updateForm({ durationMin: e.target.value })}
-                className="w-full bg-[#0f1015] border border-[#2a2d3d] rounded-lg px-4 py-2.5 text-sm text-white outline-none focus:border-indigo-500"
-                placeholder="Ex: 120"
-              />
+              <input type="number" value={modal.form.durationMin} onChange={(e) => updateForm({ durationMin: e.target.value })} className="w-full bg-[#0f1015] border border-[#2a2d3d] rounded-lg px-4 py-2.5 text-sm text-white outline-none focus:border-indigo-500" placeholder="Ex: 120" />
             </div>
           </div>
-          
           <div className="grid grid-cols-2 gap-4">
-            <CustomSelect
-              label="Responsável"
-              required
-              hasError={validationError?.includes("Responsável")}
-              value={modal.form.responsibleId}
-              onChange={(e) => updateForm({ responsibleId: e.target.value })}
-              options={<><option value="">Selecione...</option>{responsibles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</>}
-            />
-            <CustomSelect
-              label="Cliente"
-              value={modal.form.clientId}
-              onChange={(e) => updateForm({ clientId: e.target.value })}
-              options={<><option value="">Nenhum</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</>}
-            />
+            <CustomSelect label="Responsável" required hasError={validationError?.includes("Responsável")} value={modal.form.responsibleId} onChange={(e) => updateForm({ responsibleId: e.target.value })} options={<><option value="">Selecione...</option>{responsibles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</>} />
+            <CustomSelect label="Cliente" value={modal.form.clientId} onChange={(e) => updateForm({ clientId: e.target.value })} options={<><option value="">Nenhum</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</>} />
           </div>
-
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="text-[11px] text-neutral-400 mb-1.5 block uppercase font-medium">Data de Entrega</label>
-              <input
-                type="date"
-                value={modal.form.dueDate}
-                onChange={(e) => updateForm({ dueDate: e.target.value })}
-                className="w-full bg-[#0f1015] border border-[#2a2d3d] rounded-lg px-4 py-2 text-sm text-white outline-none focus:border-indigo-500 [color-scheme:dark]"
-              />
+              <input type="date" value={modal.form.dueDate} onChange={(e) => updateForm({ dueDate: e.target.value })} className="w-full bg-[#0f1015] border border-[#2a2d3d] rounded-lg px-4 py-2 text-sm text-white outline-none focus:border-indigo-500 [color-scheme:dark]" />
             </div>
-            <CustomSelect
-              label="Etapa / Status"
-              value={modal.form.status}
-              onChange={(e) => updateForm({ status: e.target.value, waitingFor: e.target.value === 'waiting' ? modal.form.waitingFor : "" })}
-              options={COLUMNS.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            />
+            <CustomSelect label="Etapa / Status" value={modal.form.status} onChange={(e) => updateForm({ status: e.target.value, waitingFor: e.target.value === 'waiting' ? modal.form.waitingFor : "" })} options={COLUMNS.map(c => <option key={c.id} value={c.id}>{c.name}</option>)} />
           </div>
-
           {modal.form.status === 'waiting' && (
             <div className="animate-fade-in">
-              <CustomSelect
-                label="Aguardando Retorno De"
-                required
-                hasError={validationError?.includes("Aguardando Retorno")}
-                value={modal.form.waitingFor || ""}
-                onChange={(e) => updateForm({ waitingFor: e.target.value })}
-                options={<><option value="">Selecione a pendência...</option><option value="Cliente">Cliente</option><option value="Time Rubeus">Time Rubeus</option></>}
-              />
+              <CustomSelect label="Aguardando Retorno De" required hasError={validationError?.includes("Aguardando Retorno")} value={modal.form.waitingFor || ""} onChange={(e) => updateForm({ waitingFor: e.target.value })} options={<><option value="">Selecione a pendência...</option><option value="Cliente">Cliente</option><option value="Time Rubeus">Time Rubeus</option></>} />
             </div>
           )}
-          
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="text-[11px] text-neutral-400 uppercase font-medium">Checklist</label>
-              <button onClick={addChecklistRow} className="text-xs text-indigo-400 hover:text-indigo-300 font-medium flex items-center gap-1">
-                <Plus size={12}/> Adicionar item
-              </button>
+              <button onClick={addChecklistRow} className="text-xs text-indigo-400 hover:text-indigo-300 font-medium flex items-center gap-1"><Plus size={12}/> Adicionar item</button>
             </div>
             <div className="flex flex-col gap-2">
               {modal.form.checklist.map((c) => (
                 <div key={c.id} className="flex items-center gap-2">
-                  <button 
-                    onClick={() => {
-                      setModal(m => ({ ...m, form: { ...m.form, checklist: m.form.checklist.map(ci => ci.id === c.id ? { ...ci, done: !ci.done } : ci) } }));
-                    }}
-                    className={`p-1.5 border rounded-md transition-colors shrink-0 ${c.done ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-400' : 'bg-[#0f1015] border-[#2a2d3d] text-neutral-600 hover:text-neutral-400'}`}
-                  >
-                    <CheckCircle2 size={14}/>
-                  </button>
-                  <input
-                    value={c.text}
-                    onChange={(e) => {
-                      setModal(m => ({ ...m, form: { ...m.form, checklist: m.form.checklist.map(ci => ci.id === c.id ? { ...ci, text: e.target.value } : ci) } }));
-                    }}
-                    className="flex-1 bg-[#0f1015] border border-[#2a2d3d] rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-indigo-500 transition-colors"
-                    placeholder="Item do checklist"
-                  />
-                  <button 
-                    onClick={() => setModal(m => ({ ...m, form: { ...m.form, checklist: m.form.checklist.filter(ci => ci.id !== c.id) } }))} 
-                    className="p-2 text-neutral-500 hover:text-red-400 hover:bg-red-500/10 rounded-md transition-colors"
-                  >
-                    <X size={16} />
-                  </button>
+                  <button onClick={() => { setModal(m => ({ ...m, form: { ...m.form, checklist: m.form.checklist.map(ci => ci.id === c.id ? { ...ci, done: !ci.done } : ci) } })); }} className={`p-1.5 border rounded-md transition-colors shrink-0 ${c.done ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-400' : 'bg-[#0f1015] border-[#2a2d3d] text-neutral-600 hover:text-neutral-400'}`}><CheckCircle2 size={14}/></button>
+                  <input value={c.text} onChange={(e) => { setModal(m => ({ ...m, form: { ...m.form, checklist: m.form.checklist.map(ci => ci.id === c.id ? { ...ci, text: e.target.value } : ci) } })); }} className="flex-1 bg-[#0f1015] border border-[#2a2d3d] rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-indigo-500 transition-colors" placeholder="Item do checklist" />
+                  <button onClick={() => setModal(m => ({ ...m, form: { ...m.form, checklist: m.form.checklist.filter(ci => ci.id !== c.id) } }))} className="p-2 text-neutral-500 hover:text-red-400 hover:bg-red-500/10 rounded-md transition-colors"><X size={16} /></button>
                 </div>
               ))}
             </div>
           </div>
         </div>
-        
-        {/* Footer Modal */}
         <div className="px-6 py-4 border-t border-[#2a2d3d] flex items-center justify-end gap-3 bg-[#1a1c24]">
-          <button onClick={closeModal} className="text-sm px-4 py-2 rounded-lg text-neutral-400 hover:text-white transition-colors">
-            Cancelar
-          </button>
-          <button onClick={saveModal} className="text-sm px-6 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition-colors">
-            {modal.mode === "add" ? "Criar Tarefa" : "Salvar Alterações"}
-          </button>
+          <button onClick={closeModal} className="text-sm px-4 py-2 rounded-lg text-neutral-400 hover:text-white transition-colors">Cancelar</button>
+          <button onClick={saveModal} className="text-sm px-6 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition-colors">{modal.mode === "add" ? "Criar Tarefa" : "Salvar Alterações"}</button>
         </div>
       </div>
-
-      {/* Alerta de Validação sobreposto */}
       {validationError && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-red-500 text-white px-4 py-2.5 rounded-lg shadow-lg flex items-center gap-2 fade-in z-[60] font-medium text-sm">
-          <AlertTriangle size={16} />
-          Preencha: {validationError.join(", ")}
-        </div>
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-red-500 text-white px-4 py-2.5 rounded-lg shadow-lg flex items-center gap-2 fade-in z-[60] font-medium text-sm"><AlertTriangle size={16} />Preencha: {validationError.join(", ")}</div>
       )}
     </div>
   );

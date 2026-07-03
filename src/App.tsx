@@ -4,7 +4,7 @@ import {
   Users, Building2, BarChart3, LogOut, RotateCcw, 
   Filter, AlertTriangle, GripVertical, Download, 
   Play, Square, CheckCircle2, User, CheckSquare,
-  HelpCircle, ChevronDown, LayoutDashboard, Mail, Check, Copy, ClipboardList, Cloud
+  HelpCircle, ChevronDown, LayoutDashboard, Mail, Check, Copy, ClipboardList
 } from "lucide-react";
 
 // ==========================================
@@ -12,9 +12,6 @@ import {
 // ==========================================
 const supabaseUrl = 'https://wztalukwyzqbjcvhrunt.supabase.co'; 
 const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind6dGFsdWt3eXpxYmpjdmhydW50Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMwODM2NDQsImV4cCI6MjA5ODY1OTY0NH0.pvYYtBfK1HY73UbSadb8UiZARYvDFzxfB7qDwFLNUr8'; 
-
-// Inicializa a ligação com o banco de dados
-const supabase = window.supabase ? window.supabase.createClient(supabaseUrl, supabaseKey) : null;
 // ==========================================
 
 // --- Configurações e Dados Iniciais ---
@@ -35,12 +32,6 @@ const PRIORITY_STYLE = {
   Média: { bg: "bg-amber-500/10", text: "text-amber-400", border: "border-amber-500/20", dot: "bg-amber-500" },
   Alta: { bg: "bg-red-500/10", text: "text-red-400", border: "border-red-500/20", dot: "bg-red-500" },
 };
-
-// Dados de exemplo apagados para evitar migração de "fantasmas". 
-// Agora o sistema depende apenas do localStorage ou começa limpo.
-const initialClients = [];
-const initialResponsibles = [];
-const initialTasks = [];
 
 // --- Funções Auxiliares ---
 const nextId = () => Math.random().toString(36).substr(2, 9);
@@ -105,14 +96,25 @@ function LoginScreen({ onLogin }) {
 
 // --- Componente Principal ---
 export default function App() {
+  const [supabaseReady, setSupabaseReady] = useState(!!window.supabaseClient);
+
   useEffect(() => {
-    // Injeta o script do Supabase dinamicamente para evitar problemas de compatibilidade com o bundler do ambiente
-    if (!document.getElementById('supabase-script')) {
-      const script = document.createElement('script');
-      script.id = 'supabase-script';
-      script.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
-      document.body.appendChild(script);
+    if (window.supabase) {
+      if (!window.supabaseClient) {
+        window.supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
+      }
+      setSupabaseReady(true);
+      return;
     }
+
+    const script = document.createElement('script');
+    script.id = 'supabase-script';
+    script.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+    script.onload = () => {
+       window.supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
+       setSupabaseReady(true);
+    };
+    document.body.appendChild(script);
   }, []);
 
   const [user, setUser] = useState(() => localStorage.getItem("kanban_user") || null);
@@ -127,6 +129,17 @@ export default function App() {
     setUser(null);
   };
 
+  if (!supabaseReady) {
+    return (
+      <div className="min-h-screen bg-[#0f1015] flex flex-col items-center justify-center p-4">
+        <div className="w-12 h-12 rounded-xl bg-indigo-500/20 flex items-center justify-center border border-indigo-500/30 mb-6 animate-pulse">
+            <BarChart3 size={24} className="text-indigo-400" />
+        </div>
+        <div className="text-indigo-400 font-medium animate-pulse text-sm">A conectar aos servidores da nuvem...</div>
+      </div>
+    );
+  }
+
   if (!user) {
     return <LoginScreen onLogin={handleLogin} />;
   }
@@ -135,19 +148,52 @@ export default function App() {
 }
 
 function KanbanMain({ user, onLogout }) {
-  const [tasks, setTasks] = useState(() => {
-    const saved = localStorage.getItem("kanban_tasks");
-    return saved ? JSON.parse(saved) : initialTasks;
-  });
-  const [clients, setClients] = useState(() => {
-    const saved = localStorage.getItem("kanban_clients");
-    return saved ? JSON.parse(saved) : initialClients;
-  });
-  const [responsibles, setResponsibles] = useState(() => {
-    const saved = localStorage.getItem("kanban_responsibles");
-    return saved ? JSON.parse(saved) : initialResponsibles;
-  });
+  const [tasks, setTasks] = useState(() => { const saved = localStorage.getItem("kanban_tasks"); return saved ? JSON.parse(saved) : []; });
+  const [clients, setClients] = useState(() => { const saved = localStorage.getItem("kanban_clients"); return saved ? JSON.parse(saved) : []; });
+  const [responsibles, setResponsibles] = useState(() => { const saved = localStorage.getItem("kanban_responsibles"); return saved ? JSON.parse(saved) : []; });
   
+  const [isCloudSynced, setIsCloudSynced] = useState(false);
+
+  // 1. Busca todos os dados do Supabase ao iniciar a aplicação
+  useEffect(() => {
+    async function fetchCloudData() {
+      try {
+        const [resTasks, resClients, resResp] = await Promise.all([
+          window.supabaseClient.from('tasks').select('*'),
+          window.supabaseClient.from('clients').select('*'),
+          window.supabaseClient.from('responsibles').select('*')
+        ]);
+
+        // Se houver dados na nuvem, substitui os locais (isso resolve o problema do navegador vazio)
+        if (resTasks.data && resTasks.data.length > 0) setTasks(resTasks.data);
+        if (resClients.data && resClients.data.length > 0) setClients(resClients.data);
+        if (resResp.data && resResp.data.length > 0) setResponsibles(resResp.data);
+
+      } catch (error) {
+        console.error("Erro ao buscar dados do Supabase:", error);
+      } finally {
+        setIsCloudSynced(true);
+      }
+    }
+    fetchCloudData();
+  }, []);
+
+  // 2. Sempre que os dados mudam localmente, guarda-os também no Supabase
+  useEffect(() => {
+    localStorage.setItem("kanban_tasks", JSON.stringify(tasks));
+    if (isCloudSynced && tasks.length > 0) window.supabaseClient.from('tasks').upsert(tasks).then();
+  }, [tasks, isCloudSynced]);
+
+  useEffect(() => {
+    localStorage.setItem("kanban_clients", JSON.stringify(clients));
+    if (isCloudSynced && clients.length > 0) window.supabaseClient.from('clients').upsert(clients).then();
+  }, [clients, isCloudSynced]);
+
+  useEffect(() => {
+    localStorage.setItem("kanban_responsibles", JSON.stringify(responsibles));
+    if (isCloudSynced && responsibles.length > 0) window.supabaseClient.from('responsibles').upsert(responsibles).then();
+  }, [responsibles, isCloudSynced]);
+
   const [activeTab, setActiveTab] = useState('board'); 
   const [filterClient, setFilterClient] = useState("all");
   const [filterResp, setFilterResp] = useState("all");
@@ -156,83 +202,13 @@ function KanbanMain({ user, onLogout }) {
   const [modal, setModal] = useState(null); 
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [validationError, setValidationError] = useState(null);
-  const [migrating, setMigrating] = useState(false);
   
-  // Modais Secundários (Fluxos de Trabalho)
   const [waitingPrompt, setWaitingPrompt] = useState(null);
   const [donePrompt, setDonePrompt] = useState(null);
   const [closureModal, setClosureModal] = useState(false);
   const [dragOverId, setDragOverId] = useState(null);
   
   const [now, setNow] = useState(Date.now());
-
-  // Salvamento Automático Local (Mantido por segurança enquanto testamos a migração)
-  useEffect(() => { localStorage.setItem("kanban_tasks", JSON.stringify(tasks)); }, [tasks]);
-  useEffect(() => { localStorage.setItem("kanban_clients", JSON.stringify(clients)); }, [clients]);
-  useEffect(() => { localStorage.setItem("kanban_responsibles", JSON.stringify(responsibles)); }, [responsibles]);
-
-  // Função para Migrar Dados para o Supabase
-  const migrateToSupabase = async () => {
-    if (!window.supabase) {
-      alert("A biblioteca do Supabase ainda está a carregar. Tente novamente em alguns segundos.");
-      return;
-    }
-
-    const confirmar = window.confirm("Deseja copiar todos os dados atuais do seu navegador para a nuvem do Supabase?");
-    if (!confirmar) return;
-
-    setMigrating(true);
-    try {
-      const supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
-
-      // 1. Migrar Clientes
-      if (clients.length > 0) {
-        // Formatar para garantir que os emails são um array JSON válido
-        const formattedClients = clients.map(c => ({
-          id: c.id.toString(),
-          name: c.name || '',
-          emails: Array.isArray(c.emails) ? c.emails : (c.email ? c.email.split(',').map(e=>e.trim()) : [])
-        }));
-        const { error } = await supabaseClient.from('clients').upsert(formattedClients);
-        if (error) throw new Error("Erro ao migrar clientes: " + error.message);
-      }
-
-      // 2. Migrar Responsáveis
-      if (responsibles.length > 0) {
-        const formattedResp = responsibles.map(r => ({ id: r.id.toString(), name: r.name || '' }));
-        const { error } = await supabaseClient.from('responsibles').upsert(formattedResp);
-        if (error) throw new Error("Erro ao migrar responsáveis: " + error.message);
-      }
-
-      // 3. Migrar Tarefas
-      if (tasks.length > 0) {
-        const formattedTasks = tasks.map(t => ({
-          id: t.id.toString(),
-          title: t.title || '',
-          description: t.description || '',
-          priority: t.priority || 'Média',
-          clientId: t.clientId || null,
-          responsibleId: t.responsibleId || null,
-          status: t.status || 'backlog',
-          durationMin: parseInt(t.durationMin) || 0,
-          dueDate: t.dueDate || null,
-          waitingFor: t.waitingFor || null,
-          checklist: t.checklist || [],
-          timerRunning: t.timerRunning || false,
-          timerStart: t.timerStart || 0,
-          timerElapsed: t.timerElapsed || 0
-        }));
-        const { error } = await supabaseClient.from('tasks').upsert(formattedTasks);
-        if (error) throw new Error("Erro ao migrar tarefas: " + error.message);
-      }
-
-      alert("🚀 Sucesso! Todas as suas listas e tarefas foram enviadas para o Supabase.");
-    } catch (error) {
-      console.error(error);
-      alert(error.message);
-    }
-    setMigrating(false);
-  };
 
   // Relógio do cronómetro
   useEffect(() => {
@@ -316,7 +292,6 @@ function KanbanMain({ user, onLogout }) {
             timerStart = null;
           }
 
-          // Atualizar o tempo real de execução se for editada manualmente a duração num card concluído
           if (!timerRunning && (f.status === 'done' || f.status === 'formalize' || f.status === 'cancelled')) {
             timerElapsed = (parseInt(f.durationMin) || 0) * 60;
           }
@@ -348,13 +323,11 @@ function KanbanMain({ user, onLogout }) {
     );
   }
 
-  // --- Sistema Centralizado de Movimentação (Intercepta "Concluído") ---
   const handleRequestMove = (taskId, targetId, newStatus) => {
     const task = tasks.find(t => t.id.toString() === taskId.toString());
     if (!task) return;
 
     if (newStatus === 'done' && task.status !== 'done') {
-      // Pega a data de hoje garantindo o fuso horário local
       const today = new Date();
       const year = today.getFullYear();
       const month = String(today.getMonth() + 1).padStart(2, '0');
@@ -515,17 +488,9 @@ function KanbanMain({ user, onLogout }) {
           <span className="text-xs px-2.5 py-1 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 ml-2">
             Olá, {user}!
           </span>
+          {isCloudSynced && <span className="ml-2 text-[10px] text-green-500 flex items-center gap-1"><Cloud size={12}/> Nuvem Ativa</span>}
         </div>
         <div className="flex items-center gap-2">
-          {/* NOVO: Botão de Migração (Ficará invisível depois que formos para a Nuvem de vez) */}
-          <HeaderBtn 
-            icon={<Cloud size={14} className={migrating ? "animate-pulse" : ""} />} 
-            label={migrating ? "A Migrar..." : "Migrar para a Nuvem"} 
-            onClick={migrateToSupabase} 
-            color="indigo" 
-          />
-          <div className="w-px h-6 bg-[#2a2d3d] mx-1"></div>
-          
           <HeaderBtn icon={<LayoutDashboard size={14} />} label="Quadro Inicial" active={activeTab === 'board'} onClick={() => setActiveTab('board')} color="indigo" />
           <HeaderBtn icon={<Clock size={14} />} label="Cronómetro" active={activeTab === 'timer'} onClick={() => setActiveTab('timer')} color="amber" />
           <HeaderBtn icon={<Users size={14} />} label="Responsáveis" active={activeTab === 'responsibles'} onClick={() => setActiveTab('responsibles')} color="indigo" />
@@ -911,7 +876,17 @@ function KanbanMain({ user, onLogout }) {
               <button onClick={() => setConfirmDelete(null)} className="text-sm px-4 py-2 rounded-lg text-neutral-400 hover:text-white transition-colors">
                 Cancelar
               </button>
-              <button onClick={() => { setTasks(prev => prev.filter((t) => t.id !== confirmDelete)); setConfirmDelete(null); }} className="text-sm px-5 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white font-medium transition-colors">
+              <button 
+                onClick={async () => {
+                  const idToDelete = confirmDelete;
+                  setTasks(prev => prev.filter((t) => t.id !== idToDelete));
+                  setConfirmDelete(null);
+                  if (window.supabaseClient) {
+                    await window.supabaseClient.from('tasks').delete().eq('id', idToDelete.toString());
+                  }
+                }} 
+                className="text-sm px-5 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white font-medium transition-colors"
+              >
                 Apagar Card
               </button>
             </div>
@@ -1254,7 +1229,13 @@ function TimerPanel({ tasks, now, getElapsed, onToggleTimer }) {
 function ResponsiblesPanel({ responsibles, setResponsibles, tasks, setTasks }) {
   const [name, setName] = useState('');
   const add = () => { if (!name.trim()) return; setResponsibles([...responsibles, { id: 'r'+Date.now(), name: name.trim() }]); setName(''); };
-  const remove = (id) => { setResponsibles(prev => prev.filter(r => r.id !== id)); setTasks(prev => prev.map(t => t.responsibleId === id ? { ...t, responsibleId: '' } : t)); };
+  const remove = async (id) => { 
+    setResponsibles(prev => prev.filter(r => r.id !== id)); 
+    setTasks(prev => prev.map(t => t.responsibleId === id ? { ...t, responsibleId: '' } : t)); 
+    if (window.supabaseClient) {
+      await window.supabaseClient.from('responsibles').delete().eq('id', id.toString());
+    }
+  };
 
   return (
     <div className="p-6 border-b border-[#2a2d3d] bg-[#1a1c24] fade-in shadow-inner">
@@ -1405,9 +1386,12 @@ function ClientsPanel({ clients, setClients, tasks, setTasks }) {
     setClientModal({ mode: 'edit', form: { ...client, emails: emailsArray } });
   };
 
-  const remove = (id) => { 
+  const remove = async (id) => { 
     setClients(prev => prev.filter(c => c.id !== id)); 
     setTasks(prev => prev.map(t => t.clientId === id ? { ...t, clientId: '' } : t)); 
+    if (window.supabaseClient) {
+      await window.supabaseClient.from('clients').delete().eq('id', id.toString());
+    }
   };
 
   return (

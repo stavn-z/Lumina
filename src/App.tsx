@@ -4,7 +4,8 @@ import {
   Users, Building2, BarChart3, LogOut, RotateCcw, 
   Filter, AlertTriangle, GripVertical, Download, 
   Play, Square, CheckCircle2, User, CheckSquare,
-  HelpCircle, ChevronDown, LayoutDashboard, Mail, Check, Copy, ClipboardList, Cloud, Lock
+  HelpCircle, ChevronDown, LayoutDashboard, Mail, Check, Copy, ClipboardList, Cloud, Lock,
+  Eye, EyeOff
 } from "lucide-react";
 
 // ==========================================
@@ -64,6 +65,7 @@ function downloadCSV(dataArray, filename) {
 function LoginScreen({ onLogin }) {
   const [name, setName] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   
@@ -131,20 +133,29 @@ function LoginScreen({ onLogin }) {
               autoFocus
               className="w-full bg-[#0f1015] border border-[#2a2d3d] rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-indigo-500 transition-colors" 
               placeholder="Digite o seu nome" 
-              value={name} 
+              value={name ?? ''} 
               onChange={e => setName(e.target.value)}
             />
           </div>
           <div>
             <label className="text-[11px] font-medium uppercase text-neutral-400 mb-1.5 block">Senha</label>
-            <input 
-              type="password"
-              className="w-full bg-[#0f1015] border border-[#2a2d3d] rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-indigo-500 transition-colors" 
-              placeholder="Sua senha secreta" 
-              value={password} 
-              onChange={e => setPassword(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleLoginSubmit()}
-            />
+            <div className="relative">
+              <input 
+                type={showPassword ? "text" : "password"}
+                className="w-full bg-[#0f1015] border border-[#2a2d3d] rounded-xl px-4 py-3 pr-10 text-sm text-white outline-none focus:border-indigo-500 transition-colors" 
+                placeholder="Sua senha secreta" 
+                value={password ?? ''} 
+                onChange={e => setPassword(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleLoginSubmit()}
+              />
+              <button 
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-neutral-300 transition-colors p-1"
+              >
+                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
           </div>
           <button 
             disabled={!name.trim() || !password || loading}
@@ -188,7 +199,7 @@ export default function App() {
       const saved = localStorage.getItem("kanban_user_obj");
       return saved ? JSON.parse(saved) : null;
     } catch {
-      return null; // Força re-login se houver lixo antigo
+      return null;
     }
   });
 
@@ -228,7 +239,7 @@ function KanbanMain({ user, onLogout }) {
   const [isCloudSynced, setIsCloudSynced] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  // 1. Busca dados do Supabase
+  // Busca dados da Nuvem
   useEffect(() => {
     async function fetchCloudData() {
       try {
@@ -238,7 +249,7 @@ function KanbanMain({ user, onLogout }) {
           window.supabaseClient.from('responsibles').select('*')
         ]);
 
-        if (resTasks.data) setTasks(resTasks.data);
+        if (resTasks.data) setTasks(resTasks.data.map(t => ({...t, checklist: Array.isArray(t.checklist) ? t.checklist : []})));
         if (resClients.data) setClients(resClients.data);
         if (resResp.data) setResponsibles(resResp.data);
 
@@ -252,7 +263,7 @@ function KanbanMain({ user, onLogout }) {
     fetchCloudData();
   }, []);
 
-  // 2. Sincronização Automática
+  // Sincroniza Tarefas
   useEffect(() => {
     if (isCloudSynced && tasks.length > 0) {
       const safeTasks = tasks.map(t => ({
@@ -264,11 +275,13 @@ function KanbanMain({ user, onLogout }) {
         responsibleId: t.responsibleId || null,
         dueDate: t.dueDate || null,
         waitingFor: t.waitingFor || null,
+        checklist: Array.isArray(t.checklist) ? t.checklist : []
       }));
       window.supabaseClient.from('tasks').upsert(safeTasks).then();
     }
   }, [tasks, isCloudSynced]);
 
+  // Sincroniza Clientes
   useEffect(() => {
     if (isCloudSynced && clients.length > 0) {
       const safeClients = clients.map(c => ({
@@ -304,13 +317,11 @@ function KanbanMain({ user, onLogout }) {
 
   const getElapsed = (t) => {
     if (t.timerRunning) return t.timerElapsed + (now - t.timerStart) / 1000;
-    return t.timerElapsed;
+    return t.timerElapsed || 0;
   };
 
-  // Lógica de Permissão
   const canEditTask = (taskRespId) => taskRespId === user.id;
 
-  // Filtros Globais (Admin vê tudo, Usuário vê só os dele)
   const visibleTasks = user.isAdmin ? tasks : tasks.filter(t => t.responsibleId === user.id);
   
   const filteredTasks = visibleTasks.filter(
@@ -325,7 +336,6 @@ function KanbanMain({ user, onLogout }) {
   const overallProgress = activeTasksCount ? Math.round((doneCount / activeTasksCount) * 100) : 0;
   const doneTasks = visibleTasks.filter(t => t.status === 'done');
 
-  // Modais
   const emptyForm = { title: "", description: "", priority: "Média", durationMin: "", clientId: "", responsibleId: user.id, dueDate: "", status: "", waitingFor: "", checklist: [] };
 
   function openAddModal(status) {
@@ -334,7 +344,7 @@ function KanbanMain({ user, onLogout }) {
   }
   function openEditModal(task) {
     setValidationError(null);
-    setModal({ mode: "edit", task, form: { ...task, checklist: task.checklist.map((c) => ({ ...c })) } });
+    setModal({ mode: "edit", task, form: { ...task, checklist: Array.isArray(task.checklist) ? task.checklist.map((c) => ({ ...c })) : [] } });
   }
   function closeModal() {
     setModal(null);
@@ -353,8 +363,7 @@ function KanbanMain({ user, onLogout }) {
       return;
     }
 
-    // Interceptação Automática do Checklist Completo
-    const allDone = f.checklist.length > 0 && f.checklist.every(c => c.done);
+    const allDone = f.checklist && f.checklist.length > 0 && f.checklist.every(c => c.done);
     let finalStatus = f.status || modal.status;
 
     if (allDone && finalStatus !== 'done' && finalStatus !== 'cancelled' && finalStatus !== 'formalize') {
@@ -373,7 +382,6 @@ function KanbanMain({ user, onLogout }) {
         return;
     }
 
-    // Fluxo Normal (Não é Concluído)
     if (modal.mode === "add") {
       const newTask = {
         id: nextId(),
@@ -386,7 +394,7 @@ function KanbanMain({ user, onLogout }) {
         dueDate: f.dueDate || null,
         status: finalStatus,
         waitingFor: f.waitingFor || null,
-        checklist: f.checklist.filter((c) => c.text.trim()),
+        checklist: (f.checklist || []).filter((c) => c.text.trim()),
         timerRunning: false,
         timerStart: null,
         timerElapsed: 0,
@@ -422,7 +430,7 @@ function KanbanMain({ user, onLogout }) {
             dueDate: f.dueDate || null,
             status: finalStatus,
             waitingFor: f.waitingFor || null,
-            checklist: f.checklist.filter((c) => c.text.trim()),
+            checklist: (f.checklist || []).filter((c) => c.text.trim()),
             timerRunning, timerElapsed, timerStart
           };
         })
@@ -449,11 +457,17 @@ function KanbanMain({ user, onLogout }) {
     if (!task) return;
 
     if (newStatus === 'done' && task.status !== 'done') {
+      const today = new Date();
+      const year = today.getFullYear();
+      const month = String(today.getMonth() + 1).padStart(2, '0');
+      const day = String(today.getDate()).padStart(2, '0');
+      const localDateStr = `${year}-${month}-${day}`;
+
       setDonePrompt({
         isFromModal: false,
         taskId,
         targetId,
-        date: getBrasiliaDate(),
+        date: localDateStr,
         durationMin: Math.round(task.timerElapsed / 60) || task.durationMin || ""
       });
       return;
@@ -469,7 +483,6 @@ function KanbanMain({ user, onLogout }) {
     }
     setValidationError(null);
 
-    // Se veio do salvamento do Modal via Auto-Conclusão
     if (donePrompt.isFromModal) {
       const finalTask = {
          ...donePrompt.draftData,
@@ -490,7 +503,6 @@ function KanbanMain({ user, onLogout }) {
       return;
     }
 
-    // Se veio do Drag and Drop
     setTasks(prev => {
       const fromIndex = prev.findIndex(t => t.id.toString() === donePrompt.taskId.toString());
       if (fromIndex === -1) return prev;
@@ -574,12 +586,12 @@ function KanbanMain({ user, onLogout }) {
     setTasks(prev => {
       const newTasks = prev.map(t => {
         if (t.id !== taskId) return t;
-        const newChecklist = t.checklist.map(c => c.id === itemId ? { ...c, done: !c.done } : c);
+        const newChecklist = (t.checklist || []).map(c => c.id === itemId ? { ...c, done: !c.done } : c);
         return { ...t, checklist: newChecklist };
       });
 
       const updatedTask = newTasks.find(t => t.id === taskId);
-      const allDone = updatedTask.checklist.length > 0 && updatedTask.checklist.every(c => c.done);
+      const allDone = updatedTask.checklist && updatedTask.checklist.length > 0 && updatedTask.checklist.every(c => c.done);
 
       if (allDone && updatedTask.status !== 'done' && updatedTask.status !== 'cancelled' && updatedTask.status !== 'formalize') {
         setTimeout(() => handleRequestMove(taskId, null, 'done'), 0);
@@ -733,8 +745,9 @@ function KanbanMain({ user, onLogout }) {
                       </div>
                     )}
                     {colTasks.map((t) => {
-                      const total = t.checklist.length;
-                      const done = t.checklist.filter((c) => c.done).length;
+                      const tChecklist = Array.isArray(t.checklist) ? t.checklist : [];
+                      const total = tChecklist.length;
+                      const done = tChecklist.filter((c) => c.done).length;
                       const pct = total ? Math.round((done / total) * 100) : 0;
                       const client = clients.find(c => c.id === t.clientId);
                       const resp = responsibles.find(r => r.id === t.responsibleId);
@@ -812,7 +825,7 @@ function KanbanMain({ user, onLogout }) {
                                 <div className={`h-full rounded-full transition-all ${pct === 100 ? 'bg-green-500' : 'bg-blue-500'}`} style={{ width: `${pct}%` }} />
                               </div>
                               <div className="flex flex-col gap-1.5">
-                                {t.checklist.map((c) => (
+                                {tChecklist.map((c) => (
                                   <label key={c.id} className={`flex items-start gap-2 text-[11px] text-neutral-400 transition-colors ${isEditable ? 'cursor-pointer hover:text-neutral-300' : 'cursor-not-allowed'}`}>
                                     <input
                                       type="checkbox"
@@ -933,14 +946,14 @@ function KanbanMain({ user, onLogout }) {
             <div className="p-6 flex flex-col gap-4">
               {validationError && (
                 <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs px-3 py-2 rounded-lg flex items-center gap-2">
-                  <AlertTriangle size={14} /> {validationError[0]}
+                  <AlertTriangle size={14} /> {Array.isArray(validationError) ? validationError.join(", ") : String(validationError)}
                 </div>
               )}
               <div>
                 <label className="text-[11px] text-neutral-400 mb-1.5 block uppercase font-medium">Data de Entrega *</label>
                 <input 
                   type="date" 
-                  value={donePrompt.date} 
+                  value={donePrompt.date ?? ''} 
                   onChange={e => { setDonePrompt({...donePrompt, date: e.target.value}); setValidationError(null); }} 
                   className="w-full bg-[#0f1015] border border-[#2a2d3d] rounded-lg px-4 py-2.5 text-sm text-white outline-none focus:border-green-500 [color-scheme:dark]" 
                 />
@@ -949,7 +962,7 @@ function KanbanMain({ user, onLogout }) {
                 <label className="text-[11px] text-neutral-400 mb-1.5 block uppercase font-medium">Tempo Final de Execução (Minutos) *</label>
                 <input 
                   type="number" 
-                  value={donePrompt.durationMin} 
+                  value={donePrompt.durationMin ?? ''} 
                   onChange={e => { setDonePrompt({...donePrompt, durationMin: e.target.value}); setValidationError(null); }} 
                   className="w-full bg-[#0f1015] border border-[#2a2d3d] rounded-lg px-4 py-2.5 text-sm text-white outline-none focus:border-green-500" 
                 />
@@ -1079,7 +1092,7 @@ function FilterSelect({ value, onChange, options, defaultLabel }) {
   return (
     <div className="relative flex items-center">
       <select 
-        value={value} 
+        value={value ?? ''} 
         onChange={(e) => onChange(e.target.value)} 
         className="appearance-none text-[11px] bg-[#0f1015] border border-[#2a2d3d] rounded-lg pl-3 pr-8 py-2 text-neutral-300 outline-none focus:border-indigo-500 cursor-pointer transition-colors hover:border-[#3f4359]"
       >
@@ -1101,7 +1114,7 @@ function CustomSelect({ label, value, onChange, options, hasError, required }) {
       </label>
       <div className="relative flex items-center">
         <select
-          value={value}
+          value={value ?? ''}
           onChange={onChange}
           className={`appearance-none w-full bg-[#0f1015] border rounded-lg pl-4 pr-10 py-2.5 text-sm text-white outline-none focus:border-indigo-500 transition-colors cursor-pointer ${hasError ? 'border-red-500' : 'border-[#2a2d3d]'}`}
         >
@@ -1113,7 +1126,6 @@ function CustomSelect({ label, value, onChange, options, hasError, required }) {
   );
 }
 
-// --- Funções Auxiliares de Alerta de Horas ---
 function generateLimitEmailLink(clientData, consumedHours) {
   const emails = clientData?.emails || (clientData?.email ? [clientData.email] : []);
   const emailTo = emails.join(',');
@@ -1125,7 +1137,6 @@ function generateLimitEmailLink(clientData, consumedHours) {
   return `https://mail.google.com/mail/?view=cm&fs=1&to=${emailTo}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
 
-// --- Componente: Fechamento Semanal (Automação de E-mails) ---
 function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize }) {
   const [copiedId, setCopiedId] = useState(null);
   const [copiedNotionId, setCopiedNotionId] = useState(null);
@@ -1239,7 +1250,7 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize }) {
                       <label className="text-[10px] text-neutral-500 uppercase tracking-wider mb-1 block">Data da Reunião (Opcional)</label>
                       <input 
                          type="date" 
-                         value={mData.date} 
+                         value={mData.date ?? ''} 
                          onChange={e => setMeetingData({...meetingData, [clientId]: {...mData, date: e.target.value}})} 
                          className="w-full bg-[#161821] border border-[#2a2d3d] rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-purple-500 [color-scheme:dark]" 
                       />
@@ -1248,7 +1259,7 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize }) {
                       <label className="text-[10px] text-neutral-500 uppercase tracking-wider mb-1 block">Link da Gravação (Opcional)</label>
                       <input 
                          type="text" 
-                         value={mData.link} 
+                         value={mData.link ?? ''} 
                          onChange={e => setMeetingData({...meetingData, [clientId]: {...mData, link: e.target.value}})} 
                          className="w-full bg-[#161821] border border-[#2a2d3d] rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-purple-500" 
                          placeholder="Ex: meet.google.com/..." 
@@ -1319,8 +1330,6 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize }) {
   );
 }
 
-// --- Demais Painéis ---
-
 function TimerPanel({ tasks, now, getElapsed, onToggleTimer, user }) {
   const activeTasks = tasks.filter(t => (t.timerRunning || t.timerElapsed > 0) && t.responsibleId === user.id).sort((a,b) => b.timerRunning - a.timerRunning);
   
@@ -1335,7 +1344,7 @@ function TimerPanel({ tasks, now, getElapsed, onToggleTimer, user }) {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {activeTasks.length === 0 && (
           <div className="col-span-full py-8 text-center text-sm text-neutral-500 border border-dashed border-[#2a2d3d] rounded-xl">
-            Nenhuma tarefa sua com tempo registado. Inicie o temporizador nalgum cartão no quadro.
+            Nenhuma tarefa com tempo registado. Inicie o temporizador nalgum cartão no quadro.
           </div>
         )}
         {activeTasks.map(t => {
@@ -1413,11 +1422,11 @@ function ResponsiblesPanel({ responsibles, setResponsibles, tasks, setTasks, use
         <div className="bg-[#161821] p-4 rounded-xl border border-[#2a2d3d] mb-6 flex gap-3 max-w-2xl items-end">
           <div className="flex-1">
             <label className="text-xs text-neutral-400 mb-1.5 block uppercase tracking-wider">Nome</label>
-            <input value={name} onChange={e=>setName(e.target.value)} className="w-full bg-[#0f1015] border border-[#2a2d3d] rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-indigo-500" placeholder="Ex: João da Silva" />
+            <input value={name ?? ''} onChange={e=>setName(e.target.value)} className="w-full bg-[#0f1015] border border-[#2a2d3d] rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-indigo-500" placeholder="Ex: João da Silva" />
           </div>
           <div className="flex-1">
             <label className="text-xs text-neutral-400 mb-1.5 block uppercase tracking-wider">Senha Inicial</label>
-            <input type="password" value={password} onChange={e=>setPassword(e.target.value)} onKeyDown={e=>e.key === 'Enter' && add()} className="w-full bg-[#0f1015] border border-[#2a2d3d] rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-indigo-500" placeholder="Ex: 12345" />
+            <input type="password" value={password ?? ''} onChange={e=>setPassword(e.target.value)} onKeyDown={e=>e.key === 'Enter' && add()} className="w-full bg-[#0f1015] border border-[#2a2d3d] rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-indigo-500" placeholder="Ex: 12345" />
           </div>
           <button onClick={add} className="h-[38px] px-5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"><Plus size={16}/> Criar Utilizador</button>
         </div>
@@ -1453,7 +1462,7 @@ function ClientModal({ modal, setModal, setClients }) {
       setValidationError("Insira um e-mail válido.");
       return;
     }
-    setForm(prev => ({ ...prev, emails: [...prev.emails, newEmail.trim()] }));
+    setForm(prev => ({ ...prev, emails: [...(prev.emails || []), newEmail.trim()] }));
     setNewEmail("");
     setValidationError(null);
   };
@@ -1463,7 +1472,7 @@ function ClientModal({ modal, setModal, setClients }) {
   };
 
   const saveClient = () => {
-    if (!form.name.trim()) {
+    if (!form.name || !form.name.trim()) {
       setValidationError("O nome do cliente é obrigatório.");
       return;
     }
@@ -1489,7 +1498,7 @@ function ClientModal({ modal, setModal, setClients }) {
             <label className="text-[11px] text-neutral-400 mb-1.5 block uppercase font-medium">Nome do Cliente *</label>
             <input 
               autoFocus 
-              value={form.name} 
+              value={form.name ?? ''} 
               onChange={(e) => { setForm({ ...form, name: e.target.value }); setValidationError(null); }} 
               className={`w-full bg-[#0f1015] border rounded-lg px-4 py-2.5 text-sm text-white outline-none focus:border-purple-500 transition-colors ${validationError?.includes("nome") ? "border-red-500" : "border-[#2a2d3d]"}`} 
               placeholder="Ex: Acme Corp" 
@@ -1500,7 +1509,7 @@ function ClientModal({ modal, setModal, setClients }) {
             <label className="text-[11px] text-neutral-400 mb-1.5 block uppercase font-medium">Teto de Horas Contratadas (Mensal)</label>
             <input 
               type="number"
-              value={form.contractedHours || ''} 
+              value={form.contractedHours ?? ''} 
               onChange={(e) => setForm({ ...form, contractedHours: e.target.value })} 
               className={`w-full bg-[#0f1015] border border-[#2a2d3d] rounded-lg px-4 py-2.5 text-sm text-white outline-none focus:border-purple-500 transition-colors`} 
               placeholder="Ex: 50" 
@@ -1511,7 +1520,7 @@ function ClientModal({ modal, setModal, setClients }) {
             <label className="text-[11px] text-neutral-400 mb-1.5 block uppercase font-medium">E-mails (Contactos do Cliente)</label>
             <div className="flex items-center gap-2 mb-3">
               <input 
-                value={newEmail} 
+                value={newEmail ?? ''} 
                 onChange={e => setNewEmail(e.target.value)} 
                 onKeyDown={e => e.key === 'Enter' && handleAddEmail()}
                 className="flex-1 bg-[#0f1015] border border-[#2a2d3d] rounded-lg px-4 py-2.5 text-sm text-white outline-none focus:border-purple-500 transition-colors" 
@@ -1526,12 +1535,12 @@ function ClientModal({ modal, setModal, setClients }) {
             </div>
 
             <div className="flex flex-col gap-2 max-h-32 overflow-y-auto kp-scroll pr-1">
-              {form.emails.length === 0 && (
+              {(!form.emails || form.emails.length === 0) && (
                 <div className="text-center text-xs text-neutral-500 py-3 border border-dashed border-[#2a2d3d] rounded-lg">
                   Nenhum e-mail adicionado.
                 </div>
               )}
-              {form.emails.map((email, index) => (
+              {form.emails && form.emails.map((email, index) => (
                 <div key={index} className="flex items-center justify-between bg-[#0f1015] border border-[#2a2d3d] rounded-lg px-3 py-2">
                   <div className="flex items-center gap-2 text-sm text-neutral-300">
                     <Mail size={14} className="text-purple-400" /> {email}
@@ -1553,7 +1562,7 @@ function ClientModal({ modal, setModal, setClients }) {
       
       {validationError && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-red-500 text-white px-4 py-2.5 rounded-lg shadow-lg flex items-center gap-2 fade-in z-[80] font-medium text-sm">
-          <AlertTriangle size={16} /> {validationError}
+          <AlertTriangle size={16} /> {String(validationError)}
         </div>
       )}
     </div>
@@ -1566,7 +1575,7 @@ function ClientsPanel({ clients, setClients, tasks, setTasks, user, getElapsed, 
   const openAdd = () => setClientModal({ mode: 'add', form: { name: '', emails: [], contractedHours: '' } });
   
   const openEdit = (client) => {
-    const emailsArray = client.emails ? client.emails : (client.email ? client.email.split(',').map(e => e.trim()) : []);
+    const emailsArray = Array.isArray(client.emails) ? client.emails : (client.email ? client.email.split(',').map(e => e.trim()) : []);
     setClientModal({ mode: 'edit', form: { ...client, emails: emailsArray } });
   };
 
@@ -1601,11 +1610,11 @@ function ClientsPanel({ clients, setClients, tasks, setTasks, user, getElapsed, 
         )}
         {clients.map(c => {
           const count = tasks.filter(t => t.clientId === c.id).length;
-          const emailsArray = c.emails ? c.emails : (c.email ? c.email.split(',').map(e => e.trim()) : []);
+          const emailsArray = Array.isArray(c.emails) ? c.emails : (c.email ? c.email.split(',').map(e => e.trim()) : []);
           
           // Cálculo de Alerta de Horas
           const cTasks = tasks.filter(t => t.clientId === c.id);
-          const hours = cTasks.reduce((acc, t) => acc + (getElapsed(t, now) / 3600), 0);
+          const hours = cTasks.reduce((acc, t) => acc + (getElapsed(t) / 3600), 0);
           const remaining = c.contractedHours ? c.contractedHours - hours : null;
           const isNearLimit = remaining !== null && remaining <= 5;
           
@@ -1664,8 +1673,8 @@ function ReportsPanel({ tasks, clients, responsibles, now, getElapsed }) {
       const clientName = clients.find(c => c.id === t.clientId)?.name || '-';
       const respName = responsibles.find(r => r.id === t.responsibleId)?.name || '-';
       const statusName = COLUMNS.find(c => c.id === t.status)?.name || t.status;
-      const elapsedH = (getElapsed(t, now) / 3600).toFixed(2);
-      return [t.id, `"${t.title.replace(/"/g, '""')}"`, statusName, t.priority, `"${clientName}"`, `"${respName}"`, t.durationMin || 0, elapsedH].join(',');
+      const elapsedH = (getElapsed(t) / 3600).toFixed(2);
+      return [t.id, `"${String(t.title).replace(/"/g, '""')}"`, statusName, t.priority, `"${clientName}"`, `"${respName}"`, t.durationMin || 0, elapsedH].join(',');
     });
     downloadCSV([headers.join(','), ...rows], 'tarefas.csv');
   };
@@ -1673,8 +1682,8 @@ function ReportsPanel({ tasks, clients, responsibles, now, getElapsed }) {
     const headers = ["Responsável", "Tarefas", "Horas Totais"];
     const rows = responsibles.map(r => {
       const rTasks = tasks.filter(t => t.responsibleId === r.id);
-      const hours = rTasks.reduce((acc, t) => acc + (getElapsed(t, now) / 3600), 0).toFixed(2);
-      return [`"${r.name}"`, rTasks.length, hours].join(',');
+      const hours = rTasks.reduce((acc, t) => acc + (getElapsed(t) / 3600), 0).toFixed(2);
+      return [`"${String(r.name)}"`, rTasks.length, hours].join(',');
     });
     downloadCSV([headers.join(','), ...rows], 'horas.csv');
   };
@@ -1682,8 +1691,9 @@ function ReportsPanel({ tasks, clients, responsibles, now, getElapsed }) {
     const headers = ["Cliente", "E-mails", "Total Tarefas"];
     const rows = clients.map(c => {
       const count = tasks.filter(t => t.clientId === c.id).length;
-      const emailsStr = c.emails ? c.emails.join('; ') : (c.email || '');
-      return [`"${c.name}"`, `"${emailsStr}"`, count].join(',');
+      const emailsArray = Array.isArray(c.emails) ? c.emails : (c.email ? c.email.split(',').map(e => e.trim()) : []);
+      const emailsStr = emailsArray.join('; ');
+      return [`"${String(c.name)}"`, `"${emailsStr}"`, count].join(',');
     });
     downloadCSV([headers.join(','), ...rows], 'clientes.csv');
   };
@@ -1714,7 +1724,7 @@ function ReportsPanel({ tasks, clients, responsibles, now, getElapsed }) {
           <div className="flex flex-col gap-2">
             {responsibles.map(r => {
               const rTasks = tasks.filter(t => t.responsibleId === r.id);
-              const hours = rTasks.reduce((acc, t) => acc + (getElapsed(t, now) / 3600), 0);
+              const hours = rTasks.reduce((acc, t) => acc + (getElapsed(t) / 3600), 0);
               return (
                 <div key={r.id} className="bg-[#161821] border border-[#2a2d3d] p-3 rounded-lg">
                   <div className="text-sm text-neutral-200 font-semibold mb-1">{r.name}</div>
@@ -1730,7 +1740,7 @@ function ReportsPanel({ tasks, clients, responsibles, now, getElapsed }) {
             {clients.map(c => {
               const cTasks = tasks.filter(t => t.clientId === c.id);
               if (cTasks.length === 0) return null;
-              const hours = cTasks.reduce((acc, t) => acc + (getElapsed(t, now) / 3600), 0);
+              const hours = cTasks.reduce((acc, t) => acc + (getElapsed(t) / 3600), 0);
               return (
                 <div key={c.id} className="bg-[#161821] border border-[#2a2d3d] p-3 rounded-lg">
                   <div className="text-sm text-neutral-200 font-semibold mb-1">{c.name}</div>
@@ -1746,6 +1756,79 @@ function ReportsPanel({ tasks, clients, responsibles, now, getElapsed }) {
         <button onClick={exportHoursCSV} className="flex items-center gap-2 px-4 py-2 bg-blue-600/10 text-blue-400 border border-blue-500/30 hover:bg-blue-600/20 rounded-lg text-xs font-semibold transition-colors"><Download size={14}/> Exportar Horas (CSV)</button>
         <button onClick={exportClientsCSV} className="flex items-center gap-2 px-4 py-2 bg-purple-600/10 text-purple-400 border border-purple-500/30 hover:bg-purple-600/20 rounded-lg text-xs font-semibold transition-colors"><Download size={14}/> Exportar Clientes (CSV)</button>
       </div>
+    </div>
+  );
+}
+
+function TaskModal({ modal, setModal, clients, responsibles, closeModal, saveModal, validationError, setValidationError }) {
+  const updateForm = (patch) => { setModal(m => ({ ...m, form: { ...m.form, ...patch } })); if (validationError) setValidationError(null); };
+  const addChecklistRow = () => { setModal(m => ({ ...m, form: { ...m.form, checklist: [...(m.form.checklist || []), { id: nextId(), text: "", done: false }] } })); };
+  
+  return (
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-[85] fade-in">
+      <div className="w-full max-w-lg rounded-2xl bg-[#161821] border border-[#2a2d3d] flex flex-col max-h-[90vh] shadow-2xl overflow-hidden">
+        <div className="px-6 py-4 border-b border-[#2a2d3d] flex items-center justify-between bg-[#1a1c24]">
+          <h3 className="font-bold text-base text-white">{modal.mode === "add" ? "Nova Tarefa" : "Editar Tarefa"}</h3>
+          <button onClick={closeModal} className="p-1.5 rounded-lg text-neutral-500 hover:text-white hover:bg-[#2a2d3d] transition-colors"><X size={18} /></button>
+        </div>
+        <div className="p-6 overflow-y-auto kp-scroll flex flex-col gap-5">
+          <div>
+            <label className="text-[11px] text-neutral-400 mb-1.5 block uppercase font-medium">Título *</label>
+            <input autoFocus value={modal.form.title ?? ''} onChange={(e) => updateForm({ title: e.target.value })} className={`w-full bg-[#0f1015] border rounded-lg px-4 py-2.5 text-sm text-white outline-none focus:border-indigo-500 transition-colors ${validationError && validationError.includes("Título") ? "border-red-500" : "border-[#2a2d3d]"}`} placeholder="Nome da tarefa" />
+          </div>
+          <div>
+            <label className="text-[11px] text-neutral-400 mb-1.5 block uppercase font-medium">Descrição</label>
+            <textarea value={modal.form.description ?? ''} onChange={(e) => updateForm({ description: e.target.value })} rows={3} className="w-full bg-[#0f1015] border border-[#2a2d3d] rounded-lg px-4 py-2.5 text-sm text-white outline-none focus:border-indigo-500 resize-none transition-colors" placeholder="Detalhes opcionais" />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <CustomSelect label="Prioridade" value={modal.form.priority ?? ''} onChange={(e) => updateForm({ priority: e.target.value })} options={<><option value="Baixa">Baixa</option><option value="Média">Média</option><option value="Alta">Alta</option></>} />
+            <div>
+              <label className="text-[11px] text-neutral-400 mb-1.5 block uppercase font-medium">Duração Estimada (Min)</label>
+              <input type="number" value={modal.form.durationMin ?? ''} onChange={(e) => updateForm({ durationMin: e.target.value })} className="w-full bg-[#0f1015] border border-[#2a2d3d] rounded-lg px-4 py-2.5 text-sm text-white outline-none focus:border-indigo-500" placeholder="Ex: 120" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <CustomSelect label="Responsável" required hasError={validationError && validationError.includes("Responsável")} value={modal.form.responsibleId ?? ''} onChange={(e) => updateForm({ responsibleId: e.target.value })} options={<><option value="">Selecione...</option>{responsibles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</>} />
+            <CustomSelect label="Cliente" value={modal.form.clientId ?? ''} onChange={(e) => updateForm({ clientId: e.target.value })} options={<><option value="">Nenhum</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</>} />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-[11px] text-neutral-400 mb-1.5 block uppercase font-medium">Data de Entrega</label>
+              <input type="date" value={modal.form.dueDate ?? ''} onChange={(e) => updateForm({ dueDate: e.target.value })} className="w-full bg-[#0f1015] border border-[#2a2d3d] rounded-lg px-4 py-2 text-sm text-white outline-none focus:border-indigo-500 [color-scheme:dark]" />
+            </div>
+            <CustomSelect label="Etapa / Status" value={modal.form.status ?? ''} onChange={(e) => updateForm({ status: e.target.value, waitingFor: e.target.value === 'waiting' ? modal.form.waitingFor : "" })} options={COLUMNS.map(c => <option key={c.id} value={c.id}>{c.name}</option>)} />
+          </div>
+          {modal.form.status === 'waiting' && (
+            <div className="animate-fade-in">
+              <CustomSelect label="Aguardando Retorno De" required hasError={validationError && validationError.includes("Aguardando Retorno")} value={modal.form.waitingFor ?? ''} onChange={(e) => updateForm({ waitingFor: e.target.value })} options={<><option value="">Selecione a pendência...</option><option value="Cliente">Cliente</option><option value="Equipa Interna">Equipa Interna</option></>} />
+            </div>
+          )}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-[11px] text-neutral-400 uppercase font-medium">Checklist</label>
+              <button onClick={addChecklistRow} className="text-xs text-indigo-400 hover:text-indigo-300 font-medium flex items-center gap-1"><Plus size={12}/> Adicionar item</button>
+            </div>
+            <div className="flex flex-col gap-2">
+              {(modal.form.checklist || []).map((c) => (
+                <div key={c.id} className="flex items-center gap-2">
+                  <button onClick={() => { setModal(m => ({ ...m, form: { ...m.form, checklist: m.form.checklist.map(ci => ci.id === c.id ? { ...ci, done: !ci.done } : ci) } })); }} className={`p-1.5 border rounded-md transition-colors shrink-0 ${c.done ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-400' : 'bg-[#0f1015] border-[#2a2d3d] text-neutral-600 hover:text-neutral-400'}`}><CheckCircle2 size={14}/></button>
+                  <input value={c.text ?? ''} onChange={(e) => { setModal(m => ({ ...m, form: { ...m.form, checklist: m.form.checklist.map(ci => ci.id === c.id ? { ...ci, text: e.target.value } : ci) } })); }} className="flex-1 bg-[#0f1015] border border-[#2a2d3d] rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-indigo-500 transition-colors" placeholder="Item do checklist" />
+                  <button onClick={() => setModal(m => ({ ...m, form: { ...m.form, checklist: m.form.checklist.filter(ci => ci.id !== c.id) } }))} className="p-2 text-neutral-500 hover:text-red-400 hover:bg-red-500/10 rounded-md transition-colors"><X size={16} /></button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="px-6 py-4 border-t border-[#2a2d3d] flex items-center justify-end gap-3 bg-[#1a1c24]">
+          <button onClick={closeModal} className="text-sm px-4 py-2 rounded-lg text-neutral-400 hover:text-white transition-colors">Cancelar</button>
+          <button onClick={saveModal} className="text-sm px-6 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition-colors">{modal.mode === "add" ? "Criar Tarefa" : "Salvar Alterações"}</button>
+        </div>
+      </div>
+      {validationError && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-red-500 text-white px-4 py-2.5 rounded-lg shadow-lg flex items-center gap-2 fade-in z-[90] font-medium text-sm">
+          <AlertTriangle size={16} /> Preencha: {Array.isArray(validationError) ? validationError.join(", ") : String(validationError)}
+        </div>
+      )}
     </div>
   );
 }

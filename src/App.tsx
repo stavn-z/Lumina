@@ -943,21 +943,10 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize }) {
       body += `Segue o resumo semanal com os principais pontos e o status das demandas:\n\n`;
     }
 
-    // Agrupar por responsável
-    const byResp = {};
     clientTasks.forEach(t => {
-      const rName = responsibles.find(r => r.id === t.responsibleId)?.name || 'Equipe';
-      if (!byResp[rName]) byResp[rName] = [];
-      byResp[rName].push(t);
-    });
-
-    Object.entries(byResp).forEach(([rName, tList]) => {
-      body += `Demandas – ${rName}\n`;
-      tList.forEach(t => {
-        body += `${t.title}\n`;
-        if (t.description) body += `${t.description}\n`;
-        body += `\n`;
-      });
+      body += `${t.title}\n`;
+      if (t.description) body += `${t.description}\n`;
+      body += `\n`;
     });
 
     body += `Em caso de dúvidas, sigo à disposição.\n\nAtenciosamente,`;

@@ -4,7 +4,7 @@ import {
   Users, Building2, BarChart3, LogOut, RotateCcw, 
   Filter, AlertTriangle, GripVertical, Download, 
   Play, Square, CheckCircle2, User, CheckSquare,
-  HelpCircle, ChevronDown, LayoutDashboard, Mail, Check, Copy, ClipboardList
+  HelpCircle, ChevronDown, LayoutDashboard, Mail, Check, Copy, ClipboardList, Cloud
 } from "lucide-react";
 
 // ==========================================
@@ -148,11 +148,13 @@ export default function App() {
 }
 
 function KanbanMain({ user, onLogout }) {
-  const [tasks, setTasks] = useState(() => { const saved = localStorage.getItem("kanban_tasks"); return saved ? JSON.parse(saved) : []; });
-  const [clients, setClients] = useState(() => { const saved = localStorage.getItem("kanban_clients"); return saved ? JSON.parse(saved) : []; });
-  const [responsibles, setResponsibles] = useState(() => { const saved = localStorage.getItem("kanban_responsibles"); return saved ? JSON.parse(saved) : []; });
+  // Começamos com os dados vazios (não usamos mais o localStorage para as tabelas)
+  const [tasks, setTasks] = useState([]);
+  const [clients, setClients] = useState([]);
+  const [responsibles, setResponsibles] = useState([]);
   
   const [isCloudSynced, setIsCloudSynced] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   // 1. Busca todos os dados do Supabase ao iniciar a aplicação
   useEffect(() => {
@@ -164,33 +166,30 @@ function KanbanMain({ user, onLogout }) {
           window.supabaseClient.from('responsibles').select('*')
         ]);
 
-        // Se houver dados na nuvem, substitui os locais (isso resolve o problema do navegador vazio)
-        if (resTasks.data && resTasks.data.length > 0) setTasks(resTasks.data);
-        if (resClients.data && resClients.data.length > 0) setClients(resClients.data);
-        if (resResp.data && resResp.data.length > 0) setResponsibles(resResp.data);
+        if (resTasks.data) setTasks(resTasks.data);
+        if (resClients.data) setClients(resClients.data);
+        if (resResp.data) setResponsibles(resResp.data);
 
       } catch (error) {
         console.error("Erro ao buscar dados do Supabase:", error);
       } finally {
+        setIsLoading(false);
         setIsCloudSynced(true);
       }
     }
     fetchCloudData();
   }, []);
 
-  // 2. Sempre que os dados mudam localmente, guarda-os também no Supabase
+  // 2. Sempre que os dados mudam localmente, guarda-os no Supabase (Sem localStorage)
   useEffect(() => {
-    localStorage.setItem("kanban_tasks", JSON.stringify(tasks));
     if (isCloudSynced && tasks.length > 0) window.supabaseClient.from('tasks').upsert(tasks).then();
   }, [tasks, isCloudSynced]);
 
   useEffect(() => {
-    localStorage.setItem("kanban_clients", JSON.stringify(clients));
     if (isCloudSynced && clients.length > 0) window.supabaseClient.from('clients').upsert(clients).then();
   }, [clients, isCloudSynced]);
 
   useEffect(() => {
-    localStorage.setItem("kanban_responsibles", JSON.stringify(responsibles));
     if (isCloudSynced && responsibles.length > 0) window.supabaseClient.from('responsibles').upsert(responsibles).then();
   }, [responsibles, isCloudSynced]);
 
@@ -454,6 +453,17 @@ function KanbanMain({ user, onLogout }) {
   const handleDragStart = (e, taskId) => {
     e.dataTransfer.setData("taskId", taskId);
   };
+
+  if (isLoading) {
+    return (
+      <div className="h-screen w-full bg-[#0f1015] flex flex-col items-center justify-center p-4">
+        <div className="w-12 h-12 rounded-xl bg-indigo-500/20 flex items-center justify-center border border-indigo-500/30 mb-6 animate-pulse">
+            <Cloud size={24} className="text-indigo-400" />
+        </div>
+        <div className="text-neutral-400 font-medium animate-pulse text-sm">A sincronizar com a nuvem...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-screen w-full bg-[#0f1015] text-neutral-100 flex flex-col overflow-hidden font-sans">

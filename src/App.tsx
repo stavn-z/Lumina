@@ -4,7 +4,7 @@ import {
   Users, Building2, BarChart3, LogOut, RotateCcw, 
   Filter, AlertTriangle, GripVertical, Download, 
   Play, Square, CheckCircle2, User, CheckSquare,
-  HelpCircle, ChevronDown, LayoutDashboard, Mail, Check, Copy, ClipboardList, Cloud
+  HelpCircle, ChevronDown, LayoutDashboard, Mail, Check, Copy, ClipboardList, Cloud, Lock
 } from "lucide-react";
 
 // ==========================================
@@ -16,15 +16,15 @@ const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 
 // --- Configurações e Dados Iniciais ---
 const COLUMNS = [
-  { id: "backlog", name: "Backlog", dot: "bg-indigo-500", accent: "border-indigo-500", bg: "bg-indigo-500/10", btn: "bg-indigo-600 hover:bg-indigo-500", help: "Ideias, novas demandas e solicitações que ainda não foram priorizadas ou analisadas pela equipa." },
+  { id: "backlog", name: "Backlog", dot: "bg-indigo-500", accent: "border-indigo-500", bg: "bg-indigo-500/10", btn: "bg-indigo-600 hover:bg-indigo-500", help: "Ideias, novas demandas e solicitações que ainda não foram priorizadas ou analisadas." },
   { id: "todo", name: "A Fazer", dot: "bg-amber-500", accent: "border-amber-500", bg: "bg-amber-500/10", btn: "bg-amber-500 hover:bg-amber-400 text-black", help: "Tarefas priorizadas, com responsável definido e prontas para serem iniciadas." },
-  { id: "inprogress", name: "Em Andamento", dot: "bg-blue-500", accent: "border-blue-500", bg: "bg-blue-500/10", btn: "bg-blue-600 hover:bg-blue-500", help: "Tarefas que estão a ser executadas de forma ativa neste exato momento." },
-  { id: "paused", name: "Pausado", dot: "bg-orange-500", accent: "border-orange-500", bg: "bg-orange-500/10", btn: "bg-orange-600 hover:bg-orange-500", help: "Tarefas temporariamente interrompidas a aguardar a resolução de algum bloqueio." },
-  { id: "waiting", name: "Aguardando Retorno", dot: "bg-pink-500", accent: "border-pink-500", bg: "bg-pink-500/10", btn: "bg-pink-600 hover:bg-pink-500", help: "Aguardar validação, ficheiro ou resposta do Cliente ou da Equipa." },
-  { id: "review", name: "Em Revisão", dot: "bg-purple-500", accent: "border-purple-500", bg: "bg-purple-500/10", btn: "bg-purple-600 hover:bg-purple-500", help: "Tarefas concluídas que aguardam aprovação ou validação do cliente/gestor." },
-  { id: "done", name: "Concluído", dot: "bg-green-500", accent: "border-green-500", bg: "bg-green-500/10", btn: "bg-green-600 hover:bg-green-500", help: "Tarefas totalmente finalizadas e validadas." },
-  { id: "formalize", name: "Formalizar", dot: "bg-teal-500", accent: "border-teal-500", bg: "bg-teal-500/10", btn: "bg-teal-600 hover:bg-teal-500", help: "Tarefas finalizadas que aguardam ou já tiveram o relatório enviado para o cliente." },
-  { id: "cancelled", name: "Cancelado", dot: "bg-red-500", accent: "border-red-500", bg: "bg-red-500/10", btn: "bg-red-600 hover:bg-red-500", help: "Tarefas despriorizadas, descartadas ou que não serão mais executadas." },
+  { id: "inprogress", name: "Em Andamento", dot: "bg-blue-500", accent: "border-blue-500", bg: "bg-blue-500/10", btn: "bg-blue-600 hover:bg-blue-500", help: "Tarefas ativas neste exato momento." },
+  { id: "paused", name: "Pausado", dot: "bg-orange-500", accent: "border-orange-500", bg: "bg-orange-500/10", btn: "bg-orange-600 hover:bg-orange-500", help: "Tarefas temporariamente interrompidas." },
+  { id: "waiting", name: "Aguardando Retorno", dot: "bg-pink-500", accent: "border-pink-500", bg: "bg-pink-500/10", btn: "bg-pink-600 hover:bg-pink-500", help: "Aguardar validação, ficheiro ou resposta." },
+  { id: "review", name: "Em Revisão", dot: "bg-purple-500", accent: "border-purple-500", bg: "bg-purple-500/10", btn: "bg-purple-600 hover:bg-purple-500", help: "Tarefas concluídas que aguardam aprovação." },
+  { id: "done", name: "Concluído", dot: "bg-green-500", accent: "border-green-500", bg: "bg-green-500/10", btn: "bg-green-600 hover:bg-green-500", help: "Tarefas totalmente finalizadas." },
+  { id: "formalize", name: "Formalizar", dot: "bg-teal-500", accent: "border-teal-500", bg: "bg-teal-500/10", btn: "bg-teal-600 hover:bg-teal-500", help: "Tarefas finalizadas que aguardam envio de relatório." },
+  { id: "cancelled", name: "Cancelado", dot: "bg-red-500", accent: "border-red-500", bg: "bg-red-500/10", btn: "bg-red-600 hover:bg-red-500", help: "Tarefas despriorizadas ou descartadas." },
 ];
 
 const PRIORITY_STYLE = {
@@ -44,6 +44,11 @@ function formatTime(totalSeconds) {
   return `${h}:${m}:${sec}`;
 }
 
+function getBrasiliaDate() {
+  const formatter = new Intl.DateTimeFormat('fr-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' });
+  return formatter.format(new Date());
+}
+
 function downloadCSV(dataArray, filename) {
   const csvContent = "data:text/csv;charset=utf-8," + dataArray.join("\n");
   const encodedUri = encodeURI(csvContent);
@@ -58,7 +63,51 @@ function downloadCSV(dataArray, filename) {
 // --- Componente de Login ---
 function LoginScreen({ onLogin }) {
   const [name, setName] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
   
+  const handleLoginSubmit = async () => {
+    setError('');
+    const cleanName = name.trim();
+    if (cleanName.length < 3) return setError("O nome deve ter no mínimo 3 caracteres.");
+    if (password.length < 4) return setError("A senha deve ter no mínimo 4 caracteres.");
+    
+    setLoading(true);
+    try {
+      const { data: userRow, error: fetchErr } = await window.supabaseClient
+        .from('responsibles')
+        .select('*')
+        .ilike('name', cleanName)
+        .maybeSingle();
+      
+      const isAdmin = cleanName.toLowerCase() === 'othávio campbell';
+
+      if (userRow) {
+        if (userRow.password && userRow.password !== password) {
+          setError("Senha incorreta!");
+          setLoading(false);
+          return;
+        }
+        // Se for um usuário antigo migrado sem senha, atualiza a senha agora
+        if (!userRow.password) {
+           await window.supabaseClient.from('responsibles').update({ password }).eq('id', userRow.id);
+        }
+        onLogin({ id: userRow.id, name: userRow.name, isAdmin });
+      } else {
+        // Criar novo usuário automaticamente
+        const newResp = { id: 'r'+Date.now(), name: cleanName, password };
+        const { error: insertErr } = await window.supabaseClient.from('responsibles').insert([newResp]);
+        if (insertErr) throw insertErr;
+        onLogin({ id: newResp.id, name: cleanName, isAdmin });
+      }
+    } catch (e) {
+      console.error(e);
+      setError("Erro ao conectar no servidor. Tente novamente.");
+    }
+    setLoading(false);
+  };
+
   return (
     <div className="min-h-screen bg-[#0f1015] flex items-center justify-center p-4">
       <div className="bg-[#161821] p-8 rounded-2xl border border-[#2a2d3d] w-full max-w-sm shadow-2xl">
@@ -68,24 +117,41 @@ function LoginScreen({ onLogin }) {
           </div>
           <h1 className="text-2xl font-bold text-white">Kanban Pro</h1>
         </div>
+
+        {error && (
+          <div className="mb-4 bg-red-500/10 border border-red-500/20 text-red-400 text-xs px-3 py-2.5 rounded-lg flex items-center gap-2">
+            <AlertTriangle size={14} className="shrink-0" /> {error}
+          </div>
+        )}
+
         <div className="space-y-4">
           <div>
-            <label className="text-xs text-neutral-400 mb-1.5 block">Nome de Utilizador</label>
+            <label className="text-[11px] font-medium uppercase text-neutral-400 mb-1.5 block">Nome de Usuário</label>
             <input 
               autoFocus
               className="w-full bg-[#0f1015] border border-[#2a2d3d] rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-indigo-500 transition-colors" 
               placeholder="Digite o seu nome" 
               value={name} 
               onChange={e => setName(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && name && onLogin(name)}
+            />
+          </div>
+          <div>
+            <label className="text-[11px] font-medium uppercase text-neutral-400 mb-1.5 block">Senha</label>
+            <input 
+              type="password"
+              className="w-full bg-[#0f1015] border border-[#2a2d3d] rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-indigo-500 transition-colors" 
+              placeholder="Sua senha secreta" 
+              value={password} 
+              onChange={e => setPassword(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleLoginSubmit()}
             />
           </div>
           <button 
-            disabled={!name.trim()}
-            className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl px-4 py-3 font-medium transition-colors" 
-            onClick={() => onLogin(name)}
+            disabled={!name.trim() || !password || loading}
+            className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl px-4 py-3 font-medium transition-colors flex justify-center items-center gap-2" 
+            onClick={handleLoginSubmit}
           >
-            Aceder ao Painel
+            {loading ? <Cloud size={18} className="animate-pulse" /> : 'Acessar Painel'}
           </button>
         </div>
       </div>
@@ -117,15 +183,22 @@ export default function App() {
     document.body.appendChild(script);
   }, []);
 
-  const [user, setUser] = useState(() => localStorage.getItem("kanban_user") || null);
+  const [user, setUser] = useState(() => {
+    try {
+      const saved = localStorage.getItem("kanban_user_obj");
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null; // Força re-login se houver lixo antigo
+    }
+  });
 
-  const handleLogin = (name) => {
-    localStorage.setItem("kanban_user", name);
-    setUser(name);
+  const handleLogin = (userData) => {
+    localStorage.setItem("kanban_user_obj", JSON.stringify(userData));
+    setUser(userData);
   };
 
   const handleLogout = () => {
-    localStorage.removeItem("kanban_user");
+    localStorage.removeItem("kanban_user_obj");
     setUser(null);
   };
 
@@ -133,9 +206,9 @@ export default function App() {
     return (
       <div className="min-h-screen bg-[#0f1015] flex flex-col items-center justify-center p-4">
         <div className="w-12 h-12 rounded-xl bg-indigo-500/20 flex items-center justify-center border border-indigo-500/30 mb-6 animate-pulse">
-            <BarChart3 size={24} className="text-indigo-400" />
+            <Cloud size={24} className="text-indigo-400" />
         </div>
-        <div className="text-indigo-400 font-medium animate-pulse text-sm">A conectar aos servidores da nuvem...</div>
+        <div className="text-neutral-400 font-medium animate-pulse text-sm">A conectar aos servidores da nuvem...</div>
       </div>
     );
   }
@@ -155,7 +228,7 @@ function KanbanMain({ user, onLogout }) {
   const [isCloudSynced, setIsCloudSynced] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  // 1. Busca todos os dados do Supabase ao iniciar a aplicação
+  // 1. Busca dados do Supabase
   useEffect(() => {
     async function fetchCloudData() {
       try {
@@ -170,7 +243,7 @@ function KanbanMain({ user, onLogout }) {
         if (resResp.data) setResponsibles(resResp.data);
 
       } catch (error) {
-        console.error("Erro ao buscar dados do Supabase:", error);
+        console.error("Erro ao buscar dados:", error);
       } finally {
         setIsLoading(false);
         setIsCloudSynced(true);
@@ -179,7 +252,7 @@ function KanbanMain({ user, onLogout }) {
     fetchCloudData();
   }, []);
 
-  // 2. Sempre que os dados mudam localmente, guarda-os no Supabase (Formatados de forma segura)
+  // 2. Sincronização Automática
   useEffect(() => {
     if (isCloudSynced && tasks.length > 0) {
       const safeTasks = tasks.map(t => ({
@@ -192,28 +265,19 @@ function KanbanMain({ user, onLogout }) {
         dueDate: t.dueDate || null,
         waitingFor: t.waitingFor || null,
       }));
-
-      window.supabaseClient.from('tasks').upsert(safeTasks).then(({ error }) => {
-        if (error) console.error("Erro ao salvar tarefas no banco:", error);
-      });
+      window.supabaseClient.from('tasks').upsert(safeTasks).then();
     }
   }, [tasks, isCloudSynced]);
 
   useEffect(() => {
     if (isCloudSynced && clients.length > 0) {
-      window.supabaseClient.from('clients').upsert(clients).then(({ error }) => {
-        if (error) console.error("Erro ao salvar clientes no banco:", error);
-      });
+      const safeClients = clients.map(c => ({
+        ...c,
+        contractedHours: parseFloat(c.contractedHours) || null
+      }));
+      window.supabaseClient.from('clients').upsert(safeClients).then();
     }
   }, [clients, isCloudSynced]);
-
-  useEffect(() => {
-    if (isCloudSynced && responsibles.length > 0) {
-      window.supabaseClient.from('responsibles').upsert(responsibles).then(({ error }) => {
-        if (error) console.error("Erro ao salvar responsáveis no banco:", error);
-      });
-    }
-  }, [responsibles, isCloudSynced]);
 
   const [activeTab, setActiveTab] = useState('board'); 
   const [filterClient, setFilterClient] = useState("all");
@@ -231,7 +295,6 @@ function KanbanMain({ user, onLogout }) {
   
   const [now, setNow] = useState(Date.now());
 
-  // Relógio do cronómetro
   useEffect(() => {
     const anyRunning = tasks.some((t) => t.timerRunning);
     if (!anyRunning) return;
@@ -244,25 +307,30 @@ function KanbanMain({ user, onLogout }) {
     return t.timerElapsed;
   };
 
-  // Filtros
-  const filteredTasks = tasks.filter(
+  // Lógica de Permissão
+  const canEditTask = (taskRespId) => taskRespId === user.id;
+
+  // Filtros Globais (Admin vê tudo, Usuário vê só os dele)
+  const visibleTasks = user.isAdmin ? tasks : tasks.filter(t => t.responsibleId === user.id);
+  
+  const filteredTasks = visibleTasks.filter(
     (t) =>
       (filterClient === "all" || t.clientId === filterClient) &&
       (filterResp === "all" || t.responsibleId === filterResp) &&
       (filterPriority === "all" || t.priority === filterPriority)
   );
 
-  const activeTasksCount = tasks.filter((t) => t.status !== "cancelled").length;
-  const doneCount = tasks.filter((t) => t.status === "done" || t.status === "formalize").length;
+  const activeTasksCount = visibleTasks.filter((t) => t.status !== "cancelled").length;
+  const doneCount = visibleTasks.filter((t) => t.status === "done" || t.status === "formalize").length;
   const overallProgress = activeTasksCount ? Math.round((doneCount / activeTasksCount) * 100) : 0;
-  const doneTasks = tasks.filter(t => t.status === 'done');
+  const doneTasks = visibleTasks.filter(t => t.status === 'done');
 
-  // Modais Principais
-  const emptyForm = { title: "", description: "", priority: "Média", durationMin: "", clientId: "", responsibleId: "", dueDate: "", status: "", waitingFor: "", checklist: [] };
+  // Modais
+  const emptyForm = { title: "", description: "", priority: "Média", durationMin: "", clientId: "", responsibleId: user.id, dueDate: "", status: "", waitingFor: "", checklist: [] };
 
   function openAddModal(status) {
     setValidationError(null);
-    setModal({ mode: "add", status, form: { ...emptyForm, status, responsibleId: responsibles[0]?.id || "" } });
+    setModal({ mode: "add", status, form: { ...emptyForm, status } });
   }
   function openEditModal(task) {
     setValidationError(null);
@@ -285,6 +353,27 @@ function KanbanMain({ user, onLogout }) {
       return;
     }
 
+    // Interceptação Automática do Checklist Completo
+    const allDone = f.checklist.length > 0 && f.checklist.every(c => c.done);
+    let finalStatus = f.status || modal.status;
+
+    if (allDone && finalStatus !== 'done' && finalStatus !== 'cancelled' && finalStatus !== 'formalize') {
+        finalStatus = 'done';
+    }
+
+    if (finalStatus === 'done' && (!modal.task || modal.task.status !== 'done')) {
+        setDonePrompt({
+            isFromModal: true,
+            draftData: { ...f, status: 'done' },
+            taskId: modal.task ? modal.task.id : nextId(),
+            targetId: null,
+            date: getBrasiliaDate(),
+            durationMin: parseInt(f.durationMin) || ""
+        });
+        return;
+    }
+
+    // Fluxo Normal (Não é Concluído)
     if (modal.mode === "add") {
       const newTask = {
         id: nextId(),
@@ -295,7 +384,7 @@ function KanbanMain({ user, onLogout }) {
         clientId: f.clientId || null,
         responsibleId: f.responsibleId || null,
         dueDate: f.dueDate || null,
-        status: f.status || modal.status,
+        status: finalStatus,
         waitingFor: f.waitingFor || null,
         checklist: f.checklist.filter((c) => c.text.trim()),
         timerRunning: false,
@@ -312,13 +401,13 @@ function KanbanMain({ user, onLogout }) {
           let timerElapsed = t.timerElapsed;
           let timerStart = t.timerStart;
 
-          if ((f.status === 'done' || f.status === 'cancelled' || f.status === 'formalize') && timerRunning) {
+          if ((finalStatus === 'done' || finalStatus === 'cancelled' || finalStatus === 'formalize') && timerRunning) {
             timerRunning = false;
             timerElapsed += (Date.now() - timerStart) / 1000;
             timerStart = null;
           }
 
-          if (!timerRunning && (f.status === 'done' || f.status === 'formalize' || f.status === 'cancelled')) {
+          if (!timerRunning && (finalStatus === 'done' || finalStatus === 'formalize' || finalStatus === 'cancelled')) {
             timerElapsed = (parseInt(f.durationMin) || 0) * 60;
           }
 
@@ -331,7 +420,7 @@ function KanbanMain({ user, onLogout }) {
             clientId: f.clientId || null,
             responsibleId: f.responsibleId || null,
             dueDate: f.dueDate || null,
-            status: f.status,
+            status: finalStatus,
             waitingFor: f.waitingFor || null,
             checklist: f.checklist.filter((c) => c.text.trim()),
             timerRunning, timerElapsed, timerStart
@@ -360,16 +449,11 @@ function KanbanMain({ user, onLogout }) {
     if (!task) return;
 
     if (newStatus === 'done' && task.status !== 'done') {
-      const today = new Date();
-      const year = today.getFullYear();
-      const month = String(today.getMonth() + 1).padStart(2, '0');
-      const day = String(today.getDate()).padStart(2, '0');
-      const localDateStr = `${year}-${month}-${day}`;
-
       setDonePrompt({
+        isFromModal: false,
         taskId,
         targetId,
-        date: localDateStr,
+        date: getBrasiliaDate(),
         durationMin: Math.round(task.timerElapsed / 60) || task.durationMin || ""
       });
       return;
@@ -385,6 +469,28 @@ function KanbanMain({ user, onLogout }) {
     }
     setValidationError(null);
 
+    // Se veio do salvamento do Modal via Auto-Conclusão
+    if (donePrompt.isFromModal) {
+      const finalTask = {
+         ...donePrompt.draftData,
+         id: donePrompt.taskId,
+         dueDate: donePrompt.date,
+         timerElapsed: (parseInt(donePrompt.durationMin) || 0) * 60,
+         durationMin: parseInt(donePrompt.durationMin) || 0,
+         timerRunning: false,
+         timerStart: null,
+         status: 'done'
+      };
+      
+      if (modal.mode === 'add') setTasks(prev => [...prev, finalTask]);
+      else setTasks(prev => prev.map(t => t.id === finalTask.id ? finalTask : t));
+      
+      setDonePrompt(null);
+      closeModal();
+      return;
+    }
+
+    // Se veio do Drag and Drop
     setTasks(prev => {
       const fromIndex = prev.findIndex(t => t.id.toString() === donePrompt.taskId.toString());
       if (fromIndex === -1) return prev;
@@ -509,16 +615,11 @@ function KanbanMain({ user, onLogout }) {
         .fade-in { animation: fadeIn 0.2s ease-in-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
         
-        /* Remove as setinhas dos campos numéricos (Chrome, Safari, Edge, Opera) */
         input[type=number]::-webkit-inner-spin-button, 
         input[type=number]::-webkit-outer-spin-button { 
-          -webkit-appearance: none; 
-          margin: 0; 
+          -webkit-appearance: none; margin: 0; 
         }
-        /* Remove as setinhas no Firefox */
-        input[type=number] {
-          -moz-appearance: textfield;
-        }
+        input[type=number] { -moz-appearance: textfield; }
       `}</style>
 
       {/* Header Fixo */}
@@ -529,9 +630,8 @@ function KanbanMain({ user, onLogout }) {
           </div>
           <span className="font-semibold text-lg">Kanban Pro</span>
           <span className="text-xs px-2.5 py-1 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 ml-2">
-            Olá, {user}!
+            Olá, {user.name}! {user.isAdmin && <span className="ml-1 opacity-70">(Admin)</span>}
           </span>
-          {isCloudSynced && <span className="ml-2 text-[10px] text-green-500 flex items-center gap-1"><Cloud size={12}/> Nuvem Ativa</span>}
         </div>
         <div className="flex items-center gap-2">
           <HeaderBtn icon={<LayoutDashboard size={14} />} label="Quadro Inicial" active={activeTab === 'board'} onClick={() => setActiveTab('board')} color="indigo" />
@@ -547,28 +647,16 @@ function KanbanMain({ user, onLogout }) {
       {/* Área Dinâmica de Painéis */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden kp-scroll flex flex-col">
         
-        {/* Painéis Expansíveis */}
-        {activeTab === 'timer' && (
-          <TimerPanel tasks={tasks} now={now} getElapsed={getElapsed} onToggleTimer={toggleTimer} />
-        )}
-        
-        {activeTab === 'responsibles' && (
-          <ResponsiblesPanel responsibles={responsibles} setResponsibles={setResponsibles} tasks={tasks} setTasks={setTasks} />
-        )}
-
-        {activeTab === 'clients' && (
-          <ClientsPanel clients={clients} setClients={setClients} tasks={tasks} setTasks={setTasks} />
-        )}
-
-        {activeTab === 'reports' && (
-          <ReportsPanel tasks={tasks} clients={clients} responsibles={responsibles} now={now} getElapsed={getElapsed} />
-        )}
+        {activeTab === 'timer' && <TimerPanel tasks={filteredTasks} now={now} getElapsed={getElapsed} onToggleTimer={toggleTimer} user={user} />}
+        {activeTab === 'responsibles' && <ResponsiblesPanel responsibles={responsibles} setResponsibles={setResponsibles} tasks={tasks} setTasks={setTasks} user={user} />}
+        {activeTab === 'clients' && <ClientsPanel clients={clients} setClients={setClients} tasks={tasks} setTasks={setTasks} user={user} getElapsed={getElapsed} now={now} />}
+        {activeTab === 'reports' && <ReportsPanel tasks={filteredTasks} clients={clients} responsibles={responsibles} now={now} getElapsed={getElapsed} />}
 
         {/* Estatísticas (Sempre visível no Board) */}
         <div className={`shrink-0 px-5 pt-5 pb-3 ${activeTab !== 'board' ? 'hidden' : ''}`}>
           <div className="w-full rounded-xl bg-[#161821] border border-[#2a2d3d] px-5 py-4 mb-4 shadow-sm">
             <div className="flex items-center justify-between text-xs text-neutral-400 mb-2.5">
-              <span className="font-medium">Progresso Geral</span>
+              <span className="font-medium">Progresso Geral das Suas Demandas</span>
               <span className="text-green-400 font-bold">{overallProgress}%</span>
             </div>
             <div className="h-2 rounded-full bg-[#0f1015] overflow-hidden border border-[#2a2d3d]">
@@ -586,7 +674,6 @@ function KanbanMain({ user, onLogout }) {
             <FilterSelect value={filterPriority} onChange={setFilterPriority} options={[{id: 'Baixa', name: 'Baixa'}, {id: 'Média', name: 'Média'}, {id: 'Alta', name: 'Alta'}]} defaultLabel="Todas as prioridades" />
           </div>
           
-          {/* Botão de Fechamento Semanal */}
           {doneTasks.length > 0 && (
             <button 
               onClick={() => setClosureModal(true)} 
@@ -612,14 +699,12 @@ function KanbanMain({ user, onLogout }) {
                     handleRequestMove(e.dataTransfer.getData("taskId"), null, col.id);
                   }}
                 >
-                  {/* Header Coluna com Tooltip de Ajuda */}
                   <div className="px-3.5 pt-3.5 pb-2.5 flex items-center justify-between">
                     <div className="flex items-center gap-2 text-sm font-semibold relative group cursor-default">
                       <span className={`w-2.5 h-2.5 rounded-full ${col.dot} shadow-sm shrink-0`} />
                       {col.name}
                       <HelpCircle size={14} className="text-neutral-500 hover:text-neutral-300 transition-colors" />
                       
-                      {/* Tooltip Hover */}
                       <div className="absolute left-0 top-full mt-2 w-64 p-3 bg-[#1c1e29] border border-[#3f4359] rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 pointer-events-none">
                         <div className="text-xs font-bold mb-1.5 text-white flex items-center gap-1.5">
                           <span className={`w-2 h-2 rounded-full ${col.dot}`} /> {col.name}
@@ -632,7 +717,6 @@ function KanbanMain({ user, onLogout }) {
                     </span>
                   </div>
                   
-                  {/* Botão Nova Tarefa */}
                   <div className="px-3 pb-3">
                     <button
                       onClick={() => openAddModal(col.id)}
@@ -642,7 +726,6 @@ function KanbanMain({ user, onLogout }) {
                     </button>
                   </div>
                   
-                  {/* Lista de Cards */}
                   <div className="px-3 pb-3 flex-1 overflow-y-auto kp-scroll flex flex-col gap-2.5">
                     {colTasks.length === 0 && (
                       <div className="text-center text-xs text-neutral-600 py-6 select-none border border-dashed border-[#2a2d3d] rounded-lg pointer-events-none">
@@ -657,27 +740,37 @@ function KanbanMain({ user, onLogout }) {
                       const resp = responsibles.find(r => r.id === t.responsibleId);
                       const prStyle = PRIORITY_STYLE[t.priority] || PRIORITY_STYLE.Média;
                       const isDoneOrCancelled = t.status === "done" || t.status === "cancelled" || t.status === "formalize";
+                      
+                      // Regra de Edição: Admin não edita tarefas de outros (só as dele), Usuário normal já vê só as dele.
+                      const isEditable = canEditTask(t.responsibleId);
 
                       return (
                         <div 
                           key={t.id} 
-                          className={`rounded-xl bg-[#1c1e29] border p-3.5 transition-all cursor-grab active:cursor-grabbing group 
-                            ${isDoneOrCancelled ? 'opacity-80 hover:opacity-100 hover:border-[#3f4359]' : 'hover:border-[#3f4359]'}
+                          className={`rounded-xl bg-[#1c1e29] border p-3.5 transition-all group 
+                            ${isDoneOrCancelled ? 'opacity-80' : ''}
+                            ${!isEditable ? 'opacity-70 cursor-not-allowed' : 'cursor-grab active:cursor-grabbing hover:border-[#3f4359]'}
                             ${dragOverId === t.id ? 'border-indigo-500 shadow-[0_-2px_0_#6366f1]' : 'border-[#2a2d3d]'}
                           `}
-                          draggable
-                          onDragStart={(e) => handleDragStart(e, t.id)}
-                          onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOverId(t.id); }}
+                          draggable={isEditable}
+                          onDragStart={(e) => { if(isEditable) handleDragStart(e, t.id); }}
+                          onDragOver={(e) => { if(isEditable) { e.preventDefault(); e.stopPropagation(); setDragOverId(t.id); } }}
                           onDragLeave={() => setDragOverId(null)}
                           onDrop={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            setDragOverId(null);
-                            handleRequestMove(e.dataTransfer.getData("taskId"), t.id, col.id);
+                            if(isEditable) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setDragOverId(null);
+                                handleRequestMove(e.dataTransfer.getData("taskId"), t.id, col.id);
+                            }
                           }}
                         >
                           <div className="flex gap-2 items-start mb-2">
-                            <GripVertical size={14} className="text-neutral-600 shrink-0 mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                            {isEditable ? (
+                              <GripVertical size={14} className="text-neutral-600 shrink-0 mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                            ) : (
+                              <Lock size={12} className="text-neutral-600 shrink-0 mt-0.5" />
+                            )}
                             <div className="flex-1">
                               <div className={`text-sm font-semibold mb-1 leading-snug ${isDoneOrCancelled ? 'text-neutral-400 line-through' : 'text-neutral-200'}`}>{t.title}</div>
                               {t.description && (
@@ -720,9 +813,10 @@ function KanbanMain({ user, onLogout }) {
                               </div>
                               <div className="flex flex-col gap-1.5">
                                 {t.checklist.map((c) => (
-                                  <label key={c.id} className="flex items-start gap-2 text-[11px] text-neutral-400 cursor-pointer hover:text-neutral-300 transition-colors">
+                                  <label key={c.id} className={`flex items-start gap-2 text-[11px] text-neutral-400 transition-colors ${isEditable ? 'cursor-pointer hover:text-neutral-300' : 'cursor-not-allowed'}`}>
                                     <input
                                       type="checkbox"
+                                      disabled={!isEditable}
                                       checked={c.done}
                                       onChange={() => toggleChecklistItem(t.id, c.id)}
                                       className="accent-indigo-500 w-3 h-3 mt-0.5 rounded-sm shrink-0 bg-[#0f1015] border-[#2a2d3d]"
@@ -760,22 +854,24 @@ function KanbanMain({ user, onLogout }) {
                             </div>
                           )}
 
-                          <div className="flex flex-wrap gap-1.5 pl-5 pt-2 border-t border-[#2a2d3d]/50">
-                            <SmallBtn onClick={() => openEditModal(t)} icon={<Pencil size={12} />} label="Editar" />
-                            
-                            {!isDoneOrCancelled && (
-                              <SmallBtn onClick={() => toggleTimer(t.id)} icon={t.timerRunning ? <Square size={12}/> : <Play size={12} />} label={t.timerRunning ? "Parar" : "Timer"} active={t.timerRunning} tone="amber" />
-                            )}
-                            
-                            {t.status !== "cancelled" ? (
-                              <SmallBtn onClick={() => handleRequestMove(t.id, null, 'cancelled')} icon={<X size={12} />} label="Cancelar" tone="red" />
-                            ) : (
-                              <>
-                                <SmallBtn onClick={() => handleRequestMove(t.id, null, 'backlog')} icon={<RotateCcw size={12} />} label="Restaurar" tone="green" />
-                                <SmallBtn onClick={() => setConfirmDelete(t.id)} icon={<Trash2 size={12} />} label="" tone="red" />
-                              </>
-                            )}
-                          </div>
+                          {isEditable && (
+                            <div className="flex flex-wrap gap-1.5 pl-5 pt-2 border-t border-[#2a2d3d]/50">
+                              <SmallBtn onClick={() => openEditModal(t)} icon={<Pencil size={12} />} label="Editar" />
+                              
+                              {!isDoneOrCancelled && (
+                                <SmallBtn onClick={() => toggleTimer(t.id)} icon={t.timerRunning ? <Square size={12}/> : <Play size={12} />} label={t.timerRunning ? "Parar" : "Timer"} active={t.timerRunning} tone="amber" />
+                              )}
+                              
+                              {t.status !== "cancelled" ? (
+                                <SmallBtn onClick={() => handleRequestMove(t.id, null, 'cancelled')} icon={<X size={12} />} label="Cancelar" tone="red" />
+                              ) : (
+                                <>
+                                  <SmallBtn onClick={() => handleRequestMove(t.id, null, 'backlog')} icon={<RotateCcw size={12} />} label="Restaurar" tone="green" />
+                                  <SmallBtn onClick={() => setConfirmDelete(t.id)} icon={<Trash2 size={12} />} label="" tone="red" />
+                                </>
+                              )}
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -1017,6 +1113,18 @@ function CustomSelect({ label, value, onChange, options, hasError, required }) {
   );
 }
 
+// --- Funções Auxiliares de Alerta de Horas ---
+function generateLimitEmailLink(clientData, consumedHours) {
+  const emails = clientData?.emails || (clientData?.email ? [clientData.email] : []);
+  const emailTo = emails.join(',');
+  const subject = `Aviso de Banco de Horas - ${clientData.name}`;
+  const remaining = clientData.contractedHours - consumedHours;
+  
+  const body = `Prezados(as),\n\nInformamos que o banco de horas contratado (${clientData.contractedHours}h) está prestes a ser atingido. No momento, restam apenas ${remaining.toFixed(1)}h disponíveis.\n\nGostaríamos de saber se autorizam a continuidade das demandas (cientes de que as horas excedentes poderão ser cobradas) ou se devemos pausar as atividades até à renovação do banco.\n\nCom os melhores cumprimentos,`;
+  
+  return `https://mail.google.com/mail/?view=cm&fs=1&to=${emailTo}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
+
 // --- Componente: Fechamento Semanal (Automação de E-mails) ---
 function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize }) {
   const [copiedId, setCopiedId] = useState(null);
@@ -1213,8 +1321,8 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize }) {
 
 // --- Demais Painéis ---
 
-function TimerPanel({ tasks, now, getElapsed, onToggleTimer }) {
-  const activeTasks = tasks.filter(t => t.timerRunning || t.timerElapsed > 0).sort((a,b) => b.timerRunning - a.timerRunning);
+function TimerPanel({ tasks, now, getElapsed, onToggleTimer, user }) {
+  const activeTasks = tasks.filter(t => (t.timerRunning || t.timerElapsed > 0) && t.responsibleId === user.id).sort((a,b) => b.timerRunning - a.timerRunning);
   
   return (
     <div className="p-6 border-b border-[#2a2d3d] bg-[#1a1c24] fade-in shadow-inner">
@@ -1222,12 +1330,12 @@ function TimerPanel({ tasks, now, getElapsed, onToggleTimer }) {
         <Clock size={20} />
         <h2 className="text-lg font-semibold">Cronómetro</h2>
       </div>
-      <p className="text-xs text-neutral-400 mb-6">Selecione uma tarefa para registar tempo de execução.</p>
+      <p className="text-xs text-neutral-400 mb-6">Selecione uma tarefa sua para registar tempo de execução.</p>
       
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {activeTasks.length === 0 && (
           <div className="col-span-full py-8 text-center text-sm text-neutral-500 border border-dashed border-[#2a2d3d] rounded-xl">
-            Nenhuma tarefa com tempo registado. Inicie o temporizador nalgum cartão no quadro.
+            Nenhuma tarefa sua com tempo registado. Inicie o temporizador nalgum cartão no quadro.
           </div>
         )}
         {activeTasks.map(t => {
@@ -1269,10 +1377,24 @@ function TimerPanel({ tasks, now, getElapsed, onToggleTimer }) {
   );
 }
 
-function ResponsiblesPanel({ responsibles, setResponsibles, tasks, setTasks }) {
+function ResponsiblesPanel({ responsibles, setResponsibles, tasks, setTasks, user }) {
   const [name, setName] = useState('');
-  const add = () => { if (!name.trim()) return; setResponsibles([...responsibles, { id: 'r'+Date.now(), name: name.trim() }]); setName(''); };
+  const [password, setPassword] = useState('');
+  
+  const add = async () => { 
+    if (!name.trim() || !password.trim()) return; 
+    const newId = 'r'+Date.now();
+    const newResp = { id: newId, name: name.trim(), password: password };
+    setResponsibles([...responsibles, newResp]); 
+    setName(''); 
+    setPassword('');
+    if (window.supabaseClient) {
+      await window.supabaseClient.from('responsibles').insert([newResp]);
+    }
+  };
+
   const remove = async (id) => { 
+    if(!user.isAdmin && id !== user.id) return alert("Não pode apagar outros responsáveis.");
     setResponsibles(prev => prev.filter(r => r.id !== id)); 
     setTasks(prev => prev.map(t => t.responsibleId === id ? { ...t, responsibleId: '' } : t)); 
     if (window.supabaseClient) {
@@ -1284,24 +1406,34 @@ function ResponsiblesPanel({ responsibles, setResponsibles, tasks, setTasks }) {
     <div className="p-6 border-b border-[#2a2d3d] bg-[#1a1c24] fade-in shadow-inner">
       <div className="flex items-center gap-2 mb-6 text-indigo-400">
         <Users size={20} />
-        <h2 className="text-lg font-semibold text-white">Responsáveis</h2>
+        <h2 className="text-lg font-semibold text-white">Responsáveis (Contas)</h2>
       </div>
-      <div className="bg-[#161821] p-4 rounded-xl border border-[#2a2d3d] mb-6 flex gap-3 max-w-xl items-end">
-        <div className="flex-1">
-          <label className="text-xs text-neutral-400 mb-1.5 block uppercase tracking-wider">Nome do responsável</label>
-          <input value={name} onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key === 'Enter' && add()} className="w-full bg-[#0f1015] border border-[#2a2d3d] rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-indigo-500" placeholder="Ex: João da Silva" />
+      
+      {user.isAdmin && (
+        <div className="bg-[#161821] p-4 rounded-xl border border-[#2a2d3d] mb-6 flex gap-3 max-w-2xl items-end">
+          <div className="flex-1">
+            <label className="text-xs text-neutral-400 mb-1.5 block uppercase tracking-wider">Nome</label>
+            <input value={name} onChange={e=>setName(e.target.value)} className="w-full bg-[#0f1015] border border-[#2a2d3d] rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-indigo-500" placeholder="Ex: João da Silva" />
+          </div>
+          <div className="flex-1">
+            <label className="text-xs text-neutral-400 mb-1.5 block uppercase tracking-wider">Senha Inicial</label>
+            <input type="password" value={password} onChange={e=>setPassword(e.target.value)} onKeyDown={e=>e.key === 'Enter' && add()} className="w-full bg-[#0f1015] border border-[#2a2d3d] rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-indigo-500" placeholder="Ex: 12345" />
+          </div>
+          <button onClick={add} className="h-[38px] px-5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"><Plus size={16}/> Criar Utilizador</button>
         </div>
-        <button onClick={add} className="h-[38px] px-5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"><Plus size={16}/> Adicionar</button>
-      </div>
+      )}
+
       <div className="flex flex-wrap gap-3">
         {responsibles.map(r => {
           const count = tasks.filter(t => t.responsibleId === r.id).length;
           return (
             <div key={r.id} className="flex items-center gap-3 bg-[#161821] border border-[#2a2d3d] rounded-lg pl-3 pr-1 py-1.5 group">
-              <User size={14} className="text-indigo-400" />
+              <User size={14} className={r.name.toLowerCase() === 'othávio campbell' ? "text-amber-400" : "text-indigo-400"} />
               <span className="text-sm font-medium text-neutral-200">{r.name}</span>
               <span className="text-[10px] bg-[#0f1015] border border-[#2a2d3d] px-2 py-0.5 rounded-md text-neutral-400">{count}</span>
-              <button onClick={() => remove(r.id)} className="p-1.5 text-neutral-500 hover:text-red-400 hover:bg-red-500/10 rounded-md transition-colors opacity-0 group-hover:opacity-100"><X size={14}/></button>
+              {(user.isAdmin || r.id === user.id) && (
+                 <button onClick={() => remove(r.id)} className="p-1.5 text-neutral-500 hover:text-red-400 hover:bg-red-500/10 rounded-md transition-colors opacity-0 group-hover:opacity-100"><X size={14}/></button>
+              )}
             </div>
           )
         })}
@@ -1309,8 +1441,6 @@ function ResponsiblesPanel({ responsibles, setResponsibles, tasks, setTasks }) {
     </div>
   );
 }
-
-// --- Componentes Reestruturados para o Modal de Clientes ---
 
 function ClientModal({ modal, setModal, setClients }) {
   const [form, setForm] = useState(modal.form);
@@ -1365,6 +1495,17 @@ function ClientModal({ modal, setModal, setClients }) {
               placeholder="Ex: Acme Corp" 
             />
           </div>
+
+          <div>
+            <label className="text-[11px] text-neutral-400 mb-1.5 block uppercase font-medium">Teto de Horas Contratadas (Mensal)</label>
+            <input 
+              type="number"
+              value={form.contractedHours || ''} 
+              onChange={(e) => setForm({ ...form, contractedHours: e.target.value })} 
+              className={`w-full bg-[#0f1015] border border-[#2a2d3d] rounded-lg px-4 py-2.5 text-sm text-white outline-none focus:border-purple-500 transition-colors`} 
+              placeholder="Ex: 50" 
+            />
+          </div>
           
           <div>
             <label className="text-[11px] text-neutral-400 mb-1.5 block uppercase font-medium">E-mails (Contactos do Cliente)</label>
@@ -1384,10 +1525,10 @@ function ClientModal({ modal, setModal, setClients }) {
               </button>
             </div>
 
-            <div className="flex flex-col gap-2 max-h-40 overflow-y-auto kp-scroll pr-1">
+            <div className="flex flex-col gap-2 max-h-32 overflow-y-auto kp-scroll pr-1">
               {form.emails.length === 0 && (
                 <div className="text-center text-xs text-neutral-500 py-3 border border-dashed border-[#2a2d3d] rounded-lg">
-                  Nenhum e-mail adicionado ainda.
+                  Nenhum e-mail adicionado.
                 </div>
               )}
               {form.emails.map((email, index) => (
@@ -1419,10 +1560,10 @@ function ClientModal({ modal, setModal, setClients }) {
   );
 }
 
-function ClientsPanel({ clients, setClients, tasks, setTasks }) {
+function ClientsPanel({ clients, setClients, tasks, setTasks, user, getElapsed, now }) {
   const [clientModal, setClientModal] = useState(null);
 
-  const openAdd = () => setClientModal({ mode: 'add', form: { name: '', emails: [] } });
+  const openAdd = () => setClientModal({ mode: 'add', form: { name: '', emails: [], contractedHours: '' } });
   
   const openEdit = (client) => {
     const emailsArray = client.emails ? client.emails : (client.email ? client.email.split(',').map(e => e.trim()) : []);
@@ -1430,6 +1571,7 @@ function ClientsPanel({ clients, setClients, tasks, setTasks }) {
   };
 
   const remove = async (id) => { 
+    if(!user.isAdmin) return alert("Apenas administradores podem remover clientes.");
     setClients(prev => prev.filter(c => c.id !== id)); 
     setTasks(prev => prev.map(t => t.clientId === id ? { ...t, clientId: '' } : t)); 
     if (window.supabaseClient) {
@@ -1444,9 +1586,11 @@ function ClientsPanel({ clients, setClients, tasks, setTasks }) {
           <Building2 size={20} />
           <h2 className="text-lg font-semibold text-white">Clientes</h2>
         </div>
-        <button onClick={openAdd} className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2">
-          <Plus size={16}/> Novo Cliente
-        </button>
+        {user.isAdmin && (
+           <button onClick={openAdd} className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2">
+             <Plus size={16}/> Novo Cliente
+           </button>
+        )}
       </div>
       
       <div className="flex flex-col gap-2 max-w-4xl">
@@ -1459,6 +1603,12 @@ function ClientsPanel({ clients, setClients, tasks, setTasks }) {
           const count = tasks.filter(t => t.clientId === c.id).length;
           const emailsArray = c.emails ? c.emails : (c.email ? c.email.split(',').map(e => e.trim()) : []);
           
+          // Cálculo de Alerta de Horas
+          const cTasks = tasks.filter(t => t.clientId === c.id);
+          const hours = cTasks.reduce((acc, t) => acc + (getElapsed(t, now) / 3600), 0);
+          const remaining = c.contractedHours ? c.contractedHours - hours : null;
+          const isNearLimit = remaining !== null && remaining <= 5;
+          
           return (
             <div 
               key={c.id} 
@@ -1470,17 +1620,31 @@ function ClientsPanel({ clients, setClients, tasks, setTasks }) {
                 <div>
                   <div className="text-sm font-semibold text-neutral-200">{c.name}</div>
                   <div className="text-[11px] text-neutral-500 mt-0.5">
-                    {emailsArray.length === 0 ? "Sem e-mails registados" : `${emailsArray.length} e-mail(s) registado(s)`}
+                    {c.contractedHours ? `Teto: ${c.contractedHours}h | ` : ''} {emailsArray.length === 0 ? "Sem e-mails" : `${emailsArray.length} e-mail(s)`}
                   </div>
                 </div>
                 <span className="text-[10px] bg-purple-500/10 text-purple-400 border border-purple-500/20 px-2 py-0.5 rounded-md ml-2">{count} tarefas</span>
+                
+                {isNearLimit && (
+                  <a 
+                    href={generateLimitEmailLink(c, hours)} 
+                    target="_blank" 
+                    rel="noreferrer"
+                    onClick={(e) => e.stopPropagation()} 
+                    className="flex items-center gap-1.5 px-3 py-1 bg-red-500/10 text-red-400 border border-red-500/20 rounded-md text-[10px] font-semibold hover:bg-red-500/20 transition-colors"
+                  >
+                    <AlertTriangle size={12}/> Aviso de Limite ({remaining.toFixed(1)}h restam)
+                  </a>
+                )}
               </div>
-              <button 
-                onClick={(e) => { e.stopPropagation(); remove(c.id); }} 
-                className="p-2 text-neutral-500 hover:text-red-400 hover:bg-red-500/10 rounded-md transition-colors opacity-0 group-hover:opacity-100"
-              >
-                <Trash2 size={16}/>
-              </button>
+              {user.isAdmin && (
+                 <button 
+                   onClick={(e) => { e.stopPropagation(); remove(c.id); }} 
+                   className="p-2 text-neutral-500 hover:text-red-400 hover:bg-red-500/10 rounded-md transition-colors opacity-0 group-hover:opacity-100"
+                 >
+                   <Trash2 size={16}/>
+                 </button>
+              )}
             </div>
           )
         })}
@@ -1582,76 +1746,6 @@ function ReportsPanel({ tasks, clients, responsibles, now, getElapsed }) {
         <button onClick={exportHoursCSV} className="flex items-center gap-2 px-4 py-2 bg-blue-600/10 text-blue-400 border border-blue-500/30 hover:bg-blue-600/20 rounded-lg text-xs font-semibold transition-colors"><Download size={14}/> Exportar Horas (CSV)</button>
         <button onClick={exportClientsCSV} className="flex items-center gap-2 px-4 py-2 bg-purple-600/10 text-purple-400 border border-purple-500/30 hover:bg-purple-600/20 rounded-lg text-xs font-semibold transition-colors"><Download size={14}/> Exportar Clientes (CSV)</button>
       </div>
-    </div>
-  );
-}
-
-function TaskModal({ modal, setModal, clients, responsibles, closeModal, saveModal, validationError, setValidationError }) {
-  const updateForm = (patch) => { setModal(m => ({ ...m, form: { ...m.form, ...patch } })); if (validationError) setValidationError(null); };
-  const addChecklistRow = () => { setModal(m => ({ ...m, form: { ...m.form, checklist: [...m.form.checklist, { id: nextId(), text: "", done: false }] } })); };
-  return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-[85] fade-in">
-      <div className="w-full max-w-lg rounded-2xl bg-[#161821] border border-[#2a2d3d] flex flex-col max-h-[90vh] shadow-2xl overflow-hidden">
-        <div className="px-6 py-4 border-b border-[#2a2d3d] flex items-center justify-between bg-[#1a1c24]">
-          <h3 className="font-bold text-base text-white">{modal.mode === "add" ? "Nova Tarefa" : "Editar Tarefa"}</h3>
-          <button onClick={closeModal} className="p-1.5 rounded-lg text-neutral-500 hover:text-white hover:bg-[#2a2d3d] transition-colors"><X size={18} /></button>
-        </div>
-        <div className="p-6 overflow-y-auto kp-scroll flex flex-col gap-5">
-          <div>
-            <label className="text-[11px] text-neutral-400 mb-1.5 block uppercase font-medium">Título *</label>
-            <input autoFocus value={modal.form.title} onChange={(e) => updateForm({ title: e.target.value })} className={`w-full bg-[#0f1015] border rounded-lg px-4 py-2.5 text-sm text-white outline-none focus:border-indigo-500 transition-colors ${validationError?.includes("Título") ? "border-red-500" : "border-[#2a2d3d]"}`} placeholder="Nome da tarefa" />
-          </div>
-          <div>
-            <label className="text-[11px] text-neutral-400 mb-1.5 block uppercase font-medium">Descrição</label>
-            <textarea value={modal.form.description} onChange={(e) => updateForm({ description: e.target.value })} rows={3} className="w-full bg-[#0f1015] border border-[#2a2d3d] rounded-lg px-4 py-2.5 text-sm text-white outline-none focus:border-indigo-500 resize-none transition-colors" placeholder="Detalhes opcionais" />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <CustomSelect label="Prioridade" value={modal.form.priority} onChange={(e) => updateForm({ priority: e.target.value })} options={<><option value="Baixa">Baixa</option><option value="Média">Média</option><option value="Alta">Alta</option></>} />
-            <div>
-              <label className="text-[11px] text-neutral-400 mb-1.5 block uppercase font-medium">Duração Estimada (Min)</label>
-              <input type="number" value={modal.form.durationMin} onChange={(e) => updateForm({ durationMin: e.target.value })} className="w-full bg-[#0f1015] border border-[#2a2d3d] rounded-lg px-4 py-2.5 text-sm text-white outline-none focus:border-indigo-500" placeholder="Ex: 120" />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <CustomSelect label="Responsável" required hasError={validationError?.includes("Responsável")} value={modal.form.responsibleId} onChange={(e) => updateForm({ responsibleId: e.target.value })} options={<><option value="">Selecione...</option>{responsibles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</>} />
-            <CustomSelect label="Cliente" value={modal.form.clientId} onChange={(e) => updateForm({ clientId: e.target.value })} options={<><option value="">Nenhum</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</>} />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="text-[11px] text-neutral-400 mb-1.5 block uppercase font-medium">Data de Entrega</label>
-              <input type="date" value={modal.form.dueDate} onChange={(e) => updateForm({ dueDate: e.target.value })} className="w-full bg-[#0f1015] border border-[#2a2d3d] rounded-lg px-4 py-2 text-sm text-white outline-none focus:border-indigo-500 [color-scheme:dark]" />
-            </div>
-            <CustomSelect label="Etapa / Status" value={modal.form.status} onChange={(e) => updateForm({ status: e.target.value, waitingFor: e.target.value === 'waiting' ? modal.form.waitingFor : "" })} options={COLUMNS.map(c => <option key={c.id} value={c.id}>{c.name}</option>)} />
-          </div>
-          {modal.form.status === 'waiting' && (
-            <div className="animate-fade-in">
-              <CustomSelect label="Aguardando Retorno De" required hasError={validationError?.includes("Aguardando Retorno")} value={modal.form.waitingFor || ""} onChange={(e) => updateForm({ waitingFor: e.target.value })} options={<><option value="">Selecione a pendência...</option><option value="Cliente">Cliente</option><option value="Equipa Interna">Equipa Interna</option></>} />
-            </div>
-          )}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-[11px] text-neutral-400 uppercase font-medium">Checklist</label>
-              <button onClick={addChecklistRow} className="text-xs text-indigo-400 hover:text-indigo-300 font-medium flex items-center gap-1"><Plus size={12}/> Adicionar item</button>
-            </div>
-            <div className="flex flex-col gap-2">
-              {modal.form.checklist.map((c) => (
-                <div key={c.id} className="flex items-center gap-2">
-                  <button onClick={() => { setModal(m => ({ ...m, form: { ...m.form, checklist: m.form.checklist.map(ci => ci.id === c.id ? { ...ci, done: !ci.done } : ci) } })); }} className={`p-1.5 border rounded-md transition-colors shrink-0 ${c.done ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-400' : 'bg-[#0f1015] border-[#2a2d3d] text-neutral-600 hover:text-neutral-400'}`}><CheckCircle2 size={14}/></button>
-                  <input value={c.text} onChange={(e) => { setModal(m => ({ ...m, form: { ...m.form, checklist: m.form.checklist.map(ci => ci.id === c.id ? { ...ci, text: e.target.value } : ci) } })); }} className="flex-1 bg-[#0f1015] border border-[#2a2d3d] rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-indigo-500 transition-colors" placeholder="Item do checklist" />
-                  <button onClick={() => setModal(m => ({ ...m, form: { ...m.form, checklist: m.form.checklist.filter(ci => ci.id !== c.id) } }))} className="p-2 text-neutral-500 hover:text-red-400 hover:bg-red-500/10 rounded-md transition-colors"><X size={16} /></button>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-        <div className="px-6 py-4 border-t border-[#2a2d3d] flex items-center justify-end gap-3 bg-[#1a1c24]">
-          <button onClick={closeModal} className="text-sm px-4 py-2 rounded-lg text-neutral-400 hover:text-white transition-colors">Cancelar</button>
-          <button onClick={saveModal} className="text-sm px-6 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition-colors">{modal.mode === "add" ? "Criar Tarefa" : "Salvar Alterações"}</button>
-        </div>
-      </div>
-      {validationError && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-red-500 text-white px-4 py-2.5 rounded-lg shadow-lg flex items-center gap-2 fade-in z-[90] font-medium text-sm"><AlertTriangle size={16} />Preencha: {validationError.join(", ")}</div>
-      )}
     </div>
   );
 }

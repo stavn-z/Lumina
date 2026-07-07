@@ -762,6 +762,7 @@ function KanbanMain({ user, setUser, onLogout }) {
         .kp-scroll::-webkit-scrollbar-thumb { background: #27272a; border-radius: 6px; }
         .kp-scroll::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
         .kp-scroll::-webkit-scrollbar-track { background: transparent; }
+        .kp-scroll { -webkit-overflow-scrolling: touch; }
         
         .hide-scrollbar::-webkit-scrollbar { display: none; }
         .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
@@ -904,7 +905,7 @@ function KanbanMain({ user, setUser, onLogout }) {
           </div>
 
           {/* Quadro Kanban (Scroll Horizontal e Vertical Nativo) */}
-          <div className="flex-1 overflow-x-auto overflow-y-hidden px-4 md:px-8 pb-4 md:pb-8 kp-scroll min-h-0">
+          <div className="flex-1 overflow-x-auto overflow-y-hidden px-4 md:px-8 pb-4 md:pb-8 kp-scroll min-h-0" style={{ touchAction: 'pan-x' }}>
             <div className="flex gap-4 sm:gap-5 h-full min-w-max">
               {COLUMNS.map((col) => {
                 const colTasks = filteredTasks.filter((t) => t.status === col.id);
@@ -927,8 +928,15 @@ function KanbanMain({ user, setUser, onLogout }) {
                       </button>
                     </div>
                     
-                    {/* Área de Cartões com scroll vertical (touch-pan-y para mobile) */}
-                    <div className="px-3 pb-3 flex-1 overflow-y-auto overflow-x-hidden kp-scroll flex flex-col gap-3 mt-3 min-h-0 overscroll-y-contain" onDragOver={(e) => { if (!isMobile) e.preventDefault(); }} onDrop={(e) => { if (!isMobile) { e.preventDefault(); handleRequestMove(e.dataTransfer.getData("taskId"), null, col.id); }}}>
+                    {/* Área de Cartões com scroll vertical (touch-pan-y para mobile e intercepção do touch) */}
+                    <div 
+                      className="px-3 pb-3 flex-1 overflow-y-auto overflow-x-hidden kp-scroll flex flex-col gap-3 mt-3 min-h-0 overscroll-y-contain" 
+                      style={{ touchAction: 'pan-y' }} 
+                      onTouchStart={(e) => { e.stopPropagation(); }} 
+                      onTouchMove={(e) => { e.stopPropagation(); }} 
+                      onDragOver={(e) => { if (!isMobile) e.preventDefault(); }} 
+                      onDrop={(e) => { if (!isMobile) { e.preventDefault(); handleRequestMove(e.dataTransfer.getData("taskId"), null, col.id); }}}
+                    >
                       {colTasks.length === 0 && (
                         <div className="text-center text-[10px] font-medium uppercase tracking-widest text-neutral-600 py-10 border border-dashed border-white/5 rounded-xl mx-2">
                           Solte itens aqui

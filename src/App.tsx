@@ -51,13 +51,14 @@ function UserAvatar({ url, name, className }) {
   const [error, setError] = useState(false);
   
   useEffect(() => {
-    setError(false);
+    setError(false); // Reset do erro se o URL mudar
   }, [url]);
 
   if (url && url.trim() !== '' && !error) {
     return <img src={url} alt={name} onError={() => setError(true)} className={`w-full h-full object-cover ${className || ''}`} />;
   }
   
+  // Fallback se não tiver URL ou se a imagem der erro
   return <span className="uppercase font-bold">{name ? name.charAt(0) : '?'}</span>;
 }
 
@@ -102,7 +103,7 @@ function TopWidgets() {
     if ("geolocation" in navigator) {
       navigator.geolocation.getCurrentPosition(
         (pos) => fetchWeather(pos.coords.latitude, pos.coords.longitude),
-        () => fetchWeather(-19.9167, -43.9345)
+        () => fetchWeather(-19.9167, -43.9345) // Fallback: Belo Horizonte, MG
       );
     } else {
       fetchWeather(-19.9167, -43.9345);
@@ -320,7 +321,7 @@ function KanbanMain({ user, setUser, onLogout }) {
   const [isCloudSynced, setIsCloudSynced] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Monitora se está em Mobile para desativar o arrasto
+  // Monitora se está em Mobile para desativar o arrasto e permitir Scroll nativo
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth <= 768);
@@ -463,6 +464,7 @@ function KanbanMain({ user, setUser, onLogout }) {
   const doneCount = visibleTasks.filter((t) => t.status === "done" || t.status === "formalize").length;
   const overallProgress = activeTasksCount ? Math.round((doneCount / activeTasksCount) * 100) : 0;
   
+  // Para fechamento, pegamos todas as demandas ativas (tirando backlog, a fazer e canceladas)
   const tasksForClosure = visibleTasks.filter(t => ['inprogress', 'paused', 'waiting', 'review', 'done', 'formalize'].includes(t.status));
 
   const emptyForm = { title: "", description: "", priority: "Média", durationMin: "", clientId: "", responsibleId: user.id, dueDate: "", status: "", waitingFor: "", checklist: [] };
@@ -738,6 +740,7 @@ function KanbanMain({ user, setUser, onLogout }) {
     e.dataTransfer.setData("taskId", taskId);
   };
 
+  // Avatar sempre atualizado buscando do DB com fallback
   const currentUserDB = responsibles.find(r => r.id === user.id) || responsibles.find(r => r.name.toLowerCase() === user.name.toLowerCase());
   const activeAvatar = currentUserDB?.avatar || user.avatar || '';
 
@@ -753,14 +756,12 @@ function KanbanMain({ user, setUser, onLogout }) {
   }
 
   return (
-    <div className="fixed inset-0 w-full bg-[#09090b] text-neutral-100 flex flex-col md:flex-row overflow-hidden font-sans">
+    <div className="fixed inset-0 w-full bg-[#09090b] text-neutral-100 flex flex-col md:flex-row overflow-hidden font-sans">  
       <style>{`
         .kp-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
         .kp-scroll::-webkit-scrollbar-thumb { background: #27272a; border-radius: 6px; }
         .kp-scroll::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
         .kp-scroll::-webkit-scrollbar-track { background: transparent; }
-        
-        .kp-scroll { -webkit-overflow-scrolling: touch; }
         
         .hide-scrollbar::-webkit-scrollbar { display: none; }
         .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
@@ -777,10 +778,14 @@ function KanbanMain({ user, setUser, onLogout }) {
         .animate-modal-out { animation: modalPopOut 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
         @keyframes modalPopOut { 0% { opacity: 1; transform: scale(1) translateY(0); } 100% { opacity: 0; transform: scale(0.97) translateY(10px); } }
         
-        input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+        input[type=number]::-webkit-inner-spin-button,
+        input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
         input[type=number] { -moz-appearance: textfield; }
 
         .glass-panel { background: rgba(24, 24, 27, 0.6); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.05); }
+
+        /* LINHA NOVA ADICIONADA ABAIXO */
+        .kp-scroll { -webkit-overflow-scrolling: touch; }
       `}</style>
 
       {/* LEFT SIDEBAR (Desktop) */}
@@ -902,143 +907,147 @@ function KanbanMain({ user, setUser, onLogout }) {
              </div>
           </div>
 
-          {/* Quadro Kanban */}
-          <div className="flex-1 overflow-x-auto overflow-y-hidden px-4 md:px-8 pb-4 md:pb-8 kp-scroll min-h-0">
-            <div className="flex gap-4 sm:gap-5 h-full min-w-max">
-              {COLUMNS.map((col) => {
-                const colTasks = filteredTasks.filter((t) => t.status === col.id);
-                return (
-                  <div key={col.id} className="w-[85vw] max-w-[340px] sm:w-[340px] shrink-0 glass-panel rounded-2xl flex flex-col h-full max-h-full shadow-sm">
-                    
-                    {/* Header da Coluna */}
-                    <div className="px-5 pt-5 pb-4 flex items-center justify-between border-b border-white/5 shrink-0">
-                      <div className="flex items-center gap-2.5">
-                        <span className={`w-2.5 h-2.5 rounded-full ${col.dot} shadow-[0_0_8px_currentColor]`} />
-                        <h2 className="text-xs font-bold uppercase tracking-widest text-white">{col.name}</h2>
-                      </div>
-                      <span className="text-[10px] px-2.5 py-1 rounded-lg bg-black/40 text-neutral-400 font-bold border border-white/5">{colTasks.length}</span>
-                    </div>
-                    
-                    {/* Botão de Adicionar */}
-                    <div className="px-3 pt-3 shrink-0">
-                      <button onClick={() => openAddModal(col.id)} className={`w-full flex items-center justify-center gap-2 text-[11px] font-bold uppercase tracking-widest rounded-xl py-3 transition-all border border-dashed ${col.btn}`}>
-                        <Plus size={14} /> Nova Demanda
-                      </button>
-                    </div>
-                    
-                    {/* Área de Cartões com scroll vertical independente */}
-                    <div 
-                      className="px-3 pb-3 flex-1 overflow-y-auto overflow-x-hidden kp-scroll flex flex-col gap-3 mt-3 min-h-0 overscroll-y-contain" 
-                      onDragOver={(e) => { if (!isMobile) e.preventDefault(); }} 
-                      onDrop={(e) => { if (!isMobile) { e.preventDefault(); handleRequestMove(e.dataTransfer.getData("taskId"), null, col.id); }}}
-                    >
-                      {colTasks.length === 0 && (
-                        <div className="text-center text-[10px] font-medium uppercase tracking-widest text-neutral-600 py-10 border border-dashed border-white/5 rounded-xl mx-2">
-                          Solte itens aqui
+          {/* ========================================================= */}
+          {/* Quadro Kanban (Correção Definitiva de Altura e Scroll)    */}
+          {/* ========================================================= */}
+          <div className="flex-1 relative min-h-0">
+            <div className="absolute inset-0 overflow-x-auto overflow-y-hidden px-4 md:px-8 pb-4 md:pb-8 kp-scroll">
+              <div className="flex gap-4 sm:gap-5 h-full min-w-max items-stretch">
+                {COLUMNS.map((col) => {
+                  const colTasks = filteredTasks.filter((t) => t.status === col.id);
+                  return (
+                    <div key={col.id} className="w-[85vw] max-w-[340px] sm:w-[340px] shrink-0 glass-panel rounded-2xl flex flex-col h-full max-h-full shadow-sm">
+                      
+                      {/* Header da Coluna */}
+                      <div className="px-5 pt-5 pb-4 flex items-center justify-between border-b border-white/5 shrink-0">
+                        <div className="flex items-center gap-2.5">
+                          <span className={`w-2.5 h-2.5 rounded-full ${col.dot} shadow-[0_0_8px_currentColor]`} />
+                          <h2 className="text-xs font-bold uppercase tracking-widest text-white">{col.name}</h2>
                         </div>
-                      )}
-                      {colTasks.map((t) => {
-                        const tChecklist = Array.isArray(t.checklist) ? t.checklist : [];
-                        const total = tChecklist.length;
-                        const done = tChecklist.filter((c) => c.done).length;
-                        const pct = total ? Math.round((done / total) * 100) : 0;
-                        const client = clients.find(c => c.id === t.clientId);
-                        const resp = responsibles.find(r => r.id === t.responsibleId);
-                        const prStyle = PRIORITY_STYLE[t.priority] || PRIORITY_STYLE.Média;
-                        const isDoneOrCancelled = t.status === "done" || t.status === "cancelled" || t.status === "formalize";
-                        const isEditable = canEditTask(t.responsibleId);
-
-                        return (
-                          <div key={t.id} className={`rounded-2xl bg-[#1c1d26] border p-4 transition-all group ${isDoneOrCancelled ? 'opacity-60' : ''} ${!isEditable ? 'opacity-70 cursor-not-allowed' : 'cursor-grab active:cursor-grabbing hover:border-[#3f3f46] shadow-md'} ${dragOverId === t.id ? 'border-indigo-500 shadow-[0_-2px_15px_rgba(99,102,241,0.3)]' : 'border-[#2d3142]'}`} draggable={!isMobile && isEditable} onDragStart={(e) => { if(!isMobile && isEditable) handleDragStart(e, t.id); }} onDragOver={(e) => { if(!isMobile && isEditable) { e.preventDefault(); e.stopPropagation(); setDragOverId(t.id); } }} onDragLeave={() => setDragOverId(null)} onDrop={(e) => { if(!isMobile && isEditable) { e.preventDefault(); e.stopPropagation(); setDragOverId(null); handleRequestMove(e.dataTransfer.getData("taskId"), t.id, col.id); } }}>
-                            
-                            {/* Badges do Cartão */}
-                            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-                              <div className="flex items-center gap-2">
-                                {client && <span className="flex items-center gap-1 text-[9px] uppercase tracking-wider px-2 py-1 rounded-md bg-white/5 text-neutral-300 font-bold max-w-[140px] truncate border border-white/5"><Building2 size={10} /> {client.name}</span>}
-                                <span className={`flex items-center gap-1 text-[9px] uppercase tracking-wider px-2 py-1 rounded-md border font-bold ${prStyle.bg} ${prStyle.text} ${prStyle.border}`}>
-                                  <span className={`w-1 h-1 rounded-full ${prStyle.dot}`} /> {t.priority}
-                                </span>
-                              </div>
-                              {isEditable && !isMobile && <GripVertical size={14} className="text-neutral-600 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity hidden md:block" />}
-                              {!isEditable && !isMobile && <Lock size={12} className="text-neutral-600 shrink-0 hidden md:block" />}
-                            </div>
-
-                            <div className="mb-3">
-                              <h3 className={`text-[13px] font-bold leading-relaxed mb-1.5 ${isDoneOrCancelled ? 'text-neutral-500 line-through' : 'text-white'}`}>{t.title}</h3>
-                              {t.description && <div className="text-[11px] text-neutral-400 line-clamp-2 leading-relaxed">{t.description}</div>}
-                            </div>
-
-                            {t.status === 'waiting' && t.waitingFor && (
-                              <div className="flex items-center gap-1.5 text-[10px] mb-4 font-bold uppercase tracking-tight w-fit bg-pink-500/10 border border-pink-500/20 px-2.5 py-1 rounded-lg text-pink-400"><Clock size={12} /> Pendente: {t.waitingFor}</div>
-                            )}
-
-                            {/* Checklist Detalhado Visível no Cartão */}
-                            {total > 0 && (
-                              <div className="mb-3">
-                                <div className="h-1 rounded-full bg-black/40 overflow-hidden mb-2 border border-white/5">
-                                  <div className={`h-full rounded-full transition-all ${pct === 100 ? 'bg-emerald-500 shadow-[0_0_5px_rgba(16,185,129,0.3)]' : 'bg-indigo-500'}`} style={{ width: `${pct}%` }} />
-                                </div>
-                                <div className="flex flex-col gap-1.5">
-                                  {tChecklist.map((c) => (
-                                    <div key={c.id} className="flex items-start gap-2 text-[11px] text-neutral-400">
-                                      <button onClick={(e) => { e.stopPropagation(); toggleChecklistItem(t.id, c.id); }} disabled={!isEditable} className={`mt-0.5 w-3.5 h-3.5 rounded flex items-center justify-center shrink-0 border ${c.done ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-400' : 'bg-black/30 border-white/10 hover:border-white/20 text-transparent'} transition-colors`}>
-                                         <Check size={10} strokeWidth={3} className={c.done ? 'opacity-100' : 'opacity-0'} />
-                                      </button>
-                                      <span className={`leading-snug ${c.done ? "line-through text-neutral-500" : "text-neutral-300"}`}>{c.text || ''}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-
-                            {/* Info de Rodapé do Cartão com Botões Integrados */}
-                            <div className="flex items-center justify-between mt-4 pt-3 border-t border-white/5">
-                               <div className="flex items-center gap-2">
-                                  {resp && (
-                                     <div className="w-6 h-6 rounded-full bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-[10px] font-bold text-indigo-300 uppercase overflow-hidden" title={`Responsável: ${resp.name}`}>
-                                        <UserAvatar url={resp.avatar} name={resp.name} />
-                                     </div>
-                                  )}
-                                  
-                                  {(t.timerRunning || t.timerElapsed > 0) && !isDoneOrCancelled && (
-                                    <div className="flex items-center gap-1 text-[10px] font-mono font-bold bg-black/30 border border-white/5 px-2 py-1 rounded-md text-neutral-400">
-                                      <Clock size={10} className={t.timerRunning ? "text-amber-500 animate-pulse" : "text-neutral-500"} /> {formatTime(getElapsed(t))}
-                                    </div>
-                                  )}
-
-                                  {isDoneOrCancelled && (t.timerElapsed > 0 || t.durationMin > 0) && (
-                                     <div className="flex items-center gap-1.5 text-[10px] font-mono font-bold text-emerald-500 bg-emerald-500/10 px-2 py-1 rounded-md border border-emerald-500/20">
-                                       <CheckCircle2 size={10} /> {formatTime(t.timerElapsed || (t.durationMin * 60))}
-                                     </div>
-                                  )}
-                               </div>
-
-                               <div className="flex items-center gap-1">
-                                  {isEditable && (
-                                    <>
-                                      <button onClick={() => openEditModal(t)} className="p-1.5 bg-white/5 hover:bg-white/10 text-neutral-400 hover:text-white rounded-lg transition-colors border border-transparent hover:border-white/10" title="Editar"><Pencil size={12}/></button>
-                                      {!isDoneOrCancelled && <button onClick={() => toggleTimer(t.id)} className={`p-1.5 rounded-lg transition-colors border ${t.timerRunning ? 'text-amber-400 bg-amber-400/10 border-amber-400/20' : 'text-neutral-400 bg-white/5 hover:text-white hover:bg-white/10 border-transparent hover:border-white/10'}`} title="Timer"><Play size={12}/></button>}
-                                    </>
-                                  )}
-                                  {isEditable && t.status !== "cancelled" && isDoneOrCancelled && (
-                                    <button onClick={() => handleRequestMove(t.id, null, 'cancelled')} className="p-1.5 bg-red-500/5 hover:bg-red-500/10 text-red-500/50 hover:text-red-400 rounded-lg transition-colors" title="Cancelar"><X size={12}/></button>
-                                  )}
-                                  {isEditable && t.status === "cancelled" && (
-                                    <>
-                                      <button onClick={() => handleRequestMove(t.id, null, 'backlog')} className="p-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded-lg transition-colors" title="Restaurar"><RotateCcw size={12}/></button>
-                                      <button onClick={() => setConfirmDelete(t.id)} className="p-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg transition-colors" title="Apagar Definitivamente"><Trash2 size={12}/></button>
-                                    </>
-                                  )}
-                               </div>
-                            </div>
-
+                        <span className="text-[10px] px-2.5 py-1 rounded-lg bg-black/40 text-neutral-400 font-bold border border-white/5">{colTasks.length}</span>
+                      </div>
+                      
+                      {/* Botão de Adicionar */}
+                      <div className="px-3 pt-3 shrink-0">
+                        <button onClick={() => openAddModal(col.id)} className={`w-full flex items-center justify-center gap-2 text-[11px] font-bold uppercase tracking-widest rounded-xl py-3 transition-all border border-dashed ${col.btn}`}>
+                          <Plus size={14} /> Nova Demanda
+                        </button>
+                      </div>
+                      
+                      {/* Área de Cartões - O min-h-0 e flex-1 garantem a rolagem */}     
+                      <div 
+                        className="px-3 pb-3 flex-1 overflow-y-auto overflow-x-hidden kp-scroll flex flex-col gap-3 mt-3 min-h-0"
+                        onDragOver={(e) => { if (!isMobile) e.preventDefault(); }}
+                        onDrop={(e) => { if (!isMobile) { e.preventDefault(); handleRequestMove(e.dataTransfer.getData("taskId"), null, col.id); } }}
+                      >
+                        {colTasks.length === 0 && (
+                          <div className="text-center text-[10px] font-medium uppercase tracking-widest text-neutral-600 py-10 border border-dashed border-white/5 rounded-xl mx-2">
+                            Solte itens aqui
                           </div>
-                        );
-                      })}
+                        )}
+                        {colTasks.map((t) => {
+                          const tChecklist = Array.isArray(t.checklist) ? t.checklist : [];
+                          const total = tChecklist.length;
+                          const done = tChecklist.filter((c) => c.done).length;
+                          const pct = total ? Math.round((done / total) * 100) : 0;
+                          const client = clients.find(c => c.id === t.clientId);
+                          const resp = responsibles.find(r => r.id === t.responsibleId);
+                          const prStyle = PRIORITY_STYLE[t.priority] || PRIORITY_STYLE.Média;
+                          const isDoneOrCancelled = t.status === "done" || t.status === "cancelled" || t.status === "formalize";
+                          const isEditable = canEditTask(t.responsibleId);
+
+                          return (
+                            <div key={t.id} className={`rounded-2xl bg-[#1c1d26] border p-4 transition-all group ${isDoneOrCancelled ? 'opacity-60' : ''} ${!isEditable ? 'opacity-70 cursor-not-allowed' : 'cursor-grab active:cursor-grabbing hover:border-[#3f3f46] shadow-md'} ${dragOverId === t.id ? 'border-indigo-500 shadow-[0_-2px_15px_rgba(99,102,241,0.3)]' : 'border-[#2d3142]'}`} draggable={!isMobile && isEditable} onDragStart={(e) => { if(!isMobile && isEditable) handleDragStart(e, t.id); }} onDragOver={(e) => { if(!isMobile && isEditable) { e.preventDefault(); e.stopPropagation(); setDragOverId(t.id); } }} onDragLeave={() => setDragOverId(null)} onDrop={(e) => { if(!isMobile && isEditable) { e.preventDefault(); e.stopPropagation(); setDragOverId(null); handleRequestMove(e.dataTransfer.getData("taskId"), t.id, col.id); } }}>
+                              
+                              {/* Badges do Cartão */}
+                              <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                                <div className="flex items-center gap-2">
+                                  {client && <span className="flex items-center gap-1 text-[9px] uppercase tracking-wider px-2 py-1 rounded-md bg-white/5 text-neutral-300 font-bold max-w-[140px] truncate border border-white/5"><Building2 size={10} /> {client.name}</span>}
+                                  <span className={`flex items-center gap-1 text-[9px] uppercase tracking-wider px-2 py-1 rounded-md border font-bold ${prStyle.bg} ${prStyle.text} ${prStyle.border}`}>
+                                    <span className={`w-1 h-1 rounded-full ${prStyle.dot}`} /> {t.priority}
+                                  </span>
+                                </div>
+                                {isEditable && !isMobile && <GripVertical size={14} className="text-neutral-600 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity hidden md:block" />}
+                                {!isEditable && !isMobile && <Lock size={12} className="text-neutral-600 shrink-0 hidden md:block" />}
+                              </div>
+
+                              <div className="mb-3">
+                                <h3 className={`text-[13px] font-bold leading-relaxed mb-1.5 ${isDoneOrCancelled ? 'text-neutral-500 line-through' : 'text-white'}`}>{t.title}</h3>
+                                {t.description && <div className="text-[11px] text-neutral-400 line-clamp-2 leading-relaxed">{t.description}</div>}
+                              </div>
+
+                              {t.status === 'waiting' && t.waitingFor && (
+                                <div className="flex items-center gap-1.5 text-[10px] mb-4 font-bold uppercase tracking-tight w-fit bg-pink-500/10 border border-pink-500/20 px-2.5 py-1 rounded-lg text-pink-400"><Clock size={12} /> Pendente: {t.waitingFor}</div>
+                              )}
+
+                              {/* Checklist Detalhado Visível no Cartão */}
+                              {total > 0 && (
+                                <div className="mb-3">
+                                  <div className="h-1 rounded-full bg-black/40 overflow-hidden mb-2 border border-white/5">
+                                    <div className={`h-full rounded-full transition-all ${pct === 100 ? 'bg-emerald-500 shadow-[0_0_5px_rgba(16,185,129,0.3)]' : 'bg-indigo-500'}`} style={{ width: `${pct}%` }} />
+                                  </div>
+                                  <div className="flex flex-col gap-1.5">
+                                    {tChecklist.map((c) => (
+                                      <div key={c.id} className="flex items-start gap-2 text-[11px] text-neutral-400">
+                                        <button onClick={(e) => { e.stopPropagation(); toggleChecklistItem(t.id, c.id); }} disabled={!isEditable} className={`mt-0.5 w-3.5 h-3.5 rounded flex items-center justify-center shrink-0 border ${c.done ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-400' : 'bg-black/30 border-white/10 hover:border-white/20 text-transparent'} transition-colors`}>
+                                           <Check size={10} strokeWidth={3} className={c.done ? 'opacity-100' : 'opacity-0'} />
+                                        </button>
+                                        <span className={`leading-snug ${c.done ? "line-through text-neutral-500" : "text-neutral-300"}`}>{c.text || ''}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Info de Rodapé do Cartão com Botões Integrados */}
+                              <div className="flex items-center justify-between mt-4 pt-3 border-t border-white/5">
+                                 <div className="flex items-center gap-2">
+                                    {resp && (
+                                       <div className="w-6 h-6 rounded-full bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-[10px] font-bold text-indigo-300 uppercase overflow-hidden" title={`Responsável: ${resp.name}`}>
+                                          <UserAvatar url={resp.avatar} name={resp.name} />
+                                       </div>
+                                    )}
+                                    
+                                    {(t.timerRunning || t.timerElapsed > 0) && !isDoneOrCancelled && (
+                                      <div className="flex items-center gap-1 text-[10px] font-mono font-bold bg-black/30 border border-white/5 px-2 py-1 rounded-md text-neutral-400">
+                                        <Clock size={10} className={t.timerRunning ? "text-amber-500 animate-pulse" : "text-neutral-500"} /> {formatTime(getElapsed(t))}
+                                      </div>
+                                    )}
+
+                                    {isDoneOrCancelled && (t.timerElapsed > 0 || t.durationMin > 0) && (
+                                       <div className="flex items-center gap-1.5 text-[10px] font-mono font-bold text-emerald-500 bg-emerald-500/10 px-2 py-1 rounded-md border border-emerald-500/20">
+                                         <CheckCircle2 size={10} /> {formatTime(t.timerElapsed || (t.durationMin * 60))}
+                                       </div>
+                                    )}
+                                 </div>
+
+                                 <div className="flex items-center gap-1">
+                                    {isEditable && (
+                                      <>
+                                        <button onClick={() => openEditModal(t)} className="p-1.5 bg-white/5 hover:bg-white/10 text-neutral-400 hover:text-white rounded-lg transition-colors border border-transparent hover:border-white/10" title="Editar"><Pencil size={12}/></button>
+                                        {!isDoneOrCancelled && <button onClick={() => toggleTimer(t.id)} className={`p-1.5 rounded-lg transition-colors border ${t.timerRunning ? 'text-amber-400 bg-amber-400/10 border-amber-400/20' : 'text-neutral-400 bg-white/5 hover:text-white hover:bg-white/10 border-transparent hover:border-white/10'}`} title="Timer"><Play size={12}/></button>}
+                                      </>
+                                    )}
+                                    {isEditable && t.status !== "cancelled" && isDoneOrCancelled && (
+                                      <button onClick={() => handleRequestMove(t.id, null, 'cancelled')} className="p-1.5 bg-red-500/5 hover:bg-red-500/10 text-red-500/50 hover:text-red-400 rounded-lg transition-colors" title="Cancelar"><X size={12}/></button>
+                                    )}
+                                    {isEditable && t.status === "cancelled" && (
+                                      <>
+                                        <button onClick={() => handleRequestMove(t.id, null, 'backlog')} className="p-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded-lg transition-colors" title="Restaurar"><RotateCcw size={12}/></button>
+                                        <button onClick={() => setConfirmDelete(t.id)} className="p-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg transition-colors" title="Apagar Definitivamente"><Trash2 size={12}/></button>
+                                      </>
+                                    )}
+                                 </div>
+                              </div>
+
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
           </div>
         </div>
@@ -1314,6 +1323,71 @@ function CustomSelect({ label, value, onChange, options, hasError, required }) {
         </select>
         <ChevronDown size={16} className="absolute right-4 text-neutral-600 pointer-events-none" />
       </div>
+    </div>
+  );
+}
+
+// --- Componente Auxiliar para Scroll das Colunas no Mobile ---
+function ColumnCardsList({ children, isMobile, col, handleRequestMove }) {
+  const scrollRef = useRef(null);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+
+    let startX = 0;
+    let startY = 0;
+    let locked = null;
+
+    const onTouchStart = (e) => {
+      startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
+      locked = null;
+    };
+
+    const onTouchMove = (e) => {
+      const dx = Math.abs(e.touches[0].clientX - startX);
+      const dy = Math.abs(e.touches[0].clientY - startY);
+
+      // Decide a direção na primeira movimentação significativa
+      if (!locked && (dx > 4 || dy > 4)) {
+        locked = dy > dx ? 'vertical' : 'horizontal';
+      }
+
+      // Se for vertical, previne o pai de roubar o scroll
+      if (locked === 'vertical') {
+        e.stopPropagation();
+      }
+    };
+
+    // passive:true mantém performance nativa no iOS
+    el.addEventListener('touchstart', onTouchStart, { passive: true });
+    el.addEventListener('touchmove', onTouchMove, { passive: true });
+
+    return () => {
+      el.removeEventListener('touchstart', onTouchStart);
+      el.removeEventListener('touchmove', onTouchMove);
+    };
+  }, []);
+
+  return (
+    <div
+      ref={scrollRef}
+      className="px-3 pb-3 flex-1 overflow-y-auto overflow-x-hidden kp-scroll flex flex-col gap-3 mt-3 min-h-0"
+      style={{
+        overscrollBehavior: 'contain',
+        WebkitOverflowScrolling: 'touch',
+        touchAction: 'pan-y',
+      }}
+      onDragOver={(e) => { if (!isMobile) e.preventDefault(); }}
+      onDrop={(e) => {
+        if (!isMobile) {
+          e.preventDefault();
+          handleRequestMove(e.dataTransfer.getData("taskId"), null, col.id);
+        }
+      }}
+    >
+      {children}
     </div>
   );
 }

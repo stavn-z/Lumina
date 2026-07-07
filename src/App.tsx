@@ -1044,6 +1044,8 @@ function KanbanMain({ user, setUser, onLogout }) {
               })}
             </div>
           </div>
+        </div>
+      </div>
 
       {/* MOBILE BOTTOM NAV - Fixo na Base de Forma Responsiva */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 flex items-center justify-around pt-2.5 px-2 pb-[max(env(safe-area-inset-bottom),0.75rem)] bg-[#12121a]/95 backdrop-blur-md border-t border-[#27272a] z-[100] shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">

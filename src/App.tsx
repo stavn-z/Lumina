@@ -66,7 +66,7 @@ function UserAvatar({ url, name, className }) {
 function TopWidgets() {
   const [dateStr, setDateStr] = useState('');
   const [timeStr, setTimeStr] = useState('');
-  const [weather, setWeather] = useState({ temp: '--', desc: 'A carregar...', Icon: Cloud, color: 'text-neutral-500' });
+  const [weather, setWeather] = useState({ temp: '--', desc: 'Carregando...', Icon: Cloud, color: 'text-neutral-500' });
 
   useEffect(() => {
     const updateTime = () => {
@@ -174,7 +174,7 @@ function LoginScreen({ onLogin }) {
   };
 
   return (
-    <div className="min-h-[100dvh] bg-[#09090b] flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-[#09090b] flex items-center justify-center p-4">
       <div className="bg-[#12121a] p-8 rounded-[32px] border border-[#27272a] w-full max-w-sm shadow-[0_0_50px_rgba(79,70,229,0.05)] animate-modal-pop">
         <div className="flex flex-col items-center justify-center gap-4 mb-8">
           <div className="w-24 h-24 rounded-[22px] bg-black flex items-center justify-center border border-white/5 overflow-hidden shadow-2xl">
@@ -278,7 +278,7 @@ export default function App() {
 
   if (!supabaseReady) {
     return (
-      <div className="min-h-[100dvh] bg-[#09090b] flex flex-col items-center justify-center p-4 text-center">
+      <div className="fixed inset-0 bg-[#09090b] flex flex-col items-center justify-center p-4 text-center">
         <div className="w-20 h-20 rounded-[18px] bg-black border border-white/5 flex items-center justify-center overflow-hidden mb-6 animate-pulse shadow-[0_0_30px_rgba(79,70,229,0.1)]">
           <img src="/apple-icon.png" alt="Lumina" className="w-full h-full object-cover" />
         </div>
@@ -740,13 +740,13 @@ function KanbanMain({ user, setUser, onLogout }) {
     e.dataTransfer.setData("taskId", taskId);
   };
 
-  // Avatar sempre atualizado buscando do DB com fallback para o nome
+  // Avatar sempre atualizado buscando do DB com fallback
   const currentUserDB = responsibles.find(r => r.id === user.id) || responsibles.find(r => r.name.toLowerCase() === user.name.toLowerCase());
   const activeAvatar = currentUserDB?.avatar || user.avatar || '';
 
   if (isLoading) {
     return (
-      <div className="h-[100dvh] w-full bg-[#09090b] flex flex-col items-center justify-center p-4 text-center">
+      <div className="fixed inset-0 bg-[#09090b] flex flex-col items-center justify-center p-4 text-center">
         <div className="w-20 h-20 rounded-[18px] bg-black border border-white/5 flex items-center justify-center overflow-hidden mb-6 shadow-[0_0_30px_rgba(79,70,229,0.1)] animate-modal-pop">
           <img src="/apple-icon.png" alt="Lumina" className="w-full h-full object-cover" />
         </div>
@@ -756,7 +756,7 @@ function KanbanMain({ user, setUser, onLogout }) {
   }
 
   return (
-    <div className="h-[100dvh] w-full bg-[#09090b] text-neutral-100 flex flex-col md:flex-row overflow-hidden font-sans pb-16 md:pb-0">
+    <div className="fixed inset-0 w-full bg-[#09090b] text-neutral-100 flex flex-col md:flex-row overflow-hidden font-sans">
       <style>{`
         .kp-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
         .kp-scroll::-webkit-scrollbar-thumb { background: #27272a; border-radius: 6px; }
@@ -816,7 +816,7 @@ function KanbanMain({ user, setUser, onLogout }) {
       </div>
 
       {/* ÁREA PRINCIPAL */}
-      <div className={`flex-1 flex flex-col min-w-0 bg-gradient-to-br from-[#09090b] to-[#0d0e15] relative`}>
+      <div className={`flex-1 flex flex-col min-w-0 bg-gradient-to-br from-[#09090b] to-[#0d0e15] relative pb-[72px] md:pb-0`}>
         
         {/* HEADER TOP (Desktop & Mobile) */}
         <div className="shrink-0 flex items-center justify-between p-4 md:px-8 md:py-6 relative z-20 gap-4">
@@ -833,7 +833,7 @@ function KanbanMain({ user, setUser, onLogout }) {
                    <div className="absolute top-12 left-0 mt-2 w-48 bg-[#12121a] border border-[#27272a] rounded-2xl shadow-xl z-50 py-2 flex flex-col animate-modal-pop">
                       <button onClick={() => { setProfileModal(true); setShowProfileMenu(false); }} className="w-full text-left px-5 py-3 text-sm text-neutral-300 hover:bg-white/5 flex items-center gap-3 font-medium"><UserCog size={16}/> Editar Perfil</button>
                       <div className="h-px w-full bg-[#27272a] my-1"></div>
-                      <button onClick={onLogout} className="w-full text-left px-5 py-3 text-sm text-red-400 hover:bg-red-500/10 flex items-center gap-3 font-medium"><LogOut size={16}/> Sair do Lumina</button>
+                      <button onClick={onLogout} className="w-full text-left px-5 py-3 text-sm text-red-400 hover:bg-red-500/10 flex items-center gap-3 font-medium"><LogOut size={16}/> Sair</button>
                    </div>
                 )}
              </div>
@@ -864,7 +864,7 @@ function KanbanMain({ user, setUser, onLogout }) {
 
         {/* MODAIS Overlay */}
         {activeTab === 'timer' && <OverlayModal title="Cronómetro" icon={<Clock size={20} className="text-amber-500"/>} isClosing={isClosingModal} onClose={handleCloseTab}><TimerPanelContent tasks={filteredTasks} now={now} getElapsed={getElapsed} onToggleTimer={toggleTimer} user={user} /></OverlayModal>}
-        {activeTab === 'responsibles' && <OverlayModal title="Responsáveis (Contas)" icon={<Users size={20} className="text-indigo-400"/>} isClosing={isClosingModal} onClose={handleCloseTab}><ResponsiblesPanelContent responsibles={responsibles} setResponsibles={setResponsibles} tasks={tasks} setTasks={setTasks} user={user} /></OverlayModal>}
+        {activeTab === 'responsibles' && <OverlayModal title="Equipe (Contas)" icon={<Users size={20} className="text-indigo-400"/>} isClosing={isClosingModal} onClose={handleCloseTab}><ResponsiblesPanelContent responsibles={responsibles} setResponsibles={setResponsibles} tasks={tasks} setTasks={setTasks} user={user} /></OverlayModal>}
         {activeTab === 'clients' && <OverlayModal title="Gestão de Clientes" icon={<Building2 size={20} className="text-purple-400"/>} isClosing={isClosingModal} onClose={handleCloseTab}><ClientsPanelContent clients={clients} setClients={setClients} tasks={tasks} setTasks={setTasks} user={user} getElapsed={getElapsed} now={now} /></OverlayModal>}
         {activeTab === 'reports' && <AnalyticsModal isClosing={isClosingModal} onClose={handleCloseTab} tasks={filteredTasks} clients={clients} responsibles={responsibles} now={now} getElapsed={getElapsed} />}
 
@@ -903,9 +903,9 @@ function KanbanMain({ user, setUser, onLogout }) {
              </div>
           </div>
 
-          {/* Quadro Kanban */}
-          <div className="flex-1 overflow-x-auto overflow-y-hidden px-4 md:px-8 pb-6 md:pb-8 kp-scroll min-h-0">
-            <div className="flex gap-4 sm:gap-5 items-start h-full min-w-max">
+          {/* Quadro Kanban (Scroll Horizontal e Vertical Nativo) */}
+          <div className="flex-1 overflow-x-auto overflow-y-hidden px-4 md:px-8 pb-4 md:pb-8 kp-scroll min-h-0">
+            <div className="flex gap-4 sm:gap-5 h-full min-w-max">
               {COLUMNS.map((col) => {
                 const colTasks = filteredTasks.filter((t) => t.status === col.id);
                 return (
@@ -927,8 +927,8 @@ function KanbanMain({ user, setUser, onLogout }) {
                       </button>
                     </div>
                     
-                    {/* Área de Cartões */}
-                    <div className="px-3 pb-3 flex-1 overflow-y-auto overflow-x-hidden kp-scroll flex flex-col gap-3 mt-3 min-h-0" onDragOver={(e) => { if (!isMobile) e.preventDefault(); }} onDrop={(e) => { if (!isMobile) { e.preventDefault(); handleRequestMove(e.dataTransfer.getData("taskId"), null, col.id); }}}>
+                    {/* Área de Cartões com scroll vertical (touch-pan-y para mobile) */}
+                    <div className="px-3 pb-3 flex-1 overflow-y-auto overflow-x-hidden kp-scroll flex flex-col gap-3 mt-3 min-h-0 overscroll-y-contain" onDragOver={(e) => { if (!isMobile) e.preventDefault(); }} onDrop={(e) => { if (!isMobile) { e.preventDefault(); handleRequestMove(e.dataTransfer.getData("taskId"), null, col.id); }}}>
                       {colTasks.length === 0 && (
                         <div className="text-center text-[10px] font-medium uppercase tracking-widest text-neutral-600 py-10 border border-dashed border-white/5 rounded-xl mx-2">
                           Solte itens aqui
@@ -969,7 +969,7 @@ function KanbanMain({ user, setUser, onLogout }) {
                               <div className="flex items-center gap-1.5 text-[10px] mb-4 font-bold uppercase tracking-tight w-fit bg-pink-500/10 border border-pink-500/20 px-2.5 py-1 rounded-lg text-pink-400"><Clock size={12} /> Pendente: {t.waitingFor}</div>
                             )}
 
-                            {/* Checklist Detalhado */}
+                            {/* Checklist Detalhado Visível no Cartão */}
                             {total > 0 && (
                               <div className="mb-3">
                                 <div className="h-1 rounded-full bg-black/40 overflow-hidden mb-2 border border-white/5">
@@ -988,7 +988,7 @@ function KanbanMain({ user, setUser, onLogout }) {
                               </div>
                             )}
 
-                            {/* Info de Rodapé */}
+                            {/* Info de Rodapé do Cartão com Botões Integrados */}
                             <div className="flex items-center justify-between mt-4 pt-3 border-t border-white/5">
                                <div className="flex items-center gap-2">
                                   {resp && (
@@ -1042,9 +1042,10 @@ function KanbanMain({ user, setUser, onLogout }) {
       </div>
 
       {/* MOBILE BOTTOM NAV - Fixo na Base de Forma Responsiva */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 flex items-center justify-around pt-3 px-2 pb-[max(env(safe-area-inset-bottom),0.75rem)] bg-[#12121a]/95 backdrop-blur-md border-t border-[#27272a] z-[100] shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
+      <div className="md:hidden fixed bottom-0 left-0 right-0 flex items-center justify-around pt-2.5 px-2 pb-[max(env(safe-area-inset-bottom),0.75rem)] bg-[#12121a]/95 backdrop-blur-md border-t border-[#27272a] z-[100] shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
          <MobileNavBtn icon={<LayoutDashboard size={20} />} label="Board" active={activeTab === 'board' && !isClosingModal} onClick={() => {if(activeTab !== 'board') handleCloseTab()}} />
          <MobileNavBtn icon={<Clock size={20} />} label="Timer" active={activeTab === 'timer' && !isClosingModal} onClick={() => setActiveTab('timer')} />
+         <MobileNavBtn icon={<Users size={20} />} label="Equipe" active={activeTab === 'responsibles' && !isClosingModal} onClick={() => setActiveTab('responsibles')} />
          <MobileNavBtn icon={<Building2 size={20} />} label="Clientes" active={activeTab === 'clients' && !isClosingModal} onClick={() => setActiveTab('clients')} alert={clientsNearLimit.length > 0} />
          <MobileNavBtn icon={<BarChart3 size={20} />} label="Relatórios" active={activeTab === 'reports' && !isClosingModal} onClick={() => setActiveTab('reports')} />
       </div>
@@ -1261,10 +1262,10 @@ function SidebarBtn({ icon, active, onClick, tooltip, alert }) {
 
 function MobileNavBtn({ icon, label, active, onClick, alert }) {
   return (
-    <button onClick={onClick} className={`flex-1 py-2 rounded-xl flex flex-col items-center justify-center transition-all relative gap-1.5 ${active ? 'text-indigo-400' : 'text-neutral-500 hover:text-neutral-300'}`}>
+    <button onClick={onClick} className={`flex-1 py-2 px-1 rounded-xl flex flex-col items-center justify-center transition-all relative gap-1.5 ${active ? 'text-indigo-400' : 'text-neutral-500 hover:text-neutral-300'}`}>
       {icon}
-      <span className="text-[9px] font-bold uppercase tracking-widest">{label}</span>
-      {alert && <span className="absolute top-1 right-[30%] w-2 h-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]" />}
+      <span className="text-[8px] sm:text-[9px] font-bold uppercase tracking-widest truncate max-w-full">{label}</span>
+      {alert && <span className="absolute top-1 right-[25%] w-2 h-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]" />}
     </button>
   );
 }

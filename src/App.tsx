@@ -237,6 +237,26 @@ function LoginScreen({ onLogin }: { onLogin: any }) {
 export default function App() {
   const [supabaseReady, setSupabaseReady] = useState(!!(window as any).supabaseClient);
 
+  // Injetar Polyfill de Drag & Drop para Mobile no carregamento da App
+  useEffect(() => {
+    const loadMobileDragDrop = async () => {
+       const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+       if (!isTouchDevice) return;
+       if ((window as any).MobileDragDrop) return;
+       
+       const script1 = document.createElement('script');
+       script1.src = 'https://cdn.jsdelivr.net/npm/mobile-drag-drop@2.3.0-rc.2/index.min.js';
+       script1.onload = () => {
+          (window as any).MobileDragDrop.polyfill({
+             holdToDrag: 350 // Tempo de clique segurado (0.35s) para iniciar o arraste no mobile
+          });
+          window.addEventListener('touchmove', function() {}, {passive: false});
+       };
+       document.head.appendChild(script1);
+    };
+    loadMobileDragDrop();
+  }, []);
+
   useEffect(() => {
     if ((window as any).supabase) {
       if (!(window as any).supabaseClient) {
@@ -293,17 +313,17 @@ export default function App() {
   return <KanbanMain user={user} setUser={setUser} onLogout={handleLogout} />;
 }
 
-// --- Definição das Colunas e Estilos ---
+// --- Definição das Colunas e Estilos Aprimorados ---
 const COLUMNS = [
-    { id: "backlog", name: "Backlog", dot: "bg-indigo-500", accent: "border-indigo-500/50", bg: "bg-indigo-500/10", btn: "bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border-indigo-500/20", help: "Ideias e demandas não priorizadas." },
-    { id: "todo", name: "A Fazer", dot: "bg-amber-500", accent: "border-amber-500/50", bg: "bg-amber-500/10", btn: "bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border-amber-500/20", help: "Prontas para iniciar." },
-    { id: "inprogress", name: "Em Andamento", dot: "bg-blue-500", accent: "border-blue-500/50", bg: "bg-blue-500/10", btn: "bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border-blue-500/20", help: "Demandas ativas no momento." },
-    { id: "paused", name: "Pausado", dot: "bg-orange-500", accent: "border-orange-500/50", bg: "bg-orange-500/10", btn: "bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 border-orange-500/20", help: "Demandas temporariamente interrompidas." },
-    { id: "waiting", name: "Aguardando", dot: "bg-pink-500", accent: "border-pink-500/50", bg: "bg-pink-500/10", btn: "bg-pink-500/10 hover:bg-pink-500/20 text-pink-400 border-pink-500/20", help: "Aguardando resposta do cliente ou equipe." },
-    { id: "review", name: "Em Revisão", dot: "bg-purple-500", accent: "border-purple-500/50", bg: "bg-purple-500/10", btn: "bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border-purple-500/20", help: "Concluídas aguardando aprovação." },
-    { id: "done", name: "Concluído", dot: "bg-emerald-500", accent: "border-emerald-500/50", bg: "bg-emerald-500/10", btn: "bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border-emerald-500/20", help: "Demandas finalizadas." },
-    { id: "formalize", name: "Formalizar", dot: "bg-teal-500", accent: "border-teal-500/50", bg: "bg-teal-500/10", btn: "bg-teal-500/10 hover:bg-teal-500/20 text-teal-400 border-teal-500/20", help: "Aguardando envio de relatório." },
-    { id: "cancelled", name: "Cancelado", dot: "bg-red-500", accent: "border-red-500/50", bg: "bg-red-500/10", btn: "bg-red-500/10 hover:bg-red-500/20 text-red-400 border-red-500/20", help: "Demandas descartadas." },
+    { id: "backlog", name: "Backlog", dot: "bg-indigo-500", accent: "border-indigo-500/50", bg: "bg-indigo-500/10", btn: "bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border-indigo-500/20", help: "Repositório de ideias, solicitações e demandas futuras. Ainda não foram priorizadas nem têm data para começar." },
+    { id: "todo", name: "A Fazer", dot: "bg-amber-500", accent: "border-amber-500/50", bg: "bg-amber-500/10", btn: "bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border-amber-500/20", help: "Demandas analisadas, aprovadas e priorizadas. Estão prontas para a equipe puxar e começar a trabalhar." },
+    { id: "inprogress", name: "Em Andamento", dot: "bg-blue-500", accent: "border-blue-500/50", bg: "bg-blue-500/10", btn: "bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border-blue-500/20", help: "O que está sendo feito neste exato momento. O responsável já está ativamente a trabalhar na demanda." },
+    { id: "paused", name: "Pausado", dot: "bg-orange-500", accent: "border-orange-500/50", bg: "bg-orange-500/10", btn: "bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 border-orange-500/20", help: "Demandas interrompidas temporariamente por impedimentos internos, mudança repentina de prioridade ou falta de recursos." },
+    { id: "waiting", name: "Aguardando", dot: "bg-pink-500", accent: "border-pink-500/50", bg: "bg-pink-500/10", btn: "bg-pink-500/10 hover:bg-pink-500/20 text-pink-400 border-pink-500/20", help: "Dependemos de terceiros. À espera de aprovação do cliente, envio de acessos ou retorno obrigatório de outro setor." },
+    { id: "review", name: "Em Revisão", dot: "bg-purple-500", accent: "border-purple-500/50", bg: "bg-purple-500/10", btn: "bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border-purple-500/20", help: "Trabalho técnico concluído. Passando por teste de qualidade (QA), validação final rigorosa ou aprovação do gestor." },
+    { id: "done", name: "Concluído", dot: "bg-emerald-500", accent: "border-emerald-500/50", bg: "bg-emerald-500/10", btn: "bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border-emerald-500/20", help: "100% finalizado e validado sem erros. O trabalho prático e as aprovações terminaram com sucesso." },
+    { id: "formalize", name: "Formalizar", dot: "bg-teal-500", accent: "border-teal-500/50", bg: "bg-teal-500/10", btn: "bg-teal-500/10 hover:bg-teal-500/20 text-teal-400 border-teal-500/20", help: "Demandas prontas, aguardando apenas o envio de um e-mail de fechamento e o envio do relatório final ao cliente." },
+    { id: "cancelled", name: "Cancelado", dot: "bg-red-500", accent: "border-red-500/50", bg: "bg-red-500/10", btn: "bg-red-500/10 hover:bg-red-500/20 text-red-400 border-red-500/20", help: "Demandas que foram descartadas, inviáveis de realizar ou que perderam o sentido antes de serem entregues." },
 ];
 
 const PRIORITY_STYLE = {
@@ -319,16 +339,6 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
   
   const [isCloudSynced, setIsCloudSynced] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-
-  const [showMobileFilters, setShowMobileFilters] = useState(false);
-
-  // Monitora se está em Mobile
-  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
-  useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth <= 768);
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
 
   // Busca dados da Nuvem
   useEffect(() => {
@@ -401,6 +411,8 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
   const [activeTab, setActiveTab] = useState('board'); 
   const [isClosingModal, setIsClosingModal] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [activeTooltipCol, setActiveTooltipCol] = useState<string | null>(null);
+
   const [filterClient, setFilterClient] = useState("all");
   const [filterResp, setFilterResp] = useState("all");
   const [filterPriority, setFilterPriority] = useState("all");
@@ -465,6 +477,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
   const doneCount = visibleTasks.filter((t) => t.status === "done" || t.status === "formalize").length;
   const overallProgress = activeTasksCount ? Math.round((doneCount / activeTasksCount) * 100) : 0;
   
+  // Para fechamento, pegamos todas as demandas ativas (tirando backlog, a fazer e canceladas)
   const tasksForClosure = visibleTasks.filter(t => ['inprogress', 'paused', 'waiting', 'review', 'done', 'formalize'].includes(t.status));
 
   const emptyForm = { title: "", description: "", priority: "Média", durationMin: "", clientId: "", responsibleId: user.id, dueDate: "", status: "", waitingFor: "", checklist: [] };
@@ -650,11 +663,18 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
       taskToMove.timerStart = null;
       taskToMove.status = 'done';
 
+      const originalToIndex = donePrompt.targetId ? prev.findIndex(t => t.id.toString() === donePrompt.targetId.toString()) : -1;
+
       const newTasks = [...prev];
       newTasks.splice(fromIndex, 1);
 
       if (donePrompt.targetId) {
-        const toIndex = newTasks.findIndex(t => t.id.toString() === donePrompt.targetId.toString());
+        let toIndex = newTasks.findIndex(t => t.id.toString() === donePrompt.targetId.toString());
+        // Ajuste de Reordenamento na mesma coluna para baixo
+        if (prev[fromIndex].status === 'done' && fromIndex < originalToIndex) {
+           toIndex += 1;
+        }
+
         if (toIndex !== -1) {
           newTasks.splice(toIndex, 0, taskToMove);
         } else {
@@ -700,11 +720,19 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
       taskToMove.timerElapsed = timerElapsed;
       taskToMove.timerStart = timerStart;
       
+      const originalToIndex = targetId ? prev.findIndex(t => t.id.toString() === targetId.toString()) : -1;
+
       const newTasks = [...prev];
       newTasks.splice(fromIndex, 1); 
       
       if (targetId) {
-        const toIndex = newTasks.findIndex(t => t.id.toString() === targetId.toString());
+        let toIndex = newTasks.findIndex(t => t.id.toString() === targetId.toString());
+        
+        // Ajuste fundamental de reordenamento: se foi puxado de cima para baixo na mesma coluna, encaixa abaixo do alvo.
+        if (originalStatus === newStatus && fromIndex < originalToIndex) {
+            toIndex += 1;
+        }
+
         if (toIndex !== -1) {
           newTasks.splice(toIndex, 0, taskToMove); 
         } else {
@@ -740,7 +768,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
     e.dataTransfer.setData("taskId", taskId);
   };
 
-  // Avatar sempre atualizado buscando do DB com fallback para o nome
+  // Avatar sempre atualizado buscando do DB com fallback
   const currentUserDB = responsibles.find(r => r.id === user.id) || responsibles.find(r => r.name.toLowerCase() === user.name.toLowerCase());
   const activeAvatar = currentUserDB?.avatar || user.avatar || '';
 
@@ -756,7 +784,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
   }
 
   return (
-    <div className="fixed inset-0 w-full bg-[#09090b] text-neutral-100 flex flex-col md:flex-row overflow-hidden font-sans">
+    <div className="fixed inset-0 w-full bg-[#09090b] text-neutral-100 flex flex-col md:flex-row overflow-hidden font-sans" onClick={() => { setActiveTooltipCol(null); setShowProfileMenu(false); }}>
       <style>{`
         .kp-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
         .kp-scroll::-webkit-scrollbar-thumb { background: #27272a; border-radius: 6px; }
@@ -803,12 +831,12 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
         </div>
         
         <div className="flex flex-col items-center gap-4 relative">
-           <button onClick={() => setShowProfileMenu(!showProfileMenu)} className="w-10 h-10 rounded-full bg-[#181a24] border border-[#2d3142] flex items-center justify-center text-indigo-400 font-bold uppercase shadow-sm overflow-hidden hover:border-indigo-500 transition-colors" title="Meu Perfil">
+           <button onClick={(e) => { e.stopPropagation(); setShowProfileMenu(!showProfileMenu); }} className="w-10 h-10 rounded-full bg-[#181a24] border border-[#2d3142] flex items-center justify-center text-indigo-400 font-bold uppercase shadow-sm overflow-hidden hover:border-indigo-500 transition-colors" title="Meu Perfil">
              <UserAvatar url={activeAvatar} name={user.name} />
            </button>
            
            {showProfileMenu && (
-             <div className="absolute bottom-16 left-0 w-48 bg-[#12121a] border border-[#27272a] rounded-2xl shadow-xl z-50 py-2 flex flex-col animate-modal-pop">
+             <div className="absolute bottom-16 left-0 w-48 bg-[#12121a] border border-[#27272a] rounded-2xl shadow-xl z-50 py-2 flex flex-col animate-modal-pop" onClick={e => e.stopPropagation()}>
                 <button onClick={() => { setProfileModal(true); setShowProfileMenu(false); }} className="w-full text-left px-5 py-3 text-sm text-neutral-300 hover:bg-white/5 flex items-center gap-3 font-medium"><UserCog size={16}/> Editar Perfil</button>
                 <div className="h-px w-full bg-[#27272a] my-1"></div>
                 <button onClick={onLogout} className="w-full text-left px-5 py-3 text-sm text-red-400 hover:bg-red-500/10 flex items-center gap-3 font-medium"><LogOut size={16}/> Sair do Lumina</button>
@@ -826,7 +854,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
           {/* Mobile Title & Profile */}
           <div className="md:hidden flex items-center justify-between w-full">
              <div className="flex items-center gap-3 relative min-w-0">
-                <button onClick={() => setShowProfileMenu(!showProfileMenu)} className="w-10 h-10 shrink-0 rounded-full bg-[#181a24] border border-[#2d3142] flex items-center justify-center text-indigo-400 font-bold uppercase shadow-sm overflow-hidden hover:border-indigo-500 transition-colors">
+                <button onClick={(e) => { e.stopPropagation(); setShowProfileMenu(!showProfileMenu); }} className="w-10 h-10 shrink-0 rounded-full bg-[#181a24] border border-[#2d3142] flex items-center justify-center text-indigo-400 font-bold uppercase shadow-sm overflow-hidden hover:border-indigo-500 transition-colors">
                   <UserAvatar url={activeAvatar} name={user.name} />
                 </button>
                 <h1 className="font-bold text-lg text-white tracking-tight truncate">
@@ -834,7 +862,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                 </h1>
                 
                 {showProfileMenu && (
-                   <div className="absolute top-12 left-0 mt-2 w-48 bg-[#12121a] border border-[#27272a] rounded-2xl shadow-xl z-50 py-2 flex flex-col animate-modal-pop">
+                   <div className="absolute top-12 left-0 mt-2 w-48 bg-[#12121a] border border-[#27272a] rounded-2xl shadow-xl z-50 py-2 flex flex-col animate-modal-pop" onClick={e => e.stopPropagation()}>
                       <button onClick={() => { setProfileModal(true); setShowProfileMenu(false); }} className="w-full text-left px-5 py-3 text-sm text-neutral-300 hover:bg-white/5 flex items-center gap-3 font-medium"><UserCog size={16}/> Editar Perfil</button>
                       <div className="h-px w-full bg-[#27272a] my-1"></div>
                       <button onClick={onLogout} className="w-full text-left px-5 py-3 text-sm text-red-400 hover:bg-red-500/10 flex items-center gap-3 font-medium"><LogOut size={16}/> Sair</button>
@@ -874,26 +902,29 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
         {/* BOARD VIEW */}
         <div className={`flex-1 flex flex-col min-h-0 ${activeTab !== 'board' ? 'hidden md:flex opacity-30 pointer-events-none transition-opacity duration-300' : 'fade-in'}`}>
           
-          <div className="shrink-0 px-4 md:px-8 pb-3 flex flex-col gap-3">
-             <div className="flex flex-col lg:flex-row gap-3 w-full">
+          <div className="shrink-0 px-4 md:px-8 pb-5 flex flex-col gap-4">
+             {/* Filtros e Fechamento Semanal */}
+             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 w-full">
                 
-                {/* Barra de Progresso */}
-                <div className="glass-panel h-11 flex-1 flex items-center px-4 rounded-xl gap-3 shadow-sm min-w-0">
-                   <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-500">Progresso</span>
-                   <div className="flex-1 h-1.5 rounded-full bg-black/50 overflow-hidden border border-white/5">
-                      <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${overallProgress}%` }} />
+                <div className="glass-panel p-3 sm:px-4 sm:py-2.5 rounded-xl flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3 w-full lg:w-auto shadow-sm">
+                   <div className="flex items-center gap-2 w-full sm:w-auto">
+                       <Filter size={16} className="text-neutral-500 shrink-0 hidden sm:block" />
+                       <FilterSelect value={filterClient} onChange={setFilterClient} options={clients} defaultLabel="Todos Clientes" />
                    </div>
-                   <span className="text-xs font-bold text-white shrink-0">{overallProgress}%</span>
+                   <div className="hidden sm:block w-px h-4 bg-white/10"></div>
+                   <FilterSelect value={filterResp} onChange={setFilterResp} options={responsibles} defaultLabel="Todos Responsáveis" />
+                   <div className="hidden sm:block w-px h-4 bg-white/10"></div>
+                   <FilterSelect value={filterPriority} onChange={setFilterPriority} options={[{id: 'Baixa', name: 'Baixa'}, {id: 'Média', name: 'Média'}, {id: 'Alta', name: 'Alta'}]} defaultLabel="Prioridades" />
                 </div>
 
-                {/* Botões Mobile (Filtros e Fechamento) */}
-                <div className="flex items-center gap-3 w-full lg:w-auto">
-                   <button 
-                     onClick={() => setShowMobileFilters(!showMobileFilters)} 
-                     className={`lg:hidden flex-1 h-11 px-4 flex items-center justify-center gap-2 font-bold uppercase tracking-widest text-[10px] transition-all rounded-xl shadow-sm border ${showMobileFilters ? 'bg-indigo-600 text-white border-indigo-500 shadow-[0_0_15px_rgba(79,70,229,0.3)]' : 'glass-panel text-neutral-400 border-white/5 hover:text-white'}`}
-                   >
-                     <Filter size={16} /> Filtros
-                   </button>
+                <div className="flex flex-wrap sm:flex-nowrap items-center gap-3 w-full lg:w-auto mt-1 lg:mt-0">
+                   <div className="glass-panel h-11 flex-1 flex items-center px-4 rounded-xl gap-3 shadow-sm min-w-0">
+                     <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 hidden sm:block">Progresso</span>
+                     <div className="flex-1 sm:w-32 h-1.5 rounded-full bg-black/50 overflow-hidden border border-white/5">
+                        <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${overallProgress}%` }} />
+                     </div>
+                     <span className="text-xs font-bold text-white shrink-0">{overallProgress}%</span>
+                   </div>
 
                    {tasksForClosure.length > 0 && (
                       <button onClick={() => setClosureModal(true)} className="flex-1 lg:flex-none h-11 px-4 sm:px-6 flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-[10px] sm:text-[11px] font-bold uppercase tracking-widest transition-all shadow-[0_0_15px_rgba(79,70,229,0.3)] shrink-0">
@@ -902,23 +933,11 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                     )}
                 </div>
              </div>
-
-             {/* Filtros Dropdown */}
-             <div className={`flex items-center gap-3 overflow-x-auto hide-scrollbar w-full transition-all duration-300 ${showMobileFilters ? 'flex' : 'hidden lg:flex'}`}>
-                <div className="glass-panel w-full lg:w-auto px-4 py-2.5 rounded-xl flex flex-col sm:flex-row sm:items-center gap-3 shadow-sm mb-1">
-                  <Filter size={16} className="text-neutral-500 shrink-0 hidden lg:block" />
-                  <FilterSelect value={filterClient} onChange={setFilterClient} options={clients} defaultLabel="Todos Clientes" />
-                  <div className="w-full sm:w-px h-px sm:h-4 bg-white/10"></div>
-                  <FilterSelect value={filterResp} onChange={setFilterResp} options={responsibles} defaultLabel="Todos Responsáveis" />
-                  <div className="w-full sm:w-px h-px sm:h-4 bg-white/10"></div>
-                  <FilterSelect value={filterPriority} onChange={setFilterPriority} options={[{id: 'Baixa', name: 'Baixa'}, {id: 'Média', name: 'Média'}, {id: 'Alta', name: 'Alta'}]} defaultLabel="Prioridades" />
-                </div>
-             </div>
           </div>
 
           {/* Quadro Kanban */}
           <div className="flex-1 relative min-h-0">
-            <div className="absolute inset-0 overflow-x-auto overflow-y-hidden px-4 md:px-8 pb-4 md:pb-8 kp-scroll">
+            <div className="absolute inset-0 overflow-x-auto overflow-y-hidden px-4 md:px-8 pb-4 md:pb-8 kp-scroll" style={{ touchAction: 'pan-x' }}>
               <div className="flex gap-4 sm:gap-5 h-full min-w-max items-stretch">
                 {COLUMNS.map((col) => {
                   const colTasks = filteredTasks.filter((t) => t.status === col.id);
@@ -927,12 +946,15 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                       
                       {/* Header da Coluna */}
                       <div className="px-5 pt-5 pb-4 flex items-center justify-between border-b border-white/5 shrink-0">
-                        <div className="flex items-center gap-2 relative group cursor-pointer">
+                        <div 
+                          className="flex items-center gap-2 relative group cursor-pointer"
+                          onClick={(e) => { e.stopPropagation(); setActiveTooltipCol(activeTooltipCol === col.id ? null : col.id); }}
+                        >
                           <span className={`w-2.5 h-2.5 shrink-0 rounded-full ${col.dot} shadow-[0_0_8px_currentColor]`} />
                           <h2 className="text-xs font-bold uppercase tracking-widest text-white">{col.name}</h2>
                           <HelpCircle size={14} className="text-neutral-500 hover:text-neutral-300 transition-colors ml-0.5" />
                           
-                          <div className="absolute left-0 top-full mt-2 w-56 sm:w-64 p-3 bg-[#1c1d26] border border-[#27272a] rounded-xl shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-[60] pointer-events-none normal-case tracking-normal">
+                          <div className={`absolute left-0 top-full mt-2 w-56 sm:w-64 p-4 bg-[#1c1d26] border border-[#27272a] rounded-xl shadow-2xl transition-all z-[60] normal-case tracking-normal cursor-default ${activeTooltipCol === col.id ? 'opacity-100 visible' : 'opacity-0 invisible lg:group-hover:opacity-100 lg:group-hover:visible'}`} onClick={e => e.stopPropagation()}>
                             <div className="text-[11px] text-neutral-300 leading-relaxed font-normal">{col.help}</div>
                           </div>
                         </div>
@@ -946,15 +968,13 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                         </button>
                       </div>
                       
-                      {/* Área de Cartões - min-h-0 garante que o scroll interno funcione */}     
+                      {/* Área de Cartões - min-h-0 garante que o scroll vertical interno funcione independentemente */}     
                       <div 
                         className="px-3 pb-3 flex-1 overflow-y-auto overflow-x-hidden kp-scroll flex flex-col gap-3 mt-3 min-h-0"
-                        onDragOver={(e) => { if (!isMobile) e.preventDefault(); }}
+                        onDragOver={(e) => { e.preventDefault(); }}
                         onDrop={(e) => {
-                          if (!isMobile) {
-                            e.preventDefault();
-                            handleRequestMove(e.dataTransfer.getData("taskId"), null, col.id);
-                          }
+                          e.preventDefault();
+                          handleRequestMove(e.dataTransfer.getData("taskId"), null, col.id);
                         }}
                       >
                         {colTasks.length === 0 && (
@@ -974,7 +994,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                           const isEditable = canEditTask(t.responsibleId);
 
                           return (
-                            <div key={t.id} className={`rounded-2xl bg-[#1c1d26] border p-4 transition-all group ${isDoneOrCancelled ? 'opacity-60' : ''} ${!isEditable ? 'opacity-70 cursor-not-allowed' : 'cursor-grab active:cursor-grabbing hover:border-[#3f3f46] shadow-md'} ${dragOverId === t.id ? 'border-indigo-500 shadow-[0_-2px_15px_rgba(99,102,241,0.3)]' : 'border-[#2d3142]'}`} draggable={!isMobile && isEditable} onDragStart={(e) => { if(!isMobile && isEditable) handleDragStart(e, t.id); }} onDragOver={(e) => { if(!isMobile && isEditable) { e.preventDefault(); e.stopPropagation(); setDragOverId(t.id); } }} onDragLeave={() => setDragOverId(null)} onDrop={(e) => { if(!isMobile && isEditable) { e.preventDefault(); e.stopPropagation(); setDragOverId(null); handleRequestMove(e.dataTransfer.getData("taskId"), t.id, col.id); } }}>
+                            <div key={t.id} className={`rounded-2xl bg-[#1c1d26] border p-4 transition-all group ${isDoneOrCancelled ? 'opacity-60' : ''} ${!isEditable ? 'opacity-70 cursor-not-allowed' : 'cursor-grab active:cursor-grabbing hover:border-[#3f3f46] shadow-md'} ${dragOverId === t.id ? 'border-indigo-500 shadow-[0_-2px_15px_rgba(99,102,241,0.3)]' : 'border-[#2d3142]'}`} draggable={isEditable} onDragStart={(e) => { if(isEditable) handleDragStart(e, t.id); }} onDragOver={(e) => { if(isEditable) { e.preventDefault(); e.stopPropagation(); setDragOverId(t.id); } }} onDragLeave={() => setDragOverId(null)} onDrop={(e) => { if(isEditable) { e.preventDefault(); e.stopPropagation(); setDragOverId(null); handleRequestMove(e.dataTransfer.getData("taskId"), t.id, col.id); } }}>
                               
                               {/* Badges do Cartão */}
                               <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
@@ -984,8 +1004,8 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                                     <span className={`w-1 h-1 rounded-full ${prStyle.dot}`} /> {t.priority}
                                   </span>
                                 </div>
-                                {isEditable && !isMobile && <GripVertical size={14} className="text-neutral-600 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity hidden md:block" />}
-                                {!isEditable && !isMobile && <Lock size={12} className="text-neutral-600 shrink-0 hidden md:block" />}
+                                {isEditable && <GripVertical size={14} className="text-neutral-600 shrink-0 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity block" />}
+                                {!isEditable && <Lock size={12} className="text-neutral-600 shrink-0 block" />}
                               </div>
 
                               <div className="mb-3">
@@ -1004,7 +1024,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                                     <div className={`h-full rounded-full transition-all ${pct === 100 ? 'bg-emerald-500 shadow-[0_0_5px_rgba(16,185,129,0.3)]' : 'bg-indigo-500'}`} style={{ width: `${pct}%` }} />
                                   </div>
                                   <div className="flex flex-col gap-1.5">
-                                    {tChecklist.map((c) => (
+                                    {tChecklist.map((c: any) => (
                                       <div key={c.id} className="flex items-start gap-2 text-[11px] text-neutral-400">
                                         <button onClick={(e) => { e.stopPropagation(); toggleChecklistItem(t.id, c.id); }} disabled={!isEditable} className={`mt-0.5 w-3.5 h-3.5 rounded flex items-center justify-center shrink-0 border ${c.done ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-400' : 'bg-black/30 border-white/10 hover:border-white/20 text-transparent'} transition-colors`}>
                                            <Check size={10} strokeWidth={3} className={c.done ? 'opacity-100' : 'opacity-0'} />
@@ -1070,7 +1090,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
         </div>
       </div>
 
-      {/* MOBILE BOTTOM NAV - Fixo na Base de Forma Responsiva */}
+      {/* MOBILE BOTTOM NAV */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 flex items-center justify-around pt-2.5 px-2 pb-[max(env(safe-area-inset-bottom),0.75rem)] bg-[#12121a]/95 backdrop-blur-md border-t border-[#27272a] z-[100] shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
          <MobileNavBtn icon={<LayoutDashboard size={20} />} label="Board" active={activeTab === 'board' && !isClosingModal} onClick={() => {if(activeTab !== 'board') handleCloseTab()}} />
          <MobileNavBtn icon={<Clock size={20} />} label="Timer" active={activeTab === 'timer' && !isClosingModal} onClick={() => setActiveTab('timer')} />

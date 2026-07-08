@@ -5,7 +5,7 @@ import {
   Filter, AlertTriangle, GripVertical, Download, 
   Play, Pause, Square, CheckCircle2, User, CheckSquare,
   HelpCircle, ChevronDown, LayoutDashboard, Mail, Check, Copy, ClipboardList, Cloud, Lock,
-  Eye, EyeOff, ExternalLink, Settings, MonitorPlay, CloudRain, Sun, Moon, CloudLightning, Snowflake, CloudFog, Camera, UserCog, Calendar
+  Eye, EyeOff, ExternalLink, Settings, MonitorPlay, CloudRain, Sun, Moon, CloudLightning, Snowflake, CloudFog, Camera, UserCog, Calendar, ChevronUp
 } from "lucide-react";
 
 // ==========================================
@@ -35,16 +35,13 @@ function getBrasiliaDate() {
   return `${year}-${month}-${day}`;
 }
 
-function filterByPeriod(dateStr: string, period: string) {
-  if (period === 'all') return true;
-  if (!dateStr) return false;
-  const d = new Date(dateStr);
-  const now = new Date();
-  const diffDays = (now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24);
-  if (period === 'today') return diffDays <= 1;
-  if (period === 'week') return diffDays <= 7;
-  if (period === 'month') return diffDays <= 30;
-  return true;
+// Verifica se a data do item é maior ou igual à data do filtro
+function isDateAfterOrEqual(itemDateStr: string, filterDateStr: string) {
+  if (!filterDateStr) return true;
+  if (!itemDateStr) return false;
+  const itemDate = new Date(itemDateStr);
+  const filterDate = new Date(filterDateStr);
+  return itemDate >= filterDate;
 }
 
 function downloadCSV(dataArray: any[], filename: string) {
@@ -249,26 +246,6 @@ function LoginScreen({ onLogin }: { onLogin: any }) {
 export default function App() {
   const [supabaseReady, setSupabaseReady] = useState(!!(window as any).supabaseClient);
 
-  // Injetar Polyfill de Drag & Drop para Mobile no carregamento da App
-  useEffect(() => {
-    const loadMobileDragDrop = async () => {
-       const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-       if (!isTouchDevice) return;
-       if ((window as any).MobileDragDrop) return;
-       
-       const script1 = document.createElement('script');
-       script1.src = 'https://cdn.jsdelivr.net/npm/mobile-drag-drop@2.3.0-rc.2/index.min.js';
-       script1.onload = () => {
-          (window as any).MobileDragDrop.polyfill({
-             holdToDrag: 350 // Tempo de clique segurado (0.35s) para iniciar o arraste no mobile
-          });
-          window.addEventListener('touchmove', function() {}, {passive: false});
-       };
-       document.head.appendChild(script1);
-    };
-    loadMobileDragDrop();
-  }, []);
-
   useEffect(() => {
     if ((window as any).supabase) {
       if (!(window as any).supabaseClient) {
@@ -338,7 +315,7 @@ const COLUMNS = [
     { id: "cancelled", name: "Cancelado", dot: "bg-red-500", accent: "border-red-500/50", bg: "bg-red-500/10", btn: "bg-red-500/10 hover:bg-red-500/20 text-red-400 border-red-500/20", help: "Demandas que foram descartadas, inviáveis de realizar ou que perderam o sentido antes de serem entregues." },
 ];
 
-const PRIORITY_STYLE = {
+const PRIORITY_STYLE: Record<string, any> = {
   Baixa: { bg: "bg-emerald-500/10", text: "text-emerald-400", border: "border-emerald-500/20", dot: "bg-emerald-500" },
   Média: { bg: "bg-amber-500/10", text: "text-amber-400", border: "border-amber-500/20", dot: "bg-amber-500" },
   Alta: { bg: "bg-red-500/10", text: "text-red-400", border: "border-red-500/20", dot: "bg-red-500" },
@@ -385,7 +362,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
             timerElapsed: t.timerElapsed || 0,
             durationMin: t.durationMin || 0,
             createdAt: t.createdAt || getBrasiliaDate(),
-            completedAt: t.completedAt || (t.status === 'done' || t.status === 'formalize' ? getBrasiliaDate() : '')
+            completedAt: t.completedAt || ''
           })));
         }
 
@@ -434,15 +411,14 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
   const [activeTab, setActiveTab] = useState('board'); 
   const [isClosingModal, setIsClosingModal] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
-  const [activeTooltipCol, setActiveTooltipCol] = useState<string | null>(null);
   
   // Controle de Filtros
   const [showFilters, setShowFilters] = useState(false);
   const [filterClient, setFilterClient] = useState("all");
   const [filterResp, setFilterResp] = useState("all");
   const [filterPriority, setFilterPriority] = useState("all");
-  const [filterCreated, setFilterCreated] = useState("all");
-  const [filterCompleted, setFilterCompleted] = useState("all");
+  const [filterCreatedStart, setFilterCreatedStart] = useState("");
+  const [filterCompletedStart, setFilterCompletedStart] = useState("");
   
   const [modal, setModal] = useState<any>(null); 
   const [profileModal, setProfileModal] = useState(false);
@@ -498,8 +474,8 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
       (filterClient === "all" || t.clientId === filterClient) &&
       (filterResp === "all" || t.responsibleId === filterResp) &&
       (filterPriority === "all" || t.priority === filterPriority) &&
-      filterByPeriod(t.createdAt, filterCreated) &&
-      (filterCompleted === "all" || filterByPeriod(t.completedAt, filterCompleted))
+      isDateAfterOrEqual(t.createdAt, filterCreatedStart) &&
+      isDateAfterOrEqual(t.completedAt, filterCompletedStart)
   );
 
   const activeTasksCount = visibleTasks.filter((t) => t.status !== "cancelled").length;
@@ -704,7 +680,6 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
 
       if (donePrompt.targetId) {
         let toIndex = newTasks.findIndex(t => t.id.toString() === donePrompt.targetId.toString());
-        // Ajuste de Reordenamento na mesma coluna para baixo
         if (prev[fromIndex].status === 'done' && fromIndex < originalToIndex) {
            toIndex += 1;
         }
@@ -762,7 +737,6 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
       if (targetId) {
         let toIndex = newTasks.findIndex(t => t.id.toString() === targetId.toString());
         
-        // Ajuste fundamental de reordenamento: se foi puxado de cima para baixo na mesma coluna, encaixa abaixo do alvo.
         if (originalStatus === newStatus && fromIndex < originalToIndex) {
             toIndex += 1;
         }
@@ -775,6 +749,31 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
       } else {
         newTasks.push(taskToMove); 
       }
+      return newTasks;
+    });
+  };
+
+  // Funções extra para mover cartões manualmente no Mobile (Cima/Baixo) sem arrastar
+  const moveTaskVertical = (taskId: string, direction: 'up' | 'down') => {
+    setTasks(prev => {
+      const idx = prev.findIndex(t => t.id.toString() === taskId.toString());
+      if (idx === -1) return prev;
+      
+      const task = prev[idx];
+      const colTasks = prev.filter(t => t.status === task.status);
+      const colIdx = colTasks.findIndex(t => t.id === task.id);
+      
+      if (direction === 'up' && colIdx <= 0) return prev;
+      if (direction === 'down' && colIdx >= colTasks.length - 1) return prev;
+      
+      const targetColTask = direction === 'up' ? colTasks[colIdx - 1] : colTasks[colIdx + 1];
+      const targetGlobalIdx = prev.findIndex(t => t.id === targetColTask.id);
+      
+      const newTasks = [...prev];
+      // Trocar posições
+      newTasks[idx] = newTasks[targetGlobalIdx];
+      newTasks[targetGlobalIdx] = task;
+      
       return newTasks;
     });
   };
@@ -818,7 +817,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
   }
 
   return (
-    <div className="fixed inset-0 w-full bg-[#09090b] text-neutral-100 flex flex-col md:flex-row overflow-hidden font-sans" onClick={() => { setActiveTooltipCol(null); setShowProfileMenu(false); }}>
+    <div className="fixed inset-0 w-full bg-[#09090b] text-neutral-100 flex flex-col md:flex-row overflow-hidden font-sans" onClick={() => setShowProfileMenu(false)}>
       <style>{`
         .kp-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
         .kp-scroll::-webkit-scrollbar-thumb { background: #27272a; border-radius: 6px; }
@@ -844,6 +843,8 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
         
         input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
         input[type=number] { -moz-appearance: textfield; }
+        
+        input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); opacity: 0.5; cursor: pointer; }
 
         .glass-panel { background: rgba(24, 24, 27, 0.6); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.05); }
       `}</style>
@@ -943,13 +944,13 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                 <div className="flex flex-wrap sm:flex-nowrap items-center gap-3 w-full">
                    <button 
                      onClick={() => setShowFilters(!showFilters)} 
-                     className={`h-11 px-4 w-full sm:w-auto flex items-center justify-center gap-2 rounded-xl transition-all shadow-sm shrink-0 border font-bold uppercase tracking-widest text-[10px] ${showFilters ? 'bg-indigo-600 text-white border-indigo-500 shadow-[0_0_15px_rgba(79,70,229,0.3)]' : 'glass-panel text-neutral-400 border-white/5 hover:text-white'}`}
+                     className={`h-11 w-11 lg:w-auto px-0 lg:px-4 flex items-center justify-center gap-2 rounded-xl transition-all shadow-sm shrink-0 border font-bold uppercase tracking-widest text-[10px] ${showFilters ? 'bg-indigo-600 text-white border-indigo-500 shadow-[0_0_15px_rgba(79,70,229,0.3)]' : 'glass-panel text-neutral-400 border-white/5 hover:text-white'}`}
                    >
-                     <Filter size={16} /> Filtros
+                     <Filter size={16} /> <span className="hidden lg:inline">Filtros</span>
                    </button>
 
                    <div className="glass-panel h-11 flex-1 flex items-center px-4 rounded-xl gap-3 shadow-sm min-w-0">
-                     <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 hidden sm:block">Progresso</span>
+                     <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-500">Progresso</span>
                      <div className="flex-1 h-1.5 rounded-full bg-black/50 overflow-hidden border border-white/5">
                         <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${overallProgress}%` }} />
                      </div>
@@ -957,7 +958,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                    </div>
 
                    {tasksForClosure.length > 0 && (
-                      <button onClick={() => setClosureModal(true)} className="h-11 w-full sm:w-auto px-4 sm:px-6 flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-[10px] sm:text-[11px] font-bold uppercase tracking-widest transition-all shadow-[0_0_15px_rgba(79,70,229,0.3)] shrink-0">
+                      <button onClick={() => setClosureModal(true)} className="h-11 w-11 sm:w-auto px-0 sm:px-6 flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-[10px] sm:text-[11px] font-bold uppercase tracking-widest transition-all shadow-[0_0_15px_rgba(79,70,229,0.3)] shrink-0">
                         <Mail size={16}/> <span className="whitespace-nowrap hidden sm:inline">Fechar Semana</span>
                       </button>
                     )}
@@ -974,9 +975,17 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                     <div className="hidden sm:block w-px h-4 bg-white/10"></div>
                     <FilterSelect value={filterPriority} onChange={setFilterPriority} options={[{id: 'Baixa', name: 'Baixa'}, {id: 'Média', name: 'Média'}, {id: 'Alta', name: 'Alta'}]} defaultLabel="Prioridades" />
                     <div className="hidden sm:block w-px h-4 bg-white/10"></div>
-                    <FilterSelect value={filterCreated} onChange={setFilterCreated} options={[{id: 'today', name: 'Criados Hoje'}, {id: 'week', name: 'Criados esta Semana'}, {id: 'month', name: 'Criados este Mês'}]} defaultLabel="Período de Criação" />
+                    
+                    <div className="flex items-center gap-2 w-full sm:w-auto">
+                       <label className="text-[10px] uppercase font-bold text-neutral-500 whitespace-nowrap">Criado a partir de:</label>
+                       <input type="date" value={filterCreatedStart} onChange={e => setFilterCreatedStart(e.target.value)} className="bg-transparent border border-white/10 rounded-md px-2 py-1 text-xs text-white outline-none [color-scheme:dark]" />
+                    </div>
                     <div className="hidden sm:block w-px h-4 bg-white/10"></div>
-                    <FilterSelect value={filterCompleted} onChange={setFilterCompleted} options={[{id: 'today', name: 'Concluídos Hoje'}, {id: 'week', name: 'Concluídos esta Semana'}, {id: 'month', name: 'Concluídos este Mês'}]} defaultLabel="Período de Conclusão" />
+                    
+                    <div className="flex items-center gap-2 w-full sm:w-auto">
+                       <label className="text-[10px] uppercase font-bold text-neutral-500 whitespace-nowrap">Concluído a partir de:</label>
+                       <input type="date" value={filterCompletedStart} onChange={e => setFilterCompletedStart(e.target.value)} className="bg-transparent border border-white/10 rounded-md px-2 py-1 text-xs text-white outline-none [color-scheme:dark]" />
+                    </div>
                   </div>
                </div>
              )}
@@ -989,20 +998,20 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                 {COLUMNS.map((col) => {
                   const colTasks = filteredTasks.filter((t) => t.status === col.id);
                   return (
-                    <div key={col.id} className="w-[85vw] max-w-[340px] sm:w-[340px] shrink-0 glass-panel rounded-2xl flex flex-col h-full shadow-sm">
+                    <div key={col.id} className="w-[88vw] max-w-[340px] sm:w-[340px] shrink-0 glass-panel rounded-2xl flex flex-col h-full shadow-sm relative">
                       
                       {/* Header da Coluna */}
                       <div className="px-5 pt-5 pb-4 flex items-center justify-between border-b border-white/5 shrink-0">
-                        <div 
-                          className="flex items-center gap-2 relative group cursor-pointer"
-                          onClick={(e) => { e.stopPropagation(); setActiveTooltipCol(activeTooltipCol === col.id ? null : col.id); }}
-                        >
+                        <div className="flex items-center gap-2 relative group cursor-pointer">
                           <span className={`w-2.5 h-2.5 shrink-0 rounded-full ${col.dot} shadow-[0_0_8px_currentColor]`} />
                           <h2 className="text-xs font-bold uppercase tracking-widest text-white">{col.name}</h2>
-                          <HelpCircle size={14} className="text-neutral-500 hover:text-neutral-300 transition-colors ml-0.5" />
                           
-                          <div className={`absolute left-0 top-full mt-2 w-56 sm:w-64 p-4 bg-[#1c1d26] border border-[#27272a] rounded-xl shadow-2xl transition-all z-[60] normal-case tracking-normal cursor-default ${activeTooltipCol === col.id ? 'opacity-100 visible' : 'opacity-0 invisible lg:group-hover:opacity-100 lg:group-hover:visible'}`} onClick={e => e.stopPropagation()}>
-                            <div className="text-[11px] text-neutral-300 leading-relaxed font-normal">{col.help}</div>
+                          {/* Tooltip de Ajuda Hover/Click */}
+                          <div className="relative flex items-center justify-center">
+                             <HelpCircle size={14} className="text-neutral-500 hover:text-neutral-300 transition-colors peer" />
+                             <div className="absolute left-0 top-full mt-2 w-64 p-4 bg-[#1c1d26] border border-[#27272a] rounded-xl shadow-2xl opacity-0 invisible peer-hover:opacity-100 peer-hover:visible transition-all z-[60] normal-case tracking-normal cursor-default">
+                               <div className="text-[11px] text-neutral-300 leading-relaxed font-normal">{col.help}</div>
+                             </div>
                           </div>
                         </div>
                         <span className="text-[10px] px-2.5 py-1 rounded-lg bg-black/40 text-neutral-400 font-bold border border-white/5">{colTasks.length}</span>
@@ -1041,7 +1050,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                           const isEditable = canEditTask(t.responsibleId);
 
                           return (
-                            <div key={t.id} className={`rounded-2xl bg-[#1c1d26] border p-4 transition-all group ${isDoneOrCancelled ? 'opacity-60' : ''} ${!isEditable ? 'opacity-70 cursor-not-allowed' : 'cursor-grab active:cursor-grabbing hover:border-[#3f3f46] shadow-md'} ${dragOverId === t.id ? 'border-indigo-500 shadow-[0_-2px_15px_rgba(99,102,241,0.3)]' : 'border-[#2d3142]'}`} draggable={isEditable} onDragStart={(e) => { if(isEditable) handleDragStart(e, t.id); }} onDragOver={(e) => { if(isEditable) { e.preventDefault(); e.stopPropagation(); setDragOverId(t.id); } }} onDragLeave={() => setDragOverId(null)} onDrop={(e) => { if(isEditable) { e.preventDefault(); e.stopPropagation(); setDragOverId(null); handleRequestMove(e.dataTransfer.getData("taskId"), t.id, col.id); } }}>
+                            <div key={t.id} className={`rounded-2xl bg-[#1c1d26] border p-4 transition-all group relative ${isDoneOrCancelled ? 'opacity-60' : ''} ${!isEditable ? 'opacity-70 cursor-not-allowed' : 'cursor-grab active:cursor-grabbing hover:border-[#3f3f46] shadow-md'} ${dragOverId === t.id ? 'border-indigo-500 shadow-[0_-2px_15px_rgba(99,102,241,0.3)]' : 'border-[#2d3142]'}`} draggable={isEditable} onDragStart={(e) => { if(isEditable) handleDragStart(e, t.id); }} onDragOver={(e) => { if(isEditable) { e.preventDefault(); e.stopPropagation(); setDragOverId(t.id); } }} onDragLeave={() => setDragOverId(null)} onDrop={(e) => { if(isEditable) { e.preventDefault(); e.stopPropagation(); setDragOverId(null); handleRequestMove(e.dataTransfer.getData("taskId"), t.id, col.id); } }}>
                               
                               {/* Badges do Cartão */}
                               <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
@@ -1051,8 +1060,20 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                                     <span className={`w-1 h-1 rounded-full ${prStyle.dot}`} /> {t.priority}
                                   </span>
                                 </div>
-                                {isEditable && <GripVertical size={14} className="text-neutral-600 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity hidden md:block" />}
-                                {!isEditable && <Lock size={12} className="text-neutral-600 shrink-0 hidden md:block" />}
+                                
+                                {isEditable ? (
+                                  <div className="flex items-center gap-1">
+                                    {isMobile && (
+                                       <div className="flex flex-col gap-1 mr-1">
+                                          <button onClick={(e) => { e.stopPropagation(); moveTaskVertical(t.id, 'up'); }} className="p-1 bg-white/5 rounded text-neutral-400 active:bg-white/10 active:text-white"><ChevronUp size={12}/></button>
+                                          <button onClick={(e) => { e.stopPropagation(); moveTaskVertical(t.id, 'down'); }} className="p-1 bg-white/5 rounded text-neutral-400 active:bg-white/10 active:text-white"><ChevronDown size={12}/></button>
+                                       </div>
+                                    )}
+                                    <GripVertical size={14} className="text-neutral-600 shrink-0 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity" />
+                                  </div>
+                                ) : (
+                                  <Lock size={12} className="text-neutral-600 shrink-0 block" />
+                                )}
                               </div>
 
                               <div className="mb-3">
@@ -1123,6 +1144,13 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                                     )}
                                  </div>
                               </div>
+                              
+                              {/* Data de Criação Discreta */}
+                              {t.createdAt && (
+                                <div className="mt-3 text-[9px] text-neutral-600 font-mono uppercase tracking-widest text-center">
+                                  Criado em: {t.createdAt.split('-').reverse().join('/')}
+                                </div>
+                              )}
 
                             </div>
                           );
@@ -1137,7 +1165,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
         </div>
       </div>
 
-      {/* MOBILE BOTTOM NAV - Fixo na Base de Forma Responsiva */}
+      {/* MOBILE BOTTOM NAV */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 flex items-center justify-around pt-2.5 px-2 pb-[max(env(safe-area-inset-bottom),0.75rem)] bg-[#12121a]/95 backdrop-blur-md border-t border-[#27272a] z-[100] shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
          <MobileNavBtn icon={<LayoutDashboard size={20} />} label="Board" active={activeTab === 'board' && !isClosingModal} onClick={() => {if(activeTab !== 'board') handleCloseTab()}} />
          <MobileNavBtn icon={<Clock size={20} />} label="Timer" active={activeTab === 'timer' && !isClosingModal} onClick={() => setActiveTab('timer')} />
@@ -1389,8 +1417,8 @@ function FilterSelect({ value, onChange, options, defaultLabel }: any) {
   return (
     <div className="relative flex items-center w-full lg:w-auto shrink-0 flex-1 lg:flex-none">
       <select value={value || 'all'} onChange={(e) => onChange(e.target.value)} className="appearance-none w-full lg:w-auto text-[11px] font-bold bg-[#12121a] lg:bg-transparent border border-[#27272a] lg:border-none pl-4 pr-10 py-3 lg:p-0 lg:pr-6 rounded-xl lg:rounded-none text-neutral-300 outline-none cursor-pointer transition-all hover:text-white">
-        <option value="all">{defaultLabel}</option>
-        {options.map((o: any) => (<option key={o.id} value={o.id}>{o.name}</option>))}
+        <option value="all" className="bg-[#1c1d26] text-white">{defaultLabel}</option>
+        {options.map((o: any) => (<option key={o.id} value={o.id} className="bg-[#1c1d26] text-white">{o.name}</option>))}
       </select>
       <ChevronDown size={14} className="absolute right-4 lg:right-0 text-neutral-600 pointer-events-none" />
     </div>

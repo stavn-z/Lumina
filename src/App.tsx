@@ -3,7 +3,7 @@ import {
   Plus, Pencil, Timer as TimerIcon, Trash2, X, Clock, 
   Users, Building2, BarChart3, LogOut, RotateCcw, 
   Filter, AlertTriangle, GripVertical, Download, 
-  Play, Square, CheckCircle2, User, CheckSquare,
+  Play, Pause, Square, CheckCircle2, User, CheckSquare,
   HelpCircle, ChevronDown, LayoutDashboard, Mail, Check, Copy, ClipboardList, Cloud, Lock,
   Eye, EyeOff, ExternalLink, Settings, MonitorPlay, CloudRain, Sun, Moon, CloudLightning, Snowflake, CloudFog, Camera, UserCog, Calendar
 } from "lucide-react";
@@ -33,6 +33,18 @@ function getBrasiliaDate() {
   const month = parts.find(p => p.type === 'month')?.value || '01';
   const year = parts.find(p => p.type === 'year')?.value || '2025';
   return `${year}-${month}-${day}`;
+}
+
+function filterByPeriod(dateStr: string, period: string) {
+  if (period === 'all') return true;
+  if (!dateStr) return false;
+  const d = new Date(dateStr);
+  const now = new Date();
+  const diffDays = (now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24);
+  if (period === 'today') return diffDays <= 1;
+  if (period === 'week') return diffDays <= 7;
+  if (period === 'month') return diffDays <= 30;
+  return true;
 }
 
 function downloadCSV(dataArray: any[], filename: string) {
@@ -173,7 +185,7 @@ function LoginScreen({ onLogin }: { onLogin: any }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-[#09090b] flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-[#09090b] flex items-center justify-center p-4 z-50">
       <div className="bg-[#12121a] p-8 rounded-[32px] border border-[#27272a] w-full max-w-sm shadow-[0_0_50px_rgba(79,70,229,0.05)] animate-modal-pop">
         <div className="flex flex-col items-center justify-center gap-4 mb-8">
           <div className="w-24 h-24 rounded-[22px] bg-black flex items-center justify-center border border-white/5 overflow-hidden shadow-2xl">
@@ -371,7 +383,9 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
             waitingFor: t.waitingFor || '',
             checklist: Array.isArray(t.checklist) ? t.checklist : [],
             timerElapsed: t.timerElapsed || 0,
-            durationMin: t.durationMin || 0
+            durationMin: t.durationMin || 0,
+            createdAt: t.createdAt || getBrasiliaDate(),
+            completedAt: t.completedAt || (t.status === 'done' || t.status === 'formalize' ? getBrasiliaDate() : '')
           })));
         }
 
@@ -379,6 +393,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
           setClients(resClients.data.map((c: any) => ({
             ...c,
             name: c.name || '',
+            lookerUrl: c.lookerUrl || '',
             emails: Array.isArray(c.emails) ? c.emails : (typeof c.email === 'string' && c.email ? c.email.split(',').map(e => e.trim()) : []),
             contractedHours: parseFloat(c.contractedHours) || 0
           })));
@@ -421,12 +436,13 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [activeTooltipCol, setActiveTooltipCol] = useState<string | null>(null);
   
-  // Controle de Filtros Mobile
-  const [showMobileFilters, setShowMobileFilters] = useState(false);
-
+  // Controle de Filtros
+  const [showFilters, setShowFilters] = useState(false);
   const [filterClient, setFilterClient] = useState("all");
   const [filterResp, setFilterResp] = useState("all");
   const [filterPriority, setFilterPriority] = useState("all");
+  const [filterCreated, setFilterCreated] = useState("all");
+  const [filterCompleted, setFilterCompleted] = useState("all");
   
   const [modal, setModal] = useState<any>(null); 
   const [profileModal, setProfileModal] = useState(false);
@@ -481,7 +497,9 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
     (t) =>
       (filterClient === "all" || t.clientId === filterClient) &&
       (filterResp === "all" || t.responsibleId === filterResp) &&
-      (filterPriority === "all" || t.priority === filterPriority)
+      (filterPriority === "all" || t.priority === filterPriority) &&
+      filterByPeriod(t.createdAt, filterCreated) &&
+      (filterCompleted === "all" || filterByPeriod(t.completedAt, filterCompleted))
   );
 
   const activeTasksCount = visibleTasks.filter((t) => t.status !== "cancelled").length;
@@ -556,6 +574,8 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
         timerRunning: false,
         timerStart: null,
         timerElapsed: 0,
+        createdAt: getBrasiliaDate(),
+        completedAt: (finalStatus === 'done' || finalStatus === 'formalize') ? getBrasiliaDate() : ''
       };
       setTasks((prev) => [...prev, newTask]);
     } else {
@@ -589,7 +609,9 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
             status: finalStatus,
             waitingFor: f.waitingFor || '',
             checklist: (f.checklist || []).filter((c: any) => c.text.trim()),
-            timerRunning, timerElapsed, timerStart
+            timerRunning, timerElapsed, timerStart,
+            createdAt: t.createdAt || getBrasiliaDate(),
+            completedAt: (finalStatus === 'done' || finalStatus === 'formalize') ? (t.completedAt || getBrasiliaDate()) : t.completedAt
           };
         })
       );
@@ -650,7 +672,8 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
          durationMin: parseInt(donePrompt.durationMin) || 0,
          timerRunning: false,
          timerStart: null,
-         status: 'done'
+         status: 'done',
+         completedAt: donePrompt.date
       };
       
       if (modal.mode === 'add') setTasks(prev => [...prev, finalTask]);
@@ -672,6 +695,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
       taskToMove.timerRunning = false;
       taskToMove.timerStart = null;
       taskToMove.status = 'done';
+      taskToMove.completedAt = donePrompt.date;
 
       const originalToIndex = donePrompt.targetId ? prev.findIndex(t => t.id.toString() === donePrompt.targetId.toString()) : -1;
 
@@ -912,16 +936,16 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
         {/* BOARD VIEW */}
         <div className={`flex-1 flex flex-col min-h-0 ${activeTab !== 'board' ? 'hidden md:flex opacity-30 pointer-events-none transition-opacity duration-300' : 'fade-in'}`}>
           
-          <div className="shrink-0 px-4 md:px-8 pb-4 flex flex-col gap-3">
-             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 w-full">
+          <div className="shrink-0 px-4 md:px-8 pb-3 flex flex-col gap-3">
+             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 w-full">
                 
-                {/* Linha Principal (Progresso, Botão Filtro Mobile e Fechar Semana) */}
-                <div className="flex items-center gap-2 sm:gap-3 w-full lg:w-auto">
+                {/* Linha Principal (Progresso, Botão Filtro e Fechar Semana) */}
+                <div className="flex flex-wrap sm:flex-nowrap items-center gap-3 w-full">
                    <button 
-                     onClick={() => setShowMobileFilters(!showMobileFilters)} 
-                     className={`lg:hidden h-11 w-11 flex items-center justify-center rounded-xl transition-all shadow-sm shrink-0 border ${showMobileFilters ? 'bg-indigo-600 text-white border-indigo-500' : 'glass-panel text-neutral-400 border-white/5 hover:text-white'}`}
+                     onClick={() => setShowFilters(!showFilters)} 
+                     className={`h-11 px-4 w-full sm:w-auto flex items-center justify-center gap-2 rounded-xl transition-all shadow-sm shrink-0 border font-bold uppercase tracking-widest text-[10px] ${showFilters ? 'bg-indigo-600 text-white border-indigo-500 shadow-[0_0_15px_rgba(79,70,229,0.3)]' : 'glass-panel text-neutral-400 border-white/5 hover:text-white'}`}
                    >
-                     <Filter size={18} />
+                     <Filter size={16} /> Filtros
                    </button>
 
                    <div className="glass-panel h-11 flex-1 flex items-center px-4 rounded-xl gap-3 shadow-sm min-w-0">
@@ -933,25 +957,29 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                    </div>
 
                    {tasksForClosure.length > 0 && (
-                      <button onClick={() => setClosureModal(true)} className="h-11 px-4 sm:px-6 flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-[10px] sm:text-[11px] font-bold uppercase tracking-widest transition-all shadow-[0_0_15px_rgba(79,70,229,0.3)] shrink-0">
+                      <button onClick={() => setClosureModal(true)} className="h-11 w-full sm:w-auto px-4 sm:px-6 flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-[10px] sm:text-[11px] font-bold uppercase tracking-widest transition-all shadow-[0_0_15px_rgba(79,70,229,0.3)] shrink-0">
                         <Mail size={16}/> <span className="whitespace-nowrap hidden sm:inline">Fechar Semana</span>
                       </button>
                     )}
                 </div>
-
-                {/* Filtros Container */}
-                <div className={`flex-col lg:flex-row items-stretch lg:items-center gap-2 w-full lg:w-auto ${showMobileFilters ? 'flex' : 'hidden lg:flex'}`}>
-                  <div className="glass-panel w-full lg:w-auto p-3 lg:px-4 lg:py-2.5 rounded-xl flex flex-col lg:flex-row items-stretch lg:items-center gap-3 shadow-sm">
-                    <Filter size={16} className="text-neutral-500 shrink-0 hidden lg:block" />
-                    <FilterSelect value={filterClient} onChange={setFilterClient} options={clients} defaultLabel="Todos Clientes" />
-                    <div className="hidden lg:block w-px h-4 bg-white/10"></div>
-                    <FilterSelect value={filterResp} onChange={setFilterResp} options={responsibles} defaultLabel="Todos Responsáveis" />
-                    <div className="hidden lg:block w-px h-4 bg-white/10"></div>
-                    <FilterSelect value={filterPriority} onChange={setFilterPriority} options={[{id: 'Baixa', name: 'Baixa'}, {id: 'Média', name: 'Média'}, {id: 'Alta', name: 'Alta'}]} defaultLabel="Prioridades" />
-                  </div>
-                </div>
-
              </div>
+
+             {/* Filtros Container Expansível */}
+             {showFilters && (
+               <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-3 w-full animate-fade-in">
+                  <div className="glass-panel w-full p-4 rounded-xl flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-4 shadow-sm">
+                    <FilterSelect value={filterClient} onChange={setFilterClient} options={clients} defaultLabel="Todos Clientes" />
+                    <div className="hidden sm:block w-px h-4 bg-white/10"></div>
+                    <FilterSelect value={filterResp} onChange={setFilterResp} options={responsibles} defaultLabel="Todos Responsáveis" />
+                    <div className="hidden sm:block w-px h-4 bg-white/10"></div>
+                    <FilterSelect value={filterPriority} onChange={setFilterPriority} options={[{id: 'Baixa', name: 'Baixa'}, {id: 'Média', name: 'Média'}, {id: 'Alta', name: 'Alta'}]} defaultLabel="Prioridades" />
+                    <div className="hidden sm:block w-px h-4 bg-white/10"></div>
+                    <FilterSelect value={filterCreated} onChange={setFilterCreated} options={[{id: 'today', name: 'Criados Hoje'}, {id: 'week', name: 'Criados esta Semana'}, {id: 'month', name: 'Criados este Mês'}]} defaultLabel="Período de Criação" />
+                    <div className="hidden sm:block w-px h-4 bg-white/10"></div>
+                    <FilterSelect value={filterCompleted} onChange={setFilterCompleted} options={[{id: 'today', name: 'Concluídos Hoje'}, {id: 'week', name: 'Concluídos esta Semana'}, {id: 'month', name: 'Concluídos este Mês'}]} defaultLabel="Período de Conclusão" />
+                  </div>
+               </div>
+             )}
           </div>
 
           {/* Quadro Kanban */}
@@ -961,7 +989,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                 {COLUMNS.map((col) => {
                   const colTasks = filteredTasks.filter((t) => t.status === col.id);
                   return (
-                    <div key={col.id} className="w-[88vw] max-w-[340px] sm:w-[340px] shrink-0 glass-panel rounded-2xl flex flex-col h-full shadow-sm">
+                    <div key={col.id} className="w-[85vw] max-w-[340px] sm:w-[340px] shrink-0 glass-panel rounded-2xl flex flex-col h-full shadow-sm">
                       
                       {/* Header da Coluna */}
                       <div className="px-5 pt-5 pb-4 flex items-center justify-between border-b border-white/5 shrink-0">
@@ -987,15 +1015,13 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                         </button>
                       </div>
                       
-                      {/* Área de Cartões */}     
+                      {/* Área de Cartões - min-h-0 garante que o scroll interno funcione na perfeição no mobile */}     
                       <div 
                         className="px-3 pb-3 flex-1 overflow-y-auto overflow-x-hidden kp-scroll flex flex-col gap-3 mt-3 min-h-0"
-                        onDragOver={(e) => { if (!isMobile) e.preventDefault(); }}
+                        onDragOver={(e) => { e.preventDefault(); }}
                         onDrop={(e) => {
-                          if (!isMobile) {
-                            e.preventDefault();
-                            handleRequestMove(e.dataTransfer.getData("taskId"), null, col.id);
-                          }
+                          e.preventDefault();
+                          handleRequestMove(e.dataTransfer.getData("taskId"), null, col.id);
                         }}
                       >
                         {colTasks.length === 0 && (
@@ -1025,8 +1051,8 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                                     <span className={`w-1 h-1 rounded-full ${prStyle.dot}`} /> {t.priority}
                                   </span>
                                 </div>
-                                {isEditable && <GripVertical size={14} className="text-neutral-600 shrink-0 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity block" />}
-                                {!isEditable && <Lock size={12} className="text-neutral-600 shrink-0 block" />}
+                                {isEditable && <GripVertical size={14} className="text-neutral-600 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity hidden md:block" />}
+                                {!isEditable && <Lock size={12} className="text-neutral-600 shrink-0 hidden md:block" />}
                               </div>
 
                               <div className="mb-3">
@@ -1083,7 +1109,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                                     {isEditable && (
                                       <>
                                         <button onClick={() => openEditModal(t)} className="p-1.5 bg-white/5 hover:bg-white/10 text-neutral-400 hover:text-white rounded-lg transition-colors border border-transparent hover:border-white/10" title="Editar"><Pencil size={12}/></button>
-                                        {!isDoneOrCancelled && <button onClick={() => toggleTimer(t.id)} className={`p-1.5 rounded-lg transition-colors border ${t.timerRunning ? 'text-amber-400 bg-amber-400/10 border-amber-400/20' : 'text-neutral-400 bg-white/5 hover:text-white hover:bg-white/10 border-transparent hover:border-white/10'}`} title="Timer"><Play size={12}/></button>}
+                                        {!isDoneOrCancelled && <button onClick={() => toggleTimer(t.id)} className={`p-1.5 rounded-lg transition-colors border ${t.timerRunning ? 'text-amber-400 bg-amber-400/10 border-amber-400/20' : 'text-neutral-400 bg-white/5 hover:text-white hover:bg-white/10 border-transparent hover:border-white/10'}`} title={t.timerRunning ? "Pausar" : "Iniciar Timer"}>{t.timerRunning ? <Pause size={12}/> : <Play size={12}/>}</button>}
                                       </>
                                     )}
                                     {isEditable && t.status !== "cancelled" && isDoneOrCancelled && (
@@ -1111,7 +1137,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
         </div>
       </div>
 
-      {/* MOBILE BOTTOM NAV */}
+      {/* MOBILE BOTTOM NAV - Fixo na Base de Forma Responsiva */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 flex items-center justify-around pt-2.5 px-2 pb-[max(env(safe-area-inset-bottom),0.75rem)] bg-[#12121a]/95 backdrop-blur-md border-t border-[#27272a] z-[100] shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
          <MobileNavBtn icon={<LayoutDashboard size={20} />} label="Board" active={activeTab === 'board' && !isClosingModal} onClick={() => {if(activeTab !== 'board') handleCloseTab()}} />
          <MobileNavBtn icon={<Clock size={20} />} label="Timer" active={activeTab === 'timer' && !isClosingModal} onClick={() => setActiveTab('timer')} />
@@ -1411,7 +1437,7 @@ function TimerPanelContent({ tasks, now, getElapsed, onToggleTimer, user }: any)
               </div>
               {!isDoneOrCancelled ? (
                 <button onClick={() => onToggleTimer(t.id)} className={`w-full flex items-center justify-center gap-2 py-4 rounded-xl font-bold uppercase tracking-widest text-[11px] transition-all ${t.timerRunning ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20 hover:bg-amber-500/20 shadow-[0_0_15px_rgba(245,158,11,0.2)]' : 'bg-white/5 text-neutral-300 hover:bg-white/10 border border-white/10'}`}>
-                  {t.timerRunning ? <><Square size={14}/> Parar Tempo</> : <><Play size={14}/> Iniciar Tempo</>}
+                  {t.timerRunning ? <><Pause size={14}/> Pausar Tempo</> : <><Play size={14}/> Iniciar Tempo</>}
                 </button>
               ) : (
                 <div className="w-full flex items-center justify-center py-4 rounded-xl font-bold uppercase tracking-widest text-[11px] bg-black/40 border border-white/5 text-neutral-600">
@@ -1443,7 +1469,7 @@ function ResponsiblesPanelContent({ responsibles, setResponsibles, tasks, setTas
   };
 
   const remove = async (id: string) => { 
-    if(!user.isAdmin && id !== user.id) return alert("Não tem permissão para apagar contas.");
+    if(!user.isAdmin && id !== user.id) return alert("Apenas administradores podem remover contas.");
     setResponsibles((prev: any) => prev.filter((r: any) => r.id !== id)); 
     setTasks((prev: any) => prev.map((t: any) => t.responsibleId === id ? { ...t, responsibleId: '' } : t)); 
     if (window.supabaseClient) {
@@ -1529,6 +1555,11 @@ function ClientModal({ modal, setModal, setClients }: any) {
           <div>
             <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">Teto de Horas Contratadas (Mensal)</label>
             <input type="number" value={form.contractedHours || ''} onChange={(e) => setForm({ ...form, contractedHours: e.target.value })} className={`w-full bg-[#12121a] border border-[#27272a] rounded-xl px-4 py-4 sm:py-3.5 text-sm text-white outline-none focus:border-purple-500 transition-colors`} placeholder="Ex: 50" />
+          </div>
+
+          <div>
+            <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">URL do Relatório (Looker Studio)</label>
+            <input type="text" value={form.lookerUrl || ''} onChange={(e) => setForm({ ...form, lookerUrl: e.target.value })} className={`w-full bg-[#12121a] border border-[#27272a] rounded-xl px-4 py-4 sm:py-3.5 text-sm text-white outline-none focus:border-purple-500 transition-colors`} placeholder="https://lookerstudio.google.com/reporting/..." />
           </div>
           
           <div>
@@ -1618,10 +1649,19 @@ function ClientsPanelContent({ clients, setClients, tasks, setTasks, user, getEl
                   <span className="text-xs text-neutral-500 mt-1 uppercase tracking-widest font-bold">
                     {c.contractedHours ? <span className="text-indigo-400">Teto: {c.contractedHours}h | </span> : ''} {emailsArray.length === 0 ? "0 E-mails" : `${emailsArray.length} Contato(s)`} • {count} Demandas
                   </span>
+                  
+                  {c.lookerUrl && (
+                    <div className="mt-3 flex gap-2">
+                       <button onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(c.lookerUrl); alert('Link do Looker Studio copiado!'); }} className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-1.5 bg-blue-500/10 text-blue-400 px-3 py-1.5 rounded-lg border border-blue-500/20 hover:bg-blue-500/20 transition-colors">
+                          <Copy size={12}/> Copiar Link Relatório
+                       </button>
+                    </div>
+                  )}
+
                 </div>
               </div>
               
-              <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto gap-3">
+              <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto gap-3 mt-4 sm:mt-0">
                 {isNearLimit && remaining !== null && (
                   <a href={generateLimitEmailLink(c, hours)} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="flex-1 sm:flex-none justify-center flex items-center gap-2 px-5 py-3.5 sm:py-3 bg-red-500/10 text-red-400 border border-red-500/20 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-red-500/20 transition-colors shrink-0 shadow-sm">
                     <AlertTriangle size={14}/> Aviso ({remaining.toFixed(1)}h)
@@ -1703,12 +1743,12 @@ function AnalyticsModal({ onClose, tasks, clients, responsibles, now, getElapsed
                <div className="flex-1 flex flex-col items-center justify-center max-w-xl mx-auto w-full text-center gap-8">
                  <div className="w-24 h-24 rounded-[32px] bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-500 shadow-[0_0_30px_rgba(59,130,246,0.15)]"><BarChart3 size={40} /></div>
                  <div>
-                   <h3 className="text-3xl font-bold text-white mb-3 tracking-tight">Painel do Cliente</h3>
-                   <p className="text-sm text-neutral-400 leading-relaxed max-w-md mx-auto">Siga o passo a passo no Guia de Integração para gerar o URL de Incorporação (Embed) do Looker Studio e cole-o abaixo.</p>
+                   <h3 className="text-3xl font-bold text-white mb-3 tracking-tight">Painel Analítico Global</h3>
+                   <p className="text-sm text-neutral-400 leading-relaxed max-w-md mx-auto">Configure aqui o Link de Incorporação (Embed) do Looker Studio para o painel de uso da sua equipa interna.</p>
                  </div>
                  <div className="w-full">
                     <input value={inputUrl} onChange={e => setInputUrl(e.target.value)} placeholder="https://lookerstudio.google.com/embed/reporting/..." className="w-full bg-[#12121a] border border-[#27272a] rounded-2xl px-6 py-5 text-sm text-white outline-none focus:border-blue-500 text-center shadow-inner mb-5" />
-                    <button onClick={saveUrl} className="w-full py-5 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-bold uppercase tracking-widest text-sm transition-all shadow-[0_0_20px_rgba(37,99,235,0.3)]">Ligar Relatório</button>
+                    <button onClick={saveUrl} className="w-full py-5 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-bold uppercase tracking-widest text-sm transition-all shadow-[0_0_20px_rgba(37,99,235,0.3)]">Ligar Relatório Global</button>
                  </div>
                  {url && <button onClick={() => setIsEditing(false)} className="text-xs font-bold text-neutral-500 uppercase tracking-widest hover:text-white mt-2">Cancelar</button>}
                </div>

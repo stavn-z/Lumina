@@ -5,7 +5,7 @@ import {
   Filter, AlertTriangle, GripVertical, Download, 
   Play, Pause, Square, CheckCircle2, User, CheckSquare,
   HelpCircle, ChevronDown, LayoutDashboard, Mail, Check, Copy, ClipboardList, Cloud, Lock,
-  Eye, EyeOff, ExternalLink, Settings, MonitorPlay, CloudRain, Sun, Moon, CloudLightning, Snowflake, CloudFog, Camera, UserCog, Calendar, ChevronUp
+  Eye, EyeOff, Settings, MonitorPlay, CloudRain, Sun, Moon, CloudLightning, Snowflake, CloudFog, UserCog, Calendar, ChevronUp
 } from "lucide-react";
 
 // ==========================================
@@ -35,13 +35,29 @@ function getBrasiliaDate() {
   return `${year}-${month}-${day}`;
 }
 
-// Verifica se a data do item é maior ou igual à data do filtro
-function isDateAfterOrEqual(itemDateStr: string, filterDateStr: string) {
-  if (!filterDateStr) return true;
+// Verifica se a data do item está dentro do período (início e fim)
+function filterByPeriod(itemDateStr: string, startDateStr: string, endDateStr: string) {
+  if (!startDateStr && !endDateStr) return true;
   if (!itemDateStr) return false;
+  
   const itemDate = new Date(itemDateStr);
-  const filterDate = new Date(filterDateStr);
-  return itemDate >= filterDate;
+  itemDate.setHours(0, 0, 0, 0); // Normalizar para início do dia
+  
+  let isAfterStart = true;
+  if (startDateStr) {
+    const startDate = new Date(startDateStr);
+    startDate.setHours(0, 0, 0, 0);
+    isAfterStart = itemDate >= startDate;
+  }
+  
+  let isBeforeEnd = true;
+  if (endDateStr) {
+    const endDate = new Date(endDateStr);
+    endDate.setHours(23, 59, 59, 999); // Fim do dia
+    isBeforeEnd = itemDate <= endDate;
+  }
+  
+  return isAfterStart && isBeforeEnd;
 }
 
 function downloadCSV(dataArray: any[], filename: string) {
@@ -325,6 +341,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
   const [tasks, setTasks] = useState<any[]>([]);
   const [clients, setClients] = useState<any[]>([]);
   const [responsibles, setResponsibles] = useState<any[]>([]);
+  const [globalLookerUrl, setGlobalLookerUrl] = useState<string>('');
   
   const [isCloudSynced, setIsCloudSynced] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -341,10 +358,11 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
   useEffect(() => {
     async function fetchCloudData() {
       try {
-        const [resTasks, resClients, resResp] = await Promise.all([
+        const [resTasks, resClients, resResp, resSettings] = await Promise.all([
           (window as any).supabaseClient.from('tasks').select('*'),
           (window as any).supabaseClient.from('clients').select('*'),
-          (window as any).supabaseClient.from('responsibles').select('*')
+          (window as any).supabaseClient.from('responsibles').select('*'),
+          (window as any).supabaseClient.from('settings').select('*').eq('id', 'global').maybeSingle()
         ]);
 
         if (resTasks.data) {
@@ -383,6 +401,10 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
             avatar: r.avatar || ''
           })));
         }
+        
+        if (resSettings.data) {
+            setGlobalLookerUrl(resSettings.data.looker_global_url || '');
+        }
 
       } catch (error) {
         console.error("Erro ao buscar dados:", error);
@@ -411,6 +433,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
   const [activeTab, setActiveTab] = useState('board'); 
   const [isClosingModal, setIsClosingModal] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [activeTooltipCol, setActiveTooltipCol] = useState<string | null>(null);
   
   // Controle de Filtros
   const [showFilters, setShowFilters] = useState(false);
@@ -418,8 +441,12 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
   const [filterResp, setFilterResp] = useState("all");
   const [filterPriority, setFilterPriority] = useState("all");
   const [filterCreatedStart, setFilterCreatedStart] = useState("");
+  const [filterCreatedEnd, setFilterCreatedEnd] = useState("");
   const [filterCompletedStart, setFilterCompletedStart] = useState("");
+  const [filterCompletedEnd, setFilterCompletedEnd] = useState("");
   
+  const hasDateFilters = filterCreatedStart || filterCreatedEnd || filterCompletedStart || filterCompletedEnd;
+
   const [modal, setModal] = useState<any>(null); 
   const [profileModal, setProfileModal] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
@@ -474,8 +501,8 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
       (filterClient === "all" || t.clientId === filterClient) &&
       (filterResp === "all" || t.responsibleId === filterResp) &&
       (filterPriority === "all" || t.priority === filterPriority) &&
-      isDateAfterOrEqual(t.createdAt, filterCreatedStart) &&
-      isDateAfterOrEqual(t.completedAt, filterCompletedStart)
+      filterByPeriod(t.createdAt, filterCreatedStart, filterCreatedEnd) &&
+      filterByPeriod(t.completedAt, filterCompletedStart, filterCompletedEnd)
   );
 
   const activeTasksCount = visibleTasks.filter((t) => t.status !== "cancelled").length;
@@ -680,6 +707,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
 
       if (donePrompt.targetId) {
         let toIndex = newTasks.findIndex(t => t.id.toString() === donePrompt.targetId.toString());
+        // Ajuste de Reordenamento na mesma coluna para baixo
         if (prev[fromIndex].status === 'done' && fromIndex < originalToIndex) {
            toIndex += 1;
         }
@@ -737,6 +765,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
       if (targetId) {
         let toIndex = newTasks.findIndex(t => t.id.toString() === targetId.toString());
         
+        // Ajuste fundamental de reordenamento: se foi puxado de cima para baixo na mesma coluna, encaixa abaixo do alvo.
         if (originalStatus === newStatus && fromIndex < originalToIndex) {
             toIndex += 1;
         }
@@ -817,14 +846,12 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
   }
 
   return (
-    <div className="fixed inset-0 w-full bg-[#09090b] text-neutral-100 flex flex-col md:flex-row overflow-hidden font-sans" onClick={() => setShowProfileMenu(false)}>
+    <div className="fixed inset-0 w-full bg-[#09090b] text-neutral-100 flex flex-col md:flex-row overflow-hidden font-sans" onClick={() => { setActiveTooltipCol(null); setShowProfileMenu(false); }}>
       <style>{`
         .kp-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
         .kp-scroll::-webkit-scrollbar-thumb { background: #27272a; border-radius: 6px; }
         .kp-scroll::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
         .kp-scroll::-webkit-scrollbar-track { background: transparent; }
-        
-        .kp-scroll { -webkit-overflow-scrolling: touch; }
         
         .hide-scrollbar::-webkit-scrollbar { display: none; }
         .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
@@ -835,7 +862,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
         .fade-out { animation: fadeOut 0.2s ease-out forwards; }
         @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
 
-        .animate-modal-pop { animation: modalPop 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        .animate-modal-pop { animation: modalPop 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
         @keyframes modalPop { 0% { opacity: 0; transform: scale(0.95) translateY(10px); } 100% { opacity: 1; transform: scale(1) translateY(0); } }
         
         .animate-modal-out { animation: modalPopOut 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
@@ -932,18 +959,18 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
         {activeTab === 'timer' && <OverlayModal title="Cronómetro" icon={<Clock size={20} className="text-amber-500"/>} isClosing={isClosingModal} onClose={handleCloseTab}><TimerPanelContent tasks={filteredTasks} now={now} getElapsed={getElapsed} onToggleTimer={toggleTimer} user={user} /></OverlayModal>}
         {activeTab === 'responsibles' && <OverlayModal title="Equipe (Contas)" icon={<Users size={20} className="text-indigo-400"/>} isClosing={isClosingModal} onClose={handleCloseTab}><ResponsiblesPanelContent responsibles={responsibles} setResponsibles={setResponsibles} tasks={tasks} setTasks={setTasks} user={user} /></OverlayModal>}
         {activeTab === 'clients' && <OverlayModal title="Gestão de Clientes" icon={<Building2 size={20} className="text-purple-400"/>} isClosing={isClosingModal} onClose={handleCloseTab}><ClientsPanelContent clients={clients} setClients={setClients} tasks={tasks} setTasks={setTasks} user={user} getElapsed={getElapsed} now={now} /></OverlayModal>}
-        {activeTab === 'reports' && <AnalyticsModal isClosing={isClosingModal} onClose={handleCloseTab} tasks={filteredTasks} clients={clients} responsibles={responsibles} now={now} getElapsed={getElapsed} />}
+        {activeTab === 'reports' && <AnalyticsModal isClosing={isClosingModal} onClose={handleCloseTab} tasks={filteredTasks} clients={clients} responsibles={responsibles} now={now} getElapsed={getElapsed} globalLookerUrl={globalLookerUrl} setGlobalLookerUrl={setGlobalLookerUrl} />}
 
         {/* BOARD VIEW */}
         <div className={`flex-1 flex flex-col min-h-0 ${activeTab !== 'board' ? 'hidden md:flex opacity-30 pointer-events-none transition-opacity duration-300' : 'fade-in'}`}>
           
           <div className="shrink-0 px-4 md:px-8 pb-3 flex flex-col gap-3">
-             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 w-full">
+             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 w-full">
                 
-                {/* Linha Principal (Progresso, Botão Filtro e Fechar Semana) */}
-                <div className="flex flex-wrap sm:flex-nowrap items-center gap-3 w-full">
+                {/* Linha Principal (Filtro Button, Progresso e Fechar Semana) */}
+                <div className="flex items-center gap-3 w-full lg:w-auto">
                    <button 
-                     onClick={() => setShowFilters(!showFilters)} 
+                     onClick={(e) => { e.stopPropagation(); setShowFilters(!showFilters); }} 
                      className={`h-11 w-11 lg:w-auto px-0 lg:px-4 flex items-center justify-center gap-2 rounded-xl transition-all shadow-sm shrink-0 border font-bold uppercase tracking-widest text-[10px] ${showFilters ? 'bg-indigo-600 text-white border-indigo-500 shadow-[0_0_15px_rgba(79,70,229,0.3)]' : 'glass-panel text-neutral-400 border-white/5 hover:text-white'}`}
                    >
                      <Filter size={16} /> <span className="hidden lg:inline">Filtros</span>
@@ -967,25 +994,48 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
 
              {/* Filtros Container Expansível */}
              {showFilters && (
-               <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-3 w-full animate-fade-in">
-                  <div className="glass-panel w-full p-4 rounded-xl flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-4 shadow-sm">
-                    <FilterSelect value={filterClient} onChange={setFilterClient} options={clients} defaultLabel="Todos Clientes" />
-                    <div className="hidden sm:block w-px h-4 bg-white/10"></div>
-                    <FilterSelect value={filterResp} onChange={setFilterResp} options={responsibles} defaultLabel="Todos Responsáveis" />
-                    <div className="hidden sm:block w-px h-4 bg-white/10"></div>
-                    <FilterSelect value={filterPriority} onChange={setFilterPriority} options={[{id: 'Baixa', name: 'Baixa'}, {id: 'Média', name: 'Média'}, {id: 'Alta', name: 'Alta'}]} defaultLabel="Prioridades" />
-                    <div className="hidden sm:block w-px h-4 bg-white/10"></div>
+               <div className="flex flex-col items-stretch gap-3 w-full animate-fade-in" onClick={e => e.stopPropagation()}>
+                  <div className="glass-panel w-full p-4 rounded-xl flex flex-col lg:flex-row lg:flex-wrap items-stretch lg:items-center gap-4 shadow-sm border-indigo-500/20 bg-indigo-500/5">
                     
-                    <div className="flex items-center gap-2 w-full sm:w-auto">
-                       <label className="text-[10px] uppercase font-bold text-neutral-500 whitespace-nowrap">Criado a partir de:</label>
-                       <input type="date" value={filterCreatedStart} onChange={e => setFilterCreatedStart(e.target.value)} className="bg-transparent border border-white/10 rounded-md px-2 py-1 text-xs text-white outline-none [color-scheme:dark]" />
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 w-full lg:w-auto">
+                       <FilterSelect value={filterClient} onChange={setFilterClient} options={clients} defaultLabel="Todos Clientes" />
+                       <div className="hidden sm:block w-px h-4 bg-white/10"></div>
+                       <FilterSelect value={filterResp} onChange={setFilterResp} options={responsibles} defaultLabel="Todos Responsáveis" />
+                       <div className="hidden sm:block w-px h-4 bg-white/10"></div>
+                       <FilterSelect value={filterPriority} onChange={setFilterPriority} options={[{id: 'Baixa', name: 'Baixa'}, {id: 'Média', name: 'Média'}, {id: 'Alta', name: 'Alta'}]} defaultLabel="Prioridades" />
                     </div>
-                    <div className="hidden sm:block w-px h-4 bg-white/10"></div>
+
+                    <div className="hidden lg:block w-px h-4 bg-white/10"></div>
                     
-                    <div className="flex items-center gap-2 w-full sm:w-auto">
-                       <label className="text-[10px] uppercase font-bold text-neutral-500 whitespace-nowrap">Concluído a partir de:</label>
-                       <input type="date" value={filterCompletedStart} onChange={e => setFilterCompletedStart(e.target.value)} className="bg-transparent border border-white/10 rounded-md px-2 py-1 text-xs text-white outline-none [color-scheme:dark]" />
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 w-full lg:w-auto bg-black/20 p-3 lg:p-0 lg:bg-transparent rounded-lg border border-white/5 lg:border-none">
+                       <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-start">
+                          <label className="text-[10px] uppercase font-bold text-indigo-300 whitespace-nowrap">Criado de:</label>
+                          <input type="date" value={filterCreatedStart} onChange={e => setFilterCreatedStart(e.target.value)} className="bg-[#12121a] border border-[#27272a] rounded-lg px-2.5 py-1.5 text-xs text-white outline-none focus:border-indigo-500 [color-scheme:dark]" />
+                       </div>
+                       <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-start">
+                          <label className="text-[10px] uppercase font-bold text-neutral-500 whitespace-nowrap text-right">Até:</label>
+                          <input type="date" value={filterCreatedEnd} onChange={e => setFilterCreatedEnd(e.target.value)} className="bg-[#12121a] border border-[#27272a] rounded-lg px-2.5 py-1.5 text-xs text-white outline-none focus:border-indigo-500 [color-scheme:dark]" />
+                       </div>
                     </div>
+                    
+                    <div className="hidden lg:block w-px h-4 bg-white/10"></div>
+                    
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 w-full lg:w-auto bg-black/20 p-3 lg:p-0 lg:bg-transparent rounded-lg border border-white/5 lg:border-none">
+                       <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-start">
+                          <label className="text-[10px] uppercase font-bold text-emerald-300 whitespace-nowrap">Concluído de:</label>
+                          <input type="date" value={filterCompletedStart} onChange={e => setFilterCompletedStart(e.target.value)} className="bg-[#12121a] border border-[#27272a] rounded-lg px-2.5 py-1.5 text-xs text-white outline-none focus:border-indigo-500 [color-scheme:dark]" />
+                       </div>
+                       <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-start">
+                          <label className="text-[10px] uppercase font-bold text-neutral-500 whitespace-nowrap text-right">Até:</label>
+                          <input type="date" value={filterCompletedEnd} onChange={e => setFilterCompletedEnd(e.target.value)} className="bg-[#12121a] border border-[#27272a] rounded-lg px-2.5 py-1.5 text-xs text-white outline-none focus:border-indigo-500 [color-scheme:dark]" />
+                       </div>
+                    </div>
+
+                    {hasDateFilters && (
+                       <button onClick={() => { setFilterCreatedStart(''); setFilterCreatedEnd(''); setFilterCompletedStart(''); setFilterCompletedEnd(''); }} className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 text-[10px] font-bold uppercase tracking-widest transition-colors ml-auto lg:ml-0 mt-2 lg:mt-0">
+                         <X size={12}/> Limpar Datas
+                       </button>
+                    )}
                   </div>
                </div>
              )}
@@ -1002,16 +1052,16 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                       
                       {/* Header da Coluna */}
                       <div className="px-5 pt-5 pb-4 flex items-center justify-between border-b border-white/5 shrink-0">
-                        <div className="flex items-center gap-2 relative group cursor-pointer">
+                        <div 
+                          className="flex items-center gap-2 relative group cursor-pointer"
+                          onClick={(e) => { e.stopPropagation(); setActiveTooltipCol(activeTooltipCol === col.id ? null : col.id); }}
+                        >
                           <span className={`w-2.5 h-2.5 shrink-0 rounded-full ${col.dot} shadow-[0_0_8px_currentColor]`} />
                           <h2 className="text-xs font-bold uppercase tracking-widest text-white">{col.name}</h2>
+                          <HelpCircle size={14} className="text-neutral-500 hover:text-neutral-300 transition-colors ml-0.5" />
                           
-                          {/* Tooltip de Ajuda Hover/Click */}
-                          <div className="relative flex items-center justify-center">
-                             <HelpCircle size={14} className="text-neutral-500 hover:text-neutral-300 transition-colors peer" />
-                             <div className="absolute left-0 top-full mt-2 w-64 p-4 bg-[#1c1d26] border border-[#27272a] rounded-xl shadow-2xl opacity-0 invisible peer-hover:opacity-100 peer-hover:visible transition-all z-[60] normal-case tracking-normal cursor-default">
-                               <div className="text-[11px] text-neutral-300 leading-relaxed font-normal">{col.help}</div>
-                             </div>
+                          <div className={`absolute left-0 top-full mt-2 w-64 sm:w-72 p-4 bg-[#1c1d26] border border-[#27272a] rounded-xl shadow-2xl transition-all z-[60] normal-case tracking-normal cursor-default ${activeTooltipCol === col.id ? 'opacity-100 visible' : 'opacity-0 invisible lg:group-hover:opacity-100 lg:group-hover:visible'}`} onClick={e => e.stopPropagation()}>
+                            <div className="text-[12px] text-neutral-300 leading-relaxed font-normal">{col.help}</div>
                           </div>
                         </div>
                         <span className="text-[10px] px-2.5 py-1 rounded-lg bg-black/40 text-neutral-400 font-bold border border-white/5">{colTasks.length}</span>
@@ -1024,15 +1074,10 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                         </button>
                       </div>
                       
-                      {/* Área de Cartões - min-h-0 garante que o scroll interno funcione na perfeição no mobile */}     
-                      <div 
-                        className="px-3 pb-3 flex-1 overflow-y-auto overflow-x-hidden kp-scroll flex flex-col gap-3 mt-3 min-h-0"
-                        onDragOver={(e) => { e.preventDefault(); }}
-                        onDrop={(e) => {
-                          e.preventDefault();
-                          handleRequestMove(e.dataTransfer.getData("taskId"), null, col.id);
-                        }}
-                      >
+                      {/* Área de Cartões - Removido bloqueio do touch e adicionado suporte a drag mobile nativo */}     
+                      <div className="px-3 pb-3 flex-1 overflow-y-auto overflow-x-hidden kp-scroll flex flex-col gap-3 mt-3 min-h-0"
+                           onDragOver={(e) => { e.preventDefault(); }}
+                           onDrop={(e) => { e.preventDefault(); handleRequestMove(e.dataTransfer.getData("taskId"), null, col.id); }}>
                         {colTasks.length === 0 && (
                           <div className="text-center text-[10px] font-medium uppercase tracking-widest text-neutral-600 py-10 border border-dashed border-white/5 rounded-xl mx-2">
                             Solte itens aqui
@@ -1069,7 +1114,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                                           <button onClick={(e) => { e.stopPropagation(); moveTaskVertical(t.id, 'down'); }} className="p-1 bg-white/5 rounded text-neutral-400 active:bg-white/10 active:text-white"><ChevronDown size={12}/></button>
                                        </div>
                                     )}
-                                    <GripVertical size={14} className="text-neutral-600 shrink-0 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity" />
+                                    <GripVertical size={14} className="text-neutral-600 shrink-0 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity block" />
                                   </div>
                                 ) : (
                                   <Lock size={12} className="text-neutral-600 shrink-0 block" />
@@ -1145,12 +1190,11 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                                  </div>
                               </div>
                               
-                              {/* Data de Criação Discreta */}
-                              {t.createdAt && (
-                                <div className="mt-3 text-[9px] text-neutral-600 font-mono uppercase tracking-widest text-center">
-                                  Criado em: {t.createdAt.split('-').reverse().join('/')}
-                                </div>
-                              )}
+                              {/* Datas Discretas */}
+                              <div className="mt-3 flex flex-col gap-0.5 text-[9px] text-neutral-600 font-mono uppercase tracking-widest text-center">
+                                {t.createdAt && <div>Criado em: {t.createdAt.split('-').reverse().join('/')}</div>}
+                                {t.completedAt && <div className="text-emerald-500/60">Concluído em: {t.completedAt.split('-').reverse().join('/')}</div>}
+                              </div>
 
                             </div>
                           );
@@ -1710,20 +1754,27 @@ function ClientsPanelContent({ clients, setClients, tasks, setTasks, user, getEl
   );
 }
 
-function AnalyticsModal({ onClose, tasks, clients, responsibles, now, getElapsed, isClosing }: any) {
+function AnalyticsModal({ onClose, tasks, clients, responsibles, now, getElapsed, isClosing, globalLookerUrl, setGlobalLookerUrl }: any) {
   const [activeView, setActiveView] = useState('internal'); 
-  const [url, setUrl] = useState(localStorage.getItem('lumina_looker_url') || '');
   const [isEditing, setIsEditing] = useState(false);
-  const [inputUrl, setInputUrl] = useState(url);
+  const [inputUrl, setInputUrl] = useState(globalLookerUrl);
 
-  const saveUrl = () => {
+  const saveUrl = async () => {
     let finalUrl = inputUrl.trim();
     if (finalUrl && finalUrl.includes('/reporting/') && !finalUrl.includes('/embed/')) {
         finalUrl = finalUrl.replace('/reporting/', '/embed/reporting/');
     }
-    setUrl(finalUrl);
-    localStorage.setItem('lumina_looker_url', finalUrl);
+    setGlobalLookerUrl(finalUrl);
     setIsEditing(false);
+    
+    // Salvar no Supabase
+    if (window.supabaseClient) {
+       try {
+         await (window as any).supabaseClient.from('settings').upsert({ id: 'global', looker_global_url: finalUrl });
+       } catch (e) {
+         console.error("Erro ao salvar Looker URL global", e);
+       }
+    }
   };
 
   const exportTasksCSV = () => {
@@ -1767,30 +1818,30 @@ function AnalyticsModal({ onClose, tasks, clients, responsibles, now, getElapsed
         {/* View 2: Looker Studio (iFrame) */}
         {activeView === 'looker' && (
           <div className="flex-1 flex flex-col min-h-0 h-full fade-in">
-            {(!url || isEditing) ? (
+            {(!globalLookerUrl || isEditing) ? (
                <div className="flex-1 flex flex-col items-center justify-center max-w-xl mx-auto w-full text-center gap-8">
                  <div className="w-24 h-24 rounded-[32px] bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-500 shadow-[0_0_30px_rgba(59,130,246,0.15)]"><BarChart3 size={40} /></div>
                  <div>
                    <h3 className="text-3xl font-bold text-white mb-3 tracking-tight">Painel Analítico Global</h3>
-                   <p className="text-sm text-neutral-400 leading-relaxed max-w-md mx-auto">Configure aqui o Link de Incorporação (Embed) do Looker Studio para o painel de uso da sua equipa interna.</p>
+                   <p className="text-sm text-neutral-400 leading-relaxed max-w-md mx-auto">Configure aqui o Link de Incorporação (Embed) do Looker Studio para o painel de uso da sua equipe interna.</p>
                  </div>
                  <div className="w-full">
                     <input value={inputUrl} onChange={e => setInputUrl(e.target.value)} placeholder="https://lookerstudio.google.com/embed/reporting/..." className="w-full bg-[#12121a] border border-[#27272a] rounded-2xl px-6 py-5 text-sm text-white outline-none focus:border-blue-500 text-center shadow-inner mb-5" />
                     <button onClick={saveUrl} className="w-full py-5 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-bold uppercase tracking-widest text-sm transition-all shadow-[0_0_20px_rgba(37,99,235,0.3)]">Ligar Relatório Global</button>
                  </div>
-                 {url && <button onClick={() => setIsEditing(false)} className="text-xs font-bold text-neutral-500 uppercase tracking-widest hover:text-white mt-2">Cancelar</button>}
+                 {globalLookerUrl && <button onClick={() => setIsEditing(false)} className="text-xs font-bold text-neutral-500 uppercase tracking-widest hover:text-white mt-2">Cancelar</button>}
                </div>
             ) : (
                <div className="flex flex-col h-full gap-5">
                  <div className="flex justify-end shrink-0">
-                    <button onClick={() => {setInputUrl(url); setIsEditing(true);}} className="flex justify-center items-center gap-2 px-6 py-3.5 bg-white/5 text-neutral-300 border border-white/10 hover:bg-white/10 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-colors"><Settings size={16}/> Trocar Conexão Looker</button>
+                    <button onClick={() => {setInputUrl(globalLookerUrl); setIsEditing(true);}} className="flex justify-center items-center gap-2 px-6 py-3.5 bg-white/5 text-neutral-300 border border-white/10 hover:bg-white/10 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-colors"><Settings size={16}/> Trocar Conexão Looker</button>
                  </div>
                  <div className="flex-1 w-full bg-[#12121a] rounded-[32px] border border-[#27272a] overflow-hidden relative shadow-inner">
                    <div className="absolute inset-0 flex flex-col gap-4 items-center justify-center -z-10">
                      <Cloud size={40} className="text-indigo-500/20 animate-pulse" />
                      <span className="text-xs font-bold uppercase tracking-widest text-neutral-600">A Carregar Looker...</span>
                    </div>
-                   <iframe src={url} className="w-full h-full border-0 bg-transparent z-10 relative" allowFullScreen />
+                   <iframe src={globalLookerUrl} className="w-full h-full border-0 bg-transparent z-10 relative" allowFullScreen />
                  </div>
                </div>
             )}

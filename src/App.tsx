@@ -5,7 +5,7 @@ import {
   Filter, AlertTriangle, GripVertical, Download, 
   Play, Pause, Square, CheckCircle2, User, CheckSquare,
   HelpCircle, ChevronDown, LayoutDashboard, Mail, Check, Copy, ClipboardList, Cloud, Lock,
-  Eye, EyeOff, Settings, MonitorPlay, CloudRain, Sun, Moon, CloudLightning, Snowflake, CloudFog, UserCog, Calendar, ChevronUp
+  Eye, EyeOff, Settings, MonitorPlay, CloudRain, Sun, Moon, CloudLightning, Snowflake, CloudFog, UserCog, Calendar, ChevronUp, ChevronLeft, ChevronRight
 } from "lucide-react";
 
 // ==========================================
@@ -469,6 +469,8 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
   const [filterClient, setFilterClient] = useState("all");
   const [filterResp, setFilterResp] = useState("all");
   const [filterPriority, setFilterPriority] = useState("all");
+  const [filterDeadline, setFilterDeadline] = useState("all");
+  
   const [filterCreatedStart, setFilterCreatedStart] = useState("");
   const [filterCreatedEnd, setFilterCreatedEnd] = useState("");
   const [filterCompletedStart, setFilterCompletedStart] = useState("");
@@ -531,12 +533,20 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
   const visibleTasks = user.isAdmin ? tasks : tasks.filter(t => t.responsibleId === user.id);
   
   const filteredTasks = visibleTasks.filter(
-    (t) =>
-      (filterClient === "all" || t.clientId === filterClient) &&
-      (filterResp === "all" || t.responsibleId === filterResp) &&
-      (filterPriority === "all" || t.priority === filterPriority) &&
-      filterByPeriod(t.createdAt, filterCreatedStart, filterCreatedEnd) &&
-      filterByPeriod(t.completedAt, filterCompletedStart, filterCompletedEnd)
+    (t) => {
+      const todayStr = getBrasiliaDate();
+      let matchDeadline = true;
+      if (filterDeadline === 'startToday') matchDeadline = t.startDate === todayStr;
+      if (filterDeadline === 'dueToday') matchDeadline = t.dueDate === todayStr;
+      if (filterDeadline === 'late') matchDeadline = t.dueDate && t.dueDate < todayStr && t.status !== 'done' && t.status !== 'cancelled' && t.status !== 'formalize';
+
+      return (filterClient === "all" || t.clientId === filterClient) &&
+        (filterResp === "all" || t.responsibleId === filterResp) &&
+        (filterPriority === "all" || t.priority === filterPriority) &&
+        matchDeadline &&
+        filterByPeriod(t.createdAt, filterCreatedStart, filterCreatedEnd) &&
+        filterByPeriod(t.completedAt, filterCompletedStart, filterCompletedEnd);
+    }
   );
 
   const activeTasksCount = visibleTasks.filter((t) => t.status !== "cancelled").length;
@@ -840,6 +850,15 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
       return newTasks;
     });
   };
+  
+  const moveTaskHorizontal = (taskId: string, direction: 'left' | 'right', currentStatus: string) => {
+    const currentColIdx = COLUMNS.findIndex(c => c.id === currentStatus);
+    if (direction === 'left' && currentColIdx > 0) {
+       handleRequestMove(taskId, null, COLUMNS[currentColIdx - 1].id);
+    } else if (direction === 'right' && currentColIdx < COLUMNS.length - 1) {
+       handleRequestMove(taskId, null, COLUMNS[currentColIdx + 1].id);
+    }
+  };
 
   const toggleChecklistItem = (taskId: string, itemId: string) => {
     setTasks(prev => {
@@ -1040,6 +1059,8 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                        <FilterSelect value={filterResp} onChange={setFilterResp} options={responsibles} defaultLabel="Todos Responsáveis" />
                        <div className="hidden sm:block w-px h-4 bg-white/10"></div>
                        <FilterSelect value={filterPriority} onChange={setFilterPriority} options={[{id: 'Baixa', name: 'Baixa'}, {id: 'Média', name: 'Média'}, {id: 'Alta', name: 'Alta'}]} defaultLabel="Prioridades" />
+                       <div className="hidden sm:block w-px h-4 bg-white/10"></div>
+                       <FilterSelect value={filterDeadline} onChange={setFilterDeadline} options={[{id: 'startToday', name: 'Iniciar Hoje'}, {id: 'dueToday', name: 'Entregar Hoje'}, {id: 'late', name: 'Atrasados'}]} defaultLabel="Prazos (Todos)" />
                     </div>
 
                     <div className="hidden lg:block w-px h-4 bg-white/10"></div>
@@ -1069,7 +1090,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                     </div>
 
                     {hasDateFilters && (
-                       <button onClick={() => { setFilterCreatedStart(''); setFilterCreatedEnd(''); setFilterCompletedStart(''); setFilterCompletedEnd(''); }} className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 text-[10px] font-bold uppercase tracking-widest transition-colors ml-auto lg:ml-0 mt-2 lg:mt-0">
+                       <button onClick={() => { setFilterCreatedStart(''); setFilterCreatedEnd(''); setFilterCompletedStart(''); setFilterCompletedEnd(''); setFilterDeadline('all'); }} className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 text-[10px] font-bold uppercase tracking-widest transition-colors ml-auto lg:ml-0 mt-2 lg:mt-0">
                          <X size={12}/> Limpar Datas
                        </button>
                     )}
@@ -1136,17 +1157,15 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                           const isDoneOrCancelled = t.status === "done" || t.status === "cancelled" || t.status === "formalize";
                           const isEditable = canEditTask(t.responsibleId);
                           
-                          const todayMs = new Date().setHours(0, 0, 0, 0);
-                          const startMs = parseDateLocal(t.startDate);
-                          const dueMs = parseDateLocal(t.dueDate);
+                          const todayStr = getBrasiliaDate();
                           
                           let alertBadge = null;
                           if (!isDoneOrCancelled) {
-                            if (dueMs !== null && dueMs < todayMs) {
+                            if (t.dueDate && t.dueDate < todayStr) {
                               alertBadge = <span className="flex items-center gap-1 text-[9px] uppercase tracking-wider px-2 py-1 rounded-md bg-red-500/10 text-red-400 border border-red-500/20 font-bold"><AlertTriangle size={10}/> Atrasado</span>;
-                            } else if (dueMs === todayMs) {
+                            } else if (t.dueDate === todayStr) {
                               alertBadge = <span className="flex items-center gap-1 text-[9px] uppercase tracking-wider px-2 py-1 rounded-md bg-orange-500/10 text-orange-400 border border-orange-500/20 font-bold"><Clock size={10}/> Entregar Hoje</span>;
-                            } else if (startMs === todayMs) {
+                            } else if (t.startDate === todayStr) {
                               alertBadge = <span className="flex items-center gap-1 text-[9px] uppercase tracking-wider px-2 py-1 rounded-md bg-blue-500/10 text-blue-400 border border-blue-500/20 font-bold"><Play size={10}/> Iniciar Hoje</span>;
                             }
                           }
@@ -1167,9 +1186,13 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                                 {isEditable ? (
                                   <div className="flex items-center gap-1">
                                     {isMobile && (
-                                       <div className="flex flex-col gap-1 mr-1">
-                                          <button onClick={(e) => { e.stopPropagation(); moveTaskVertical(t.id, 'up'); }} className="p-1 bg-white/5 rounded text-neutral-400 active:bg-white/10 active:text-white"><ChevronUp size={12}/></button>
-                                          <button onClick={(e) => { e.stopPropagation(); moveTaskVertical(t.id, 'down'); }} className="p-1 bg-white/5 rounded text-neutral-400 active:bg-white/10 active:text-white"><ChevronDown size={12}/></button>
+                                       <div className="flex items-center bg-black/40 rounded-lg p-1 gap-1 mr-2 border border-white/5">
+                                          <button onClick={(e) => { e.stopPropagation(); moveTaskHorizontal(t.id, 'left', col.id); }} className="p-1.5 rounded-md text-neutral-400 hover:text-white hover:bg-white/10 active:bg-white/20"><ChevronLeft size={14}/></button>
+                                          <div className="flex flex-col gap-1">
+                                             <button onClick={(e) => { e.stopPropagation(); moveTaskVertical(t.id, 'up'); }} className="p-0.5 rounded text-neutral-400 hover:text-white hover:bg-white/10 active:bg-white/20"><ChevronUp size={12}/></button>
+                                             <button onClick={(e) => { e.stopPropagation(); moveTaskVertical(t.id, 'down'); }} className="p-0.5 rounded text-neutral-400 hover:text-white hover:bg-white/10 active:bg-white/20"><ChevronDown size={12}/></button>
+                                          </div>
+                                          <button onClick={(e) => { e.stopPropagation(); moveTaskHorizontal(t.id, 'right', col.id); }} className="p-1.5 rounded-md text-neutral-400 hover:text-white hover:bg-white/10 active:bg-white/20"><ChevronRight size={14}/></button>
                                        </div>
                                     )}
                                     <GripVertical size={14} className="text-neutral-600 shrink-0 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity block" />
@@ -1387,957 +1410,6 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
       {/* Modais de Popups Principais */}
       {closureModal && <ClosureModal tasks={tasksForClosure} clients={clients} responsibles={responsibles} onClose={() => setClosureModal(false)} onFormalize={(clientId: string | null) => { if (clientId) { setTasks((prev: any) => prev.map((t: any) => (t.status === 'done' && t.clientId === clientId) ? { ...t, status: 'formalize' } : t)); } else { setTasks((prev: any) => prev.map((t: any) => t.status === 'done' ? { ...t, status: 'formalize' } : t)); setClosureModal(false); } }} />}
       {modal && <TaskModal modal={modal} setModal={setModal} clients={visibleClients} responsibles={responsibles} closeModal={closeModal} saveModal={saveModal} validationError={validationError} setValidationError={setValidationError} user={user} />}
-    </div>
-  );
-}
-
-// --- Sub-Componentes UI Reutilizáveis (Lumina 2.0 Estilo) ---
-
-function ProfileModal({ user, responsibles, onClose, onUpdate }: any) {
-  const currentUserDB = responsibles.find((r: any) => r.id === user.id) || responsibles.find((r: any) => r.name.toLowerCase() === user.name.toLowerCase());
-  const activeAvatar = currentUserDB?.avatar || user.avatar || '';
-
-  const [password, setPassword] = useState('');
-  const [avatarInput, setAvatarInput] = useState(activeAvatar);
-  const [isLoading, setIsLoading] = useState(false);
-
-  const handleSave = async () => {
-    setIsLoading(true);
-    let updatedUser = { ...user };
-    let updates: any = {};
-    
-    if (avatarInput.trim() !== activeAvatar) {
-      updates.avatar = avatarInput.trim();
-      updatedUser.avatar = avatarInput.trim();
-    }
-
-    if (password.trim()) {
-      if (password.trim().length < 4) {
-        alert("A senha deve ter no mínimo 4 caracteres.");
-        setIsLoading(false);
-        return;
-      }
-      updates.password = password.trim();
-    }
-    
-    if (Object.keys(updates).length > 0) {
-       try {
-         await (window as any).supabaseClient.from('responsibles').update(updates).eq('id', currentUserDB?.id || user.id);
-       } catch (e) {
-         console.error("Erro ao alterar dados", e);
-       }
-    }
-    
-    onUpdate(updatedUser);
-    setIsLoading(false);
-    onClose();
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-[90] fade-in" onClick={onClose}>
-      <div className="w-full max-w-sm rounded-[32px] bg-[#12121a] border border-[#27272a] shadow-2xl relative overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
-        <div className="px-5 sm:px-8 py-5 sm:py-6 border-b border-[#27272a] bg-[#0f0f13] flex items-center justify-between">
-          <div className="flex items-center gap-3">
-             <UserCog size={20} className="text-indigo-400" />
-             <h3 className="font-bold text-xl text-white tracking-tight">Meu Perfil</h3>
-          </div>
-          <button onClick={onClose} className="p-2 rounded-xl text-neutral-500 hover:text-white transition-colors"><X size={20}/></button>
-        </div>
-        
-        <div className="p-5 sm:p-8 flex flex-col gap-6">
-          <div className="flex flex-col items-center gap-4 mb-2">
-             <div className="w-24 h-24 rounded-[20px] bg-black border border-[#27272a] flex items-center justify-center text-3xl font-bold text-indigo-400 shadow-xl overflow-hidden relative group">
-                <UserAvatar url={avatarInput} name={user.name} />
-             </div>
-             <p className="text-sm font-bold text-white">{user.name}</p>
-          </div>
-
-          <div>
-            <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">URL da Fotografia de Perfil</label>
-            <input value={avatarInput} onChange={e => setAvatarInput(e.target.value)} className="w-full bg-[#09090b] border border-[#27272a] rounded-xl px-4 py-3.5 text-sm text-white outline-none focus:border-indigo-500 transition-colors" placeholder="https://site.com/sua-foto.jpg" />
-            <p className="text-[10px] text-neutral-600 mt-1.5 ml-1 leading-relaxed">Cole o link (URL) direto de uma imagem online. Ele será guardado no banco de dados para acesso em qualquer dispositivo.</p>
-          </div>
-
-          <div>
-            <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">Nova Senha</label>
-            <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="w-full bg-[#09090b] border border-[#27272a] rounded-xl px-4 py-3.5 text-sm text-white outline-none focus:border-indigo-500 transition-colors" placeholder="Deixe em branco para manter a atual" />
-          </div>
-        </div>
-        
-        <div className="px-5 sm:px-8 py-5 border-t border-[#27272a] bg-[#0f0f13] flex items-center justify-end">
-          <button onClick={handleSave} disabled={isLoading} className="w-full sm:w-auto text-xs font-bold uppercase tracking-widest px-8 py-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition-all shadow-[0_0_15px_rgba(79,70,229,0.3)]">
-            {isLoading ? "A Salvar..." : "Salvar Alterações"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function SidebarBtn({ icon, active, onClick, tooltip, alert }: any) {
-  return (
-    <button onClick={onClick} className={`w-12 h-12 rounded-[14px] flex items-center justify-center transition-all relative group ${active ? 'bg-indigo-600 text-white shadow-[0_0_15px_rgba(79,70,229,0.3)]' : 'bg-transparent text-neutral-500 hover:bg-white/5 hover:text-white'}`}>
-      {icon}
-      {alert && <span className="absolute top-2.5 right-2.5 w-2 h-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]" />}
-      <span className="absolute left-16 bg-black text-white text-[10px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-md opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all pointer-events-none z-50 border border-white/10 whitespace-nowrap shadow-xl">
-        {tooltip}
-      </span>
-    </button>
-  );
-}
-
-function MobileNavBtn({ icon, label, active, onClick, alert }: any) {
-  return (
-    <button onClick={onClick} className={`flex-1 py-2 px-1 rounded-xl flex flex-col items-center justify-center transition-all relative gap-1.5 ${active ? 'text-indigo-400' : 'text-neutral-500 hover:text-neutral-300'}`}>
-      {icon}
-      <span className="text-[8px] sm:text-[9px] font-bold uppercase tracking-widest truncate max-w-full">{label}</span>
-      {alert && <span className="absolute top-1 right-[25%] w-2 h-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]" />}
-    </button>
-  );
-}
-
-function OverlayModal({ title, icon, onClose, children, fullWidth, isClosing }: any) {
-  return (
-    <div className={`fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center p-4 z-[60] ${isClosing ? 'fade-out' : 'fade-in'}`} onClick={onClose}>
-      <div className={`bg-[#12121a] border border-[#27272a] rounded-[32px] shadow-2xl flex flex-col overflow-hidden w-full ${isClosing ? 'animate-modal-out' : 'animate-modal-pop'} ${fullWidth ? 'max-w-7xl h-[90vh]' : 'max-w-4xl max-h-[85vh]'}`} onClick={(e) => e.stopPropagation()}>
-        <div className="px-5 sm:px-8 py-5 sm:py-6 border-b border-[#27272a] flex items-center justify-between bg-[#0f0f13]">
-           <div className="flex items-center gap-4">
-             <div className="p-2.5 bg-white/5 rounded-xl border border-white/10 hidden sm:block">{icon}</div>
-             <h2 className="text-xl font-bold text-white tracking-tight">{title}</h2>
-           </div>
-           <button onClick={onClose} className="p-2.5 rounded-xl text-neutral-500 hover:bg-white/5 hover:text-white transition-colors shrink-0"><X size={20}/></button>
-        </div>
-        <div className="flex-1 overflow-y-auto kp-scroll p-5 sm:p-8 bg-[#09090b] flex flex-col">
-          {children}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function FilterSelect({ value, onChange, options, defaultLabel }: any) {
-  return (
-    <div className="relative flex items-center w-full lg:w-auto shrink-0 flex-1 lg:flex-none bg-[#12121a] lg:bg-transparent rounded-xl lg:rounded-none">
-      <select value={value || 'all'} onChange={(e) => onChange(e.target.value)} className="appearance-none w-full lg:w-auto text-[11px] font-bold bg-transparent border border-[#27272a] lg:border-none pl-4 pr-10 py-3 lg:p-0 lg:pr-6 rounded-xl lg:rounded-none text-neutral-300 outline-none cursor-pointer transition-all hover:text-white">
-        <option value="all" className="bg-[#1c1d26] text-white">{defaultLabel}</option>
-        {options.map((o: any) => (<option key={o.id} value={o.id} className="bg-[#1c1d26] text-white">{o.name}</option>))}
-      </select>
-      <ChevronDown size={14} className="absolute right-4 lg:right-0 text-neutral-600 pointer-events-none" />
-    </div>
-  );
-}
-
-function CustomSelect({ label, value, onChange, options, hasError, required }: any) {
-  return (
-    <div className="w-full">
-      <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-1.5 block ml-1">{label} {required && <span className="text-red-500">*</span>}</label>
-      <div className="relative flex items-center">
-        <select value={value || ''} onChange={onChange} className={`appearance-none w-full bg-[#09090b] border rounded-xl pl-4 pr-10 py-4 sm:py-3.5 text-sm text-white outline-none focus:border-indigo-500 transition-all cursor-pointer shadow-sm ${hasError ? 'border-red-500' : 'border-[#27272a]'}`}>
-          {options}
-        </select>
-        <ChevronDown size={16} className="absolute right-4 text-neutral-600 pointer-events-none" />
-      </div>
-    </div>
-  );
-}
-
-// --- Componentes Internos de Modais ---
-function TimerPanelContent({ tasks, now, getElapsed, onToggleTimer, user }: any) {
-  const activeTasks = tasks.filter((t: any) => (t.timerRunning || t.timerElapsed > 0) && t.responsibleId === user.id).sort((a: any, b: any) => b.timerRunning - a.timerRunning);
-  return (
-    <div className="flex flex-col h-full fade-in">
-      <p className="text-sm text-neutral-400 mb-8 text-center max-w-lg mx-auto">Inicie o cronômetro diretamente num card do painel principal para acompanhar o tempo de execução aqui.</p>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-        {activeTasks.length === 0 && (
-          <div className="col-span-full py-12 text-center text-sm text-neutral-600 border border-dashed border-[#27272a] rounded-3xl">
-            Nenhuma tarefa ativa neste momento.
-          </div>
-        )}
-        {activeTasks.map((t: any) => {
-          const isDoneOrCancelled = t.status === "done" || t.status === "cancelled" || t.status === "formalize";
-          return (
-            <div key={t.id} className="bg-[#12121a] border border-[#27272a] rounded-3xl p-6 flex flex-col items-center text-center relative overflow-hidden group hover:border-[#3f3f46] transition-colors shadow-sm">
-              {t.timerRunning && <div className="absolute top-0 left-0 w-full h-1 bg-amber-500 animate-pulse shadow-[0_0_10px_rgba(245,158,11,0.5)]" />}
-              <div className="text-[10px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-neutral-400 mb-4 truncate w-full">
-                {COLUMNS.find(c=>c.id === t.status)?.name}
-              </div>
-              <h3 className={`font-bold text-base mb-5 truncate w-full ${isDoneOrCancelled ? 'text-neutral-500 line-through' : 'text-white'}`} title={t.title}>{t.title}</h3>
-              <div className={`text-5xl font-mono font-light mb-8 tracking-wider ${t.timerRunning ? 'text-amber-400 drop-shadow-md' : 'text-white'}`}>
-                {formatTime(getElapsed(t))}
-              </div>
-              {!isDoneOrCancelled ? (
-                <button onClick={() => onToggleTimer(t.id)} className={`w-full flex items-center justify-center gap-2 py-4 rounded-xl font-bold uppercase tracking-widest text-[11px] transition-all ${t.timerRunning ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20 hover:bg-amber-500/20 shadow-[0_0_15px_rgba(245,158,11,0.2)]' : 'bg-white/5 text-neutral-300 hover:bg-white/10 border border-white/10'}`}>
-                  {t.timerRunning ? <><Pause size={14}/> Pausar Tempo</> : <><Play size={14}/> Iniciar Tempo</>}
-                </button>
-              ) : (
-                <div className="w-full flex items-center justify-center py-4 rounded-xl font-bold uppercase tracking-widest text-[11px] bg-black/40 border border-white/5 text-neutral-600">
-                  Card Fechado
-                </div>
-              )}
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  );
-}
-
-function ResponsiblesPanelContent({ responsibles, setResponsibles, tasks, setTasks, user }: any) {
-  const [name, setName] = useState('');
-  const [password, setPassword] = useState('');
-  
-  const add = async () => { 
-    if (!name.trim() || !password.trim()) return; 
-    const newId = 'r'+Date.now();
-    const newResp = { id: newId, name: name.trim(), password: password, avatar: '' };
-    setResponsibles([...responsibles, newResp]); 
-    setName(''); 
-    setPassword('');
-    if (window.supabaseClient) {
-      await window.supabaseClient.from('responsibles').insert([newResp]);
-    }
-  };
-
-  const remove = async (id: string) => { 
-    if(!user.isAdmin && id !== user.id) return alert("Apenas administradores podem remover contas.");
-    setResponsibles((prev: any) => prev.filter((r: any) => r.id !== id)); 
-    setTasks((prev: any) => prev.map((t: any) => t.responsibleId === id ? { ...t, responsibleId: '' } : t)); 
-    if (window.supabaseClient) {
-      await window.supabaseClient.from('responsibles').delete().eq('id', id.toString());
-    }
-  };
-
-  return (
-    <div className="flex flex-col h-full fade-in">
-      {user.isAdmin && (
-        <div className="bg-[#12121a] p-6 rounded-3xl border border-[#27272a] mb-8 flex flex-col sm:flex-row gap-5 sm:items-end shadow-sm">
-          <div className="w-full sm:flex-1">
-            <label className="text-[10px] uppercase font-bold tracking-widest text-neutral-500 mb-2 block ml-1">Nome Completo</label>
-            <input value={name || ''} onChange={e=>setName(e.target.value)} className="w-full bg-[#09090b] border border-[#27272a] rounded-xl px-4 py-4 sm:py-3.5 text-sm text-white outline-none focus:border-indigo-500 transition-colors" placeholder="Ex: João da Silva" />
-          </div>
-          <div className="w-full sm:flex-1">
-            <label className="text-[10px] uppercase font-bold tracking-widest text-neutral-500 mb-2 block ml-1">Senha Inicial</label>
-            <input type="password" value={password || ''} onChange={e=>setPassword(e.target.value)} onKeyDown={e=>e.key === 'Enter' && add()} className="w-full bg-[#09090b] border border-[#27272a] rounded-xl px-4 py-4 sm:py-3.5 text-sm text-white outline-none focus:border-indigo-500 transition-colors" placeholder="Ex: lumina123" />
-          </div>
-          <button onClick={add} className="w-full sm:w-auto h-[52px] sm:h-[48px] px-8 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold uppercase tracking-widest transition-colors flex items-center justify-center gap-2 shrink-0 shadow-[0_0_15px_rgba(79,70,229,0.3)]"><Plus size={16}/> Criar</button>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {responsibles.map((r: any) => {
-          const count = tasks.filter((t: any) => t.responsibleId === r.id).length;
-          return (
-            <div key={r.id} className="flex items-center justify-between gap-4 bg-[#12121a] border border-[#27272a] rounded-2xl p-5 group hover:border-indigo-500/50 transition-all shadow-sm">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center overflow-hidden">
-                  <UserAvatar url={r.avatar} name={r.name} />
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-base font-bold text-neutral-100">{r.name}</span>
-                  <span className="text-[10px] text-neutral-500 font-bold uppercase tracking-widest mt-0.5">{count} Demandas</span>
-                </div>
-              </div>
-              {(user.isAdmin || r.id === user.id) && (
-                 <button onClick={() => remove(r.id)} className="p-2.5 text-neutral-600 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-colors sm:opacity-0 group-hover:opacity-100"><Trash2 size={18}/></button>
-              )}
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  );
-}
-
-function ClientModal({ modal, setModal, setClients, user }: any) {
-  const [form, setForm] = useState(modal.form);
-  const [newEmail, setNewEmail] = useState("");
-  const [validationError, setValidationError] = useState<string | null>(null);
-
-  const handleAddEmail = () => {
-    if (!newEmail.trim()) return;
-    if (!newEmail.includes("@")) { setValidationError("Insira um e-mail válido."); return; }
-    setForm((prev: any) => ({ ...prev, emails: [...(prev.emails || []), newEmail.trim()] }));
-    setNewEmail(""); setValidationError(null);
-  };
-
-  const handleRemoveEmail = (index: number) => { setForm((prev: any) => ({ ...prev, emails: (prev.emails || []).filter((_: any, i: number) => i !== index) })); };
-
-  const saveClient = () => {
-    if (!form.name || !form.name.trim()) { setValidationError("O nome do cliente é obrigatório."); return; }
-    
-    // Tratamento para garantir que as horas contratadas sejam um número ou 0
-    const finalForm = { 
-       ...form, 
-       contractedHours: form.contractedHours === '' ? 0 : parseFloat(form.contractedHours) || 0 
-    };
-
-    if (modal.mode === "add") { 
-       setClients((prev: any) => [...prev, { ...finalForm, id: 'c' + Date.now(), ownerId: user.id }]); 
-    } else { 
-       setClients((prev: any) => prev.map((c: any) => c.id === finalForm.id ? finalForm : c)); 
-    }
-    setModal(null);
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-[70] fade-in" onClick={() => setModal(null)}>
-      <div className="w-full max-w-md rounded-[32px] bg-[#12121a] border border-[#27272a] flex flex-col max-h-[85dvh] shadow-2xl overflow-hidden animate-modal-pop" onClick={(e) => e.stopPropagation()}>
-        <div className="px-5 sm:px-8 py-5 border-b border-[#27272a] flex items-center justify-between bg-[#0f0f13] shrink-0">
-          <h3 className="font-bold text-xl text-white tracking-tight">{modal.mode === "add" ? "Novo Cliente" : "Editar Cliente"}</h3>
-          <button onClick={() => setModal(null)} className="p-2.5 rounded-xl text-neutral-500 hover:text-white hover:bg-white/5 transition-colors"><X size={20} /></button>
-        </div>
-        
-        <div className="p-5 sm:p-8 flex flex-col gap-6 bg-[#09090b] flex-1 overflow-y-auto kp-scroll">
-          <div>
-            <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">Nome da Empresa *</label>
-            <input autoFocus value={form.name || ''} onChange={(e) => { setForm({ ...form, name: e.target.value }); setValidationError(null); }} className={`w-full bg-[#12121a] border rounded-xl px-4 py-4 sm:py-3.5 text-sm text-white outline-none focus:border-purple-500 transition-colors ${validationError && String(validationError).includes("nome") ? "border-red-500" : "border-[#27272a]"}`} placeholder="Ex: Acme Corp" />
-          </div>
-
-          <div>
-            <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">Teto de Horas Contratadas (Mensal)</label>
-            <input type="number" value={form.contractedHours === 0 ? '' : form.contractedHours} onChange={(e) => setForm({ ...form, contractedHours: e.target.value })} className={`w-full bg-[#12121a] border border-[#27272a] rounded-xl px-4 py-4 sm:py-3.5 text-sm text-white outline-none focus:border-purple-500 transition-colors`} placeholder="Ex: 50" />
-          </div>
-
-          <div>
-            <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">URL do Relatório (Looker Studio)</label>
-            <input type="text" value={form.lookerUrl || ''} onChange={(e) => setForm({ ...form, lookerUrl: e.target.value })} className={`w-full bg-[#12121a] border border-[#27272a] rounded-xl px-4 py-4 sm:py-3.5 text-sm text-white outline-none focus:border-purple-500 transition-colors`} placeholder="https://lookerstudio.google.com/reporting/..." />
-          </div>
-          
-          <div>
-            <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">E-mails (Contatos)</label>
-            <div className="flex flex-col sm:flex-row items-center gap-3 mb-4">
-              <input value={newEmail || ''} onChange={e => setNewEmail(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddEmail()} className="w-full sm:flex-1 bg-[#12121a] border border-[#27272a] rounded-xl px-4 py-4 sm:py-3.5 text-sm text-white outline-none focus:border-purple-500 transition-colors" placeholder="Ex: gestor@empresa.com" />
-              <button onClick={handleAddEmail} className="w-full sm:w-auto justify-center px-6 py-4 sm:py-3.5 bg-white/5 border border-white/10 hover:bg-white/10 text-white rounded-xl text-xs font-bold uppercase tracking-widest transition-colors flex items-center gap-2 shrink-0"><Plus size={16}/> Add</button>
-            </div>
-
-            <div className="flex flex-col gap-2 max-h-32 overflow-y-auto kp-scroll pr-1">
-              {(!form.emails || form.emails.length === 0) && <div className="text-center text-xs text-neutral-600 py-6 border border-dashed border-[#27272a] rounded-2xl">Nenhum e-mail adicionado.</div>}
-              {form.emails && form.emails.map((email: string, index: number) => (
-                <div key={index} className="flex items-center justify-between bg-[#12121a] border border-[#27272a] rounded-xl px-4 py-3">
-                  <div className="flex items-center gap-3 text-sm text-neutral-300"><Mail size={16} className="text-purple-400" /> {email}</div>
-                  <button onClick={() => handleRemoveEmail(index)} className="p-2 text-neutral-500 hover:text-red-500 transition-colors"><X size={16} /></button>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-        
-        <div className="px-5 sm:px-8 py-5 border-t border-[#27272a] bg-[#0f0f13] flex items-center justify-end gap-3 shrink-0">
-          <button onClick={() => setModal(null)} className="flex-1 sm:flex-none text-xs font-bold uppercase tracking-widest px-5 py-4 rounded-xl text-neutral-500 hover:text-white transition-colors">Cancelar</button>
-          <button onClick={saveClient} className="flex-1 sm:flex-none text-xs font-black uppercase tracking-[0.15em] px-8 py-4 rounded-xl bg-purple-600 hover:bg-purple-500 text-white transition-all shadow-[0_0_15px_rgba(147,51,234,0.3)]">Salvar Cliente</button>
-        </div>
-      </div>
-      
-      {validationError && (
-        <div className="absolute top-6 left-1/2 -translate-x-1/2 bg-red-600 text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 fade-in z-[80] font-bold text-xs uppercase tracking-wider w-11/12 max-w-sm">
-          <AlertTriangle size={18} className="shrink-0" /> {String(validationError)}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ClientsPanelContent({ clients, setClients, tasks, setTasks, user, getElapsed, now }: any) {
-  const [clientModal, setClientModal] = useState<any>(null);
-
-  const openAdd = () => setClientModal({ mode: 'add', form: { name: '', emails: [], contractedHours: '' } });
-  
-  const openEdit = (client: any) => {
-    const emailsArray = Array.isArray(client.emails) ? client.emails : [];
-    setClientModal({ mode: 'edit', form: { ...client, emails: emailsArray } });
-  };
-
-  const remove = async (id: string) => { 
-    if(!user.isAdmin) return alert("Apenas administradores podem remover clientes.");
-    setClients((prev: any) => prev.filter((c: any) => c.id !== id)); 
-    setTasks((prev: any) => prev.map((t: any) => t.clientId === id ? { ...t, clientId: '' } : t)); 
-    if (window.supabaseClient) {
-      await window.supabaseClient.from('clients').delete().eq('id', id.toString());
-    }
-  };
-
-  return (
-    <div className="flex flex-col h-full fade-in relative">
-      {user.isAdmin && (
-         <div className="flex justify-end mb-6">
-           <button onClick={openAdd} className="w-full sm:w-auto px-8 py-4 sm:py-3.5 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold uppercase tracking-widest transition-colors flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(147,51,234,0.3)]">
-             <Plus size={16}/> Criar Cliente
-           </button>
-         </div>
-      )}
-      
-      <div className="grid grid-cols-1 gap-4">
-        {clients.length === 0 && (
-          <div className="text-center text-sm text-neutral-500 py-16 border border-dashed border-[#27272a] rounded-[24px]">
-            A sua carteira de clientes está vazia.
-          </div>
-        )}
-        {clients.map((c: any) => {
-          const count = tasks.filter((t: any) => t.clientId === c.id).length;
-          const emailsArray = Array.isArray(c.emails) ? c.emails : [];
-          
-          const cTasks = tasks.filter((t: any) => t.clientId === c.id);
-          const hours = cTasks.reduce((acc: number, t: any) => acc + (getElapsed(t) / 3600), 0);
-          const remaining = c.contractedHours ? c.contractedHours - hours : null;
-          const isNearLimit = remaining !== null && remaining <= 5;
-          
-          return (
-            <div key={c.id} onClick={() => openEdit(c)} className="flex flex-col sm:flex-row sm:items-center justify-between bg-[#12121a] border border-[#27272a] rounded-[20px] p-6 hover:border-purple-500/50 transition-all cursor-pointer gap-5 sm:gap-0 shadow-sm relative group">
-              <div className="flex items-center gap-5">
-                <div className="p-4 bg-white/5 rounded-2xl border border-white/10 group-hover:border-purple-500/30 transition-colors"><Building2 size={24} className="text-purple-400" /></div>
-                <div className="flex flex-col">
-                  <span className="text-lg font-bold text-neutral-100 group-hover:text-purple-400 transition-colors">{c.name}</span>
-                  <span className="text-xs text-neutral-500 mt-1 uppercase tracking-widest font-bold">
-                    {c.contractedHours ? <span className="text-indigo-400">Teto: {c.contractedHours}h | </span> : ''} {emailsArray.length === 0 ? "0 E-mails" : `${emailsArray.length} Contato(s)`} • {count} Demandas
-                  </span>
-                  
-                  {c.lookerUrl && (
-                    <div className="mt-3 flex gap-2">
-                       <button onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(c.lookerUrl); alert('Link do Looker Studio copiado!'); }} className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-1.5 bg-blue-500/10 text-blue-400 px-3 py-1.5 rounded-lg border border-blue-500/20 hover:bg-blue-500/20 transition-colors">
-                          <Copy size={12}/> Copiar Link Relatório
-                       </button>
-                    </div>
-                  )}
-
-                </div>
-              </div>
-              
-              <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto gap-3 mt-4 sm:mt-0">
-                {isNearLimit && remaining !== null && (
-                  <a href={generateLimitEmailLink(c, hours)} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="flex-1 sm:flex-none justify-center flex items-center gap-2 px-5 py-3.5 sm:py-3 bg-red-500/10 text-red-400 border border-red-500/20 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-red-500/20 transition-colors shrink-0 shadow-sm">
-                    <AlertTriangle size={14}/> Aviso ({remaining.toFixed(1)}h)
-                  </a>
-                )}
-                {user.isAdmin && (
-                   <button onClick={(e) => { e.stopPropagation(); remove(c.id); }} className="p-3.5 text-neutral-600 hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-colors sm:opacity-0 group-hover:opacity-100 z-10 relative">
-                     <Trash2 size={20} />
-                   </button>
-                )}
-              </div>
-            </div>
-          )
-        })}
-      </div>
-      {clientModal && <ClientModal modal={clientModal} setModal={setClientModal} setClients={setClients} user={user} />}
-    </div>
-  );
-}
-
-function AnalyticsModal({ onClose, tasks, clients, responsibles, now, getElapsed, isClosing, globalLookerUrl, setGlobalLookerUrl }: any) {
-  const [activeView, setActiveView] = useState('internal'); 
-  const [isEditing, setIsEditing] = useState(false);
-  const [inputUrl, setInputUrl] = useState(globalLookerUrl);
-
-  const [showFilters, setShowFilters] = useState(false);
-  const [filterClient, setFilterClient] = useState("all");
-  const [filterResp, setFilterResp] = useState("all");
-  const [filterPriority, setFilterPriority] = useState("all");
-  const [filterCreatedStart, setFilterCreatedStart] = useState("");
-  const [filterCreatedEnd, setFilterCreatedEnd] = useState("");
-  const [filterCompletedStart, setFilterCompletedStart] = useState("");
-  const [filterCompletedEnd, setFilterCompletedEnd] = useState("");
-  
-  const hasDateFilters = filterCreatedStart || filterCreatedEnd || filterCompletedStart || filterCompletedEnd;
-
-  const saveUrl = async () => {
-    let finalUrl = inputUrl.trim();
-    if (finalUrl && finalUrl.includes('/reporting/') && !finalUrl.includes('/embed/')) {
-        finalUrl = finalUrl.replace('/reporting/', '/embed/reporting/');
-    }
-    setGlobalLookerUrl(finalUrl);
-    setIsEditing(false);
-    
-    // Salvar no Supabase (Necessário ter a tabela 'settings')
-    if (window.supabaseClient) {
-       try {
-         const { error } = await (window as any).supabaseClient.from('settings').upsert({ id: 'global', looker_global_url: finalUrl });
-         if(error) console.error("Erro ao salvar Looker URL global", error);
-       } catch (e) {
-         console.error("Erro crítico ao salvar Looker URL global", e);
-       }
-    }
-  };
-
-  const filteredTasks = tasks.filter((t: any) =>
-      (filterClient === "all" || t.clientId === filterClient) &&
-      (filterResp === "all" || t.responsibleId === filterResp) &&
-      (filterPriority === "all" || t.priority === filterPriority) &&
-      filterByPeriod(t.createdAt, filterCreatedStart, filterCreatedEnd) &&
-      filterByPeriod(t.completedAt, filterCompletedStart, filterCompletedEnd)
-  );
-
-  const exportTasksCSV = () => {
-    const headers = ["ID", "Título", "Status", "Prioridade", "Cliente", "Responsável", "Estimado (min)", "Gasto (h)"];
-    const rows = filteredTasks.map((t: any) => {
-      const clientName = clients.find((c: any) => c.id === t.clientId)?.name || '-';
-      const respName = responsibles.find((r: any) => r.id === t.responsibleId)?.name || '-';
-      const statusName = COLUMNS.find(c => c.id === t.status)?.name || t.status;
-      const elapsedH = (getElapsed(t) / 3600).toFixed(2);
-      return [t.id, `"${String(t.title || '').replace(/"/g, '""')}"`, statusName, t.priority, `"${clientName}"`, `"${respName}"`, t.durationMin || 0, elapsedH].join(',');
-    });
-    downloadCSV([headers.join(','), ...rows], 'lumina_tarefas.csv');
-  };
-
-  return (
-    <OverlayModal title="Lumina Analytics" icon={<BarChart3 className="text-blue-500" size={24}/>} onClose={onClose} fullWidth isClosing={isClosing}>
-      <div className="flex flex-col min-h-full fade-in pb-8">
-        
-        {/* Toggle View */}
-        <div className="flex justify-center mb-8 shrink-0">
-          <div className="bg-[#12121a] border border-[#27272a] p-1.5 rounded-2xl flex gap-2">
-             <button onClick={() => setActiveView('internal')} className={`px-8 py-3 rounded-xl text-xs font-bold uppercase tracking-widest transition-all ${activeView === 'internal' ? 'bg-[#27272a] text-white shadow-sm' : 'text-neutral-500 hover:text-white'}`}>Sistema Interno</button>
-             <button onClick={() => setActiveView('looker')} className={`px-8 py-3 rounded-xl text-xs font-bold uppercase tracking-widest transition-all flex items-center gap-2 ${activeView === 'looker' ? 'bg-blue-600 text-white shadow-[0_0_15px_rgba(37,99,235,0.4)]' : 'text-neutral-500 hover:text-white'}`}><MonitorPlay size={16}/> Looker Studio</button>
-          </div>
-        </div>
-
-        {/* View 1: Relatórios Internos */}
-        {activeView === 'internal' && (
-           <div className="flex flex-col gap-6 fade-in">
-             
-             {/* Filtro Button */}
-             <div className="flex justify-start">
-               <button 
-                 onClick={(e) => { e.stopPropagation(); setShowFilters(!showFilters); }} 
-                 className={`h-11 w-full sm:w-auto px-4 flex items-center justify-center gap-2 rounded-xl transition-all shadow-sm shrink-0 border font-bold uppercase tracking-widest text-[10px] ${showFilters ? 'bg-indigo-600 text-white border-indigo-500 shadow-[0_0_15px_rgba(79,70,229,0.3)]' : 'glass-panel text-neutral-400 border-white/5 hover:text-white'}`}
-               >
-                 <Filter size={16} /> Filtros
-               </button>
-             </div>
-
-             {/* Filtros Container */}
-             {showFilters && (
-               <div className="flex flex-col items-stretch gap-3 w-full animate-fade-in" onClick={e => e.stopPropagation()}>
-                  <div className="glass-panel w-full p-4 rounded-xl flex flex-col lg:flex-row lg:flex-wrap items-stretch lg:items-center gap-4 shadow-sm border-indigo-500/20 bg-[#12121a]">
-                    
-                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 w-full lg:w-auto">
-                       <FilterSelect value={filterClient} onChange={setFilterClient} options={clients} defaultLabel="Todos Clientes" />
-                       <div className="hidden sm:block w-px h-4 bg-white/10"></div>
-                       <FilterSelect value={filterResp} onChange={setFilterResp} options={responsibles} defaultLabel="Todos Responsáveis" />
-                       <div className="hidden sm:block w-px h-4 bg-white/10"></div>
-                       <FilterSelect value={filterPriority} onChange={setFilterPriority} options={[{id: 'Baixa', name: 'Baixa'}, {id: 'Média', name: 'Média'}, {id: 'Alta', name: 'Alta'}]} defaultLabel="Prioridades" />
-                    </div>
-
-                    <div className="hidden lg:block w-px h-4 bg-white/10"></div>
-                    
-                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 w-full lg:w-auto bg-black/20 p-3 lg:p-0 lg:bg-transparent rounded-lg border border-white/5 lg:border-none">
-                       <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-start">
-                          <label className="text-[10px] uppercase font-bold text-indigo-300 whitespace-nowrap">Criado de:</label>
-                          <input type="date" value={filterCreatedStart} onChange={e => setFilterCreatedStart(e.target.value)} className="bg-[#12121a] lg:bg-transparent border border-[#27272a] lg:border-none rounded-lg px-2.5 py-1.5 lg:py-0 text-xs text-white outline-none focus:border-indigo-500 [color-scheme:dark]" />
-                       </div>
-                       <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-start">
-                          <label className="text-[10px] uppercase font-bold text-neutral-500 whitespace-nowrap text-right">Até:</label>
-                          <input type="date" value={filterCreatedEnd} onChange={e => setFilterCreatedEnd(e.target.value)} className="bg-[#12121a] lg:bg-transparent border border-[#27272a] lg:border-none rounded-lg px-2.5 py-1.5 lg:py-0 text-xs text-white outline-none focus:border-indigo-500 [color-scheme:dark]" />
-                       </div>
-                    </div>
-                    
-                    <div className="hidden lg:block w-px h-4 bg-white/10"></div>
-                    
-                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 w-full lg:w-auto bg-black/20 p-3 lg:p-0 lg:bg-transparent rounded-lg border border-white/5 lg:border-none">
-                       <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-start">
-                          <label className="text-[10px] uppercase font-bold text-emerald-300 whitespace-nowrap">Concluído de:</label>
-                          <input type="date" value={filterCompletedStart} onChange={e => setFilterCompletedStart(e.target.value)} className="bg-[#12121a] lg:bg-transparent border border-[#27272a] lg:border-none rounded-lg px-2.5 py-1.5 lg:py-0 text-xs text-white outline-none focus:border-emerald-500 [color-scheme:dark]" />
-                       </div>
-                       <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-start">
-                          <label className="text-[10px] uppercase font-bold text-neutral-500 whitespace-nowrap text-right">Até:</label>
-                          <input type="date" value={filterCompletedEnd} onChange={e => setFilterCompletedEnd(e.target.value)} className="bg-[#12121a] lg:bg-transparent border border-[#27272a] lg:border-none rounded-lg px-2.5 py-1.5 lg:py-0 text-xs text-white outline-none focus:border-emerald-500 [color-scheme:dark]" />
-                       </div>
-                    </div>
-
-                    {hasDateFilters && (
-                       <button onClick={() => { setFilterCreatedStart(''); setFilterCreatedEnd(''); setFilterCompletedStart(''); setFilterCompletedEnd(''); }} className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 text-[10px] font-bold uppercase tracking-widest transition-colors ml-auto lg:ml-0 mt-2 lg:mt-0">
-                         <X size={12}/> Limpar Datas
-                       </button>
-                    )}
-                  </div>
-               </div>
-             )}
-
-             {/* Area sem duplo-scroll para permitir que a rolagem funcione livremente no telemóvel */}
-             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div>
-                   <h3 className="text-[10px] font-bold text-neutral-500 mb-4 uppercase tracking-[0.2em] ml-1">Por Fase do Fluxo</h3>
-                   <div className="flex flex-col gap-3">
-                      {COLUMNS.map(col => { 
-                          const count = filteredTasks.filter((t: any) => t.status === col.id).length; 
-                          return (
-                              <div key={col.id} className="flex justify-between items-center bg-[#12121a] border border-[#27272a] p-5 rounded-2xl shadow-sm">
-                                  <div className="flex items-center gap-4">
-                                      <span className={`w-3 h-3 rounded-full ${col.dot} shadow-[0_0_8px_currentColor]`} />
-                                      <span className="text-xs text-neutral-300 font-bold uppercase">{col.name}</span>
-                                  </div>
-                                  <span className="text-lg font-black text-white">{count}</span>
-                              </div>
-                          )
-                      })}
-                   </div>
-                </div>
-                <div>
-                   <h3 className="text-[10px] font-bold text-neutral-500 mb-4 uppercase tracking-[0.2em] ml-1">Por Responsável</h3>
-                   <div className="flex flex-col gap-3">
-                      {responsibles.map((r: any) => { 
-                          const rTasks = filteredTasks.filter((t: any) => t.responsibleId === r.id); 
-                          if (rTasks.length === 0) return null;
-                          const hours = rTasks.reduce((acc: number, t: any) => acc + (getElapsed(t) / 3600), 0); 
-                          return (
-                              <div key={r.id} className="bg-[#12121a] border border-[#27272a] p-5 rounded-2xl shadow-sm">
-                                  <div className="text-base text-neutral-100 font-bold mb-2">{r.name}</div>
-                                  <div className="flex items-center gap-4 text-[10px] text-neutral-500 font-bold uppercase tracking-widest">
-                                      <span className="bg-white/5 px-2.5 py-1 rounded-md border border-white/5">{rTasks.length} Demandas</span>
-                                      <span className="bg-white/5 px-2.5 py-1 rounded-md border border-white/5">{hours.toFixed(1)}h Totais</span>
-                                  </div>
-                              </div>
-                          )
-                      })}
-                   </div>
-                </div>
-                <div>
-                   <h3 className="text-[10px] font-bold text-neutral-500 mb-4 uppercase tracking-[0.2em] ml-1">Por Cliente</h3>
-                   <div className="flex flex-col gap-3">
-                      {clients.map((c: any) => { 
-                          const cTasks = filteredTasks.filter((t: any) => t.clientId === c.id); 
-                          if (cTasks.length === 0) return null; 
-                          const hours = cTasks.reduce((acc: number, t: any) => acc + (getElapsed(t) / 3600), 0); 
-                          return (
-                              <div key={c.id} className="bg-[#12121a] border border-[#27272a] p-5 rounded-2xl shadow-sm">
-                                  <div className="text-base text-neutral-100 font-bold mb-2">{c.name}</div>
-                                  <div className="flex items-center gap-4 text-[10px] text-neutral-500 font-bold uppercase tracking-widest">
-                                      <span className="bg-white/5 px-2.5 py-1 rounded-md border border-white/5">{cTasks.length} Demandas</span>
-                                      <span className="bg-white/5 px-2.5 py-1 rounded-md border border-white/5">{hours.toFixed(1)}h Totais</span>
-                                  </div>
-                              </div>
-                          )
-                      })}
-                   </div>
-                </div>
-             </div>
-             
-             <div className="flex justify-center mt-6">
-                <button onClick={exportTasksCSV} className="w-full md:w-auto flex items-center justify-center gap-2 px-10 py-4 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 rounded-2xl text-xs font-bold uppercase tracking-widest transition-all shadow-sm">
-                   <Download size={18}/> Baixar Dados (CSV)
-                </button>
-             </div>
-           </div>
-        )}
-
-        {/* View 2: Looker Studio (iFrame) */}
-        {activeView === 'looker' && (
-          <div className="flex-1 flex flex-col min-h-0 h-full fade-in">
-            {(!globalLookerUrl || isEditing) ? (
-               <div className="flex-1 flex flex-col items-center justify-center max-w-xl mx-auto w-full text-center gap-8">
-                 <div className="w-24 h-24 rounded-[32px] bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-500 shadow-[0_0_30px_rgba(59,130,246,0.15)]"><BarChart3 size={40} /></div>
-                 <div>
-                   <h3 className="text-3xl font-bold text-white mb-3 tracking-tight">Painel Analítico Global</h3>
-                   <p className="text-sm text-neutral-400 leading-relaxed max-w-md mx-auto">Configure aqui o Link de Incorporação (Embed) do Looker Studio para o painel de uso da sua equipe interna.</p>
-                 </div>
-                 <div className="w-full">
-                    <input value={inputUrl} onChange={e => setInputUrl(e.target.value)} placeholder="https://lookerstudio.google.com/embed/reporting/..." className="w-full bg-[#12121a] border border-[#27272a] rounded-2xl px-6 py-5 text-sm text-white outline-none focus:border-blue-500 text-center shadow-inner mb-5" />
-                    <button onClick={saveUrl} className="w-full py-5 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-bold uppercase tracking-widest text-sm transition-all shadow-[0_0_20px_rgba(37,99,235,0.3)]">Ligar Relatório Global</button>
-                 </div>
-                 {globalLookerUrl && <button onClick={() => setIsEditing(false)} className="text-xs font-bold text-neutral-500 uppercase tracking-widest hover:text-white mt-2">Cancelar</button>}
-               </div>
-            ) : (
-               <div className="flex flex-col h-full gap-5">
-                 <div className="flex justify-end shrink-0">
-                    <button onClick={() => {setInputUrl(globalLookerUrl); setIsEditing(true);}} className="flex justify-center items-center gap-2 px-6 py-3.5 bg-white/5 text-neutral-300 border border-white/10 hover:bg-white/10 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-colors"><Settings size={16}/> Trocar Conexão Looker</button>
-                 </div>
-                 <div className="flex-1 w-full bg-[#12121a] rounded-[32px] border border-[#27272a] overflow-hidden relative shadow-inner">
-                   <div className="absolute inset-0 flex flex-col gap-4 items-center justify-center -z-10">
-                     <Cloud size={40} className="text-indigo-500/20 animate-pulse" />
-                     <span className="text-xs font-bold uppercase tracking-widest text-neutral-600">A Carregar Looker...</span>
-                   </div>
-                   <iframe src={globalLookerUrl} className="w-full h-full border-0 bg-transparent z-10 relative" allowFullScreen />
-                 </div>
-               </div>
-            )}
-          </div>
-        )}
-
-      </div>
-    </OverlayModal>
-  )
-}
-
-function generateLimitEmailLink(clientData: any, consumedHours: number) {
-  const emails = Array.isArray(clientData?.emails) ? clientData.emails : [];
-  const emailTo = emails.join(',');
-  const subject = `Aviso de Banco de Horas - ${clientData.name}`;
-  const remaining = (clientData.contractedHours || 0) - consumedHours;
-  
-  const body = `Prezados(as),\n\nInformamos que o banco de horas contratado (${clientData.contractedHours}h) está prestes a ser atingido. No momento, restam apenas ${remaining.toFixed(1)}h disponíveis.\n\nGostaríamos de saber se autorizam a continuidade das demandas (cientes de que as horas excedentes poderão ser cobradas) ou se devemos pausar as atividades até à renovação do banco.\n\nCom os melhores cumprimentos,`;
-  
-  return `https://mail.google.com/mail/?view=cm&fs=1&to=${emailTo}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-}
-
-function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize }: any) {
-  const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [copiedNotionId, setCopiedNotionId] = useState<string | null>(null);
-  const [meetingData, setMeetingData] = useState<any>({});
-
-  // Separação Inteligente: Finalizadas vs Andamento
-  const tasksByClient = useMemo(() => {
-    return tasks.reduce((acc: any, task: any) => {
-      const cId = task.clientId || 'no_client';
-      if (!acc[cId]) acc[cId] = { done: [], inProgress: [] };
-      if (task.status === 'done' || task.status === 'formalize') {
-        acc[cId].done.push(task);
-      } else if (['inprogress', 'paused', 'waiting', 'review'].includes(task.status)) {
-        acc[cId].inProgress.push(task);
-      }
-      return acc;
-    }, {});
-  }, [tasks]);
-
-  const generateEmailText = (clientTasks: any, mData: any) => {
-    let body = `Prezados(as),\n\nEspero que se encontrem bem.\n\n`;
-    
-    let dateStr = "";
-    if (mData?.date) {
-      const [y, m, d] = mData.date.split('-');
-      dateStr = `${d}/${m}`;
-    }
-
-    if (dateStr || mData?.link) {
-      body += `Segue o resumo da reunião de overview`;
-      if (dateStr) body += ` realizada a ${dateStr}`;
-      body += `, com os principais pontos discutidos e o estado das demandas:\n\n`;
-      if (mData?.link) body += `Link da gravação: ${mData.link}\n\n`;
-    } else {
-      body += `Segue o resumo semanal com os principais pontos e o estado das demandas:\n\n`;
-    }
-
-    if (clientTasks.done.length > 0) {
-      body += `Demandas Finalizadas:\n`;
-      clientTasks.done.forEach((t: any) => {
-        body += `- ${t.title}\n`;
-        if (t.description) body += `  ${t.description}\n`;
-        body += `\n`;
-      });
-    }
-
-    if (clientTasks.inProgress.length > 0) {
-      body += `Demandas em Andamento:\n`;
-      clientTasks.inProgress.forEach((t: any) => {
-        body += `- ${t.title}\n`;
-        if (t.description) body += `  ${t.description}\n`;
-        body += `\n`;
-      });
-    }
-
-    body += `Em caso de dúvidas, continuo à disposição.\n\nCom os melhores cumprimentos,`;
-    return body;
-  };
-
-  const generateEmailLink = (clientTasks: any, clientData: any, mData: any) => {
-    const emails = Array.isArray(clientData?.emails) ? clientData.emails : [];
-    const emailTo = emails.join(',');
-    const subject = `Atualização Semanal de Demandas - ${clientData ? clientData.name : 'Cliente'}`;
-    const body = generateEmailText(clientTasks, mData);
-    
-    return `https://mail.google.com/mail/?view=cm&fs=1&to=${emailTo}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-  };
-
-  const handleCopyText = (clientTasks: any, clientId: string, mData: any) => {
-    const text = generateEmailText(clientTasks, mData);
-    navigator.clipboard.writeText(text);
-    setCopiedId(clientId);
-    setTimeout(() => setCopiedId(null), 2000);
-  };
-
-  const handleCopyNotion = (clientTasks: any, clientId: string) => {
-    let text = "";
-    if (clientTasks.done.length > 0) {
-      text += "CONCLUÍDAS\n\n";
-      clientTasks.done.forEach((t: any) => {
-        const timeMin = t.timerElapsed > 0 ? Math.round(t.timerElapsed / 60) : (t.durationMin || 0);
-        const dateStr = t.dueDate ? t.dueDate.split('-').reverse().join('/') : 'Sem data';
-        text += `- ${t.title}\n  Descrição: ${t.description || 'Sem descrição'}\n  Tempo: ${timeMin} min\n  Data: ${dateStr}\n\n`;
-      });
-    }
-    if (clientTasks.inProgress.length > 0) {
-      text += "EM ANDAMENTO\n\n";
-      clientTasks.inProgress.forEach((t: any) => {
-        const timeMin = t.timerElapsed > 0 ? Math.round(t.timerElapsed / 60) : (t.durationMin || 0);
-        const dateStr = t.dueDate ? t.dueDate.split('-').reverse().join('/') : 'Sem data';
-        text += `- ${t.title}\n  Descrição: ${t.description || 'Sem descrição'}\n  Tempo: ${timeMin} min\n  Data: ${dateStr}\n\n`;
-      });
-    }
-    navigator.clipboard.writeText(text);
-    setCopiedNotionId(clientId);
-    setTimeout(() => setCopiedNotionId(null), 2000);
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-[80] fade-in" onClick={onClose}>
-      <div className="w-full max-w-4xl rounded-[32px] bg-[#12121a] border border-[#27272a] flex flex-col max-h-[90vh] shadow-2xl overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
-        
-        <div className="px-5 sm:px-8 py-5 sm:py-6 border-b border-[#27272a] flex items-center justify-between bg-[#0f0f13]">
-          <div className="flex items-center gap-4">
-            <div className="p-2.5 bg-indigo-500/10 rounded-xl hidden sm:block text-indigo-400 border border-indigo-500/20"><Mail size={24} /></div>
-            <div>
-              <h3 className="font-bold text-xl text-white tracking-tight">Fechamento Semanal</h3>
-              <p className="text-xs text-neutral-500 mt-1 uppercase tracking-widest font-bold">Dispare os e-mails e copie os relatórios para o Notion.</p>
-            </div>
-          </div>
-          <button onClick={onClose} className="p-2.5 rounded-xl text-neutral-500 hover:bg-white/5 hover:text-white transition-colors shrink-0">
-            <X size={20} />
-          </button>
-        </div>
-        
-        <div className="p-5 sm:p-8 overflow-y-auto kp-scroll flex flex-col gap-8 flex-1 bg-[#09090b]">
-          {Object.keys(tasksByClient).length === 0 && (
-             <div className="text-center text-sm text-neutral-500 py-12 border border-dashed border-[#27272a] rounded-3xl">
-               Nenhuma demanda pendente para fechamento nesta semana.
-             </div>
-          )}
-
-          {Object.entries(tasksByClient).map(([clientId, clientTasks]: any) => {
-            if (clientTasks.done.length === 0 && clientTasks.inProgress.length === 0) return null;
-
-            const clientData = clients.find((c: any) => c.id === clientId);
-            const clientName = clientData ? clientData.name : 'Sem Cliente Atribuído';
-            const mData = meetingData[clientId] || { date: '', link: '' };
-            const totalTasksCount = clientTasks.done.length + clientTasks.inProgress.length;
-            
-            return (
-              <div key={clientId} className="bg-[#12121a] border border-[#27272a] rounded-3xl p-6 sm:p-8 shadow-sm">
-                <div className="flex items-center justify-between mb-6 border-b border-[#27272a] pb-5">
-                  <h4 className="font-bold text-lg text-white flex items-center gap-3">
-                    <Building2 size={20} className="text-indigo-400" /> {clientName}
-                  </h4>
-                  <span className="text-[10px] font-bold uppercase tracking-widest bg-white/5 border border-white/10 text-neutral-300 px-3 py-1.5 rounded-lg">
-                    {totalTasksCount} Demandas
-                  </span>
-                </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-8">
-                   <div className="w-full">
-                      <label className="text-[10px] text-neutral-500 uppercase font-bold tracking-widest mb-2 block ml-1">Data da Reunião (Opcional)</label>
-                      <input 
-                         type="date" 
-                         value={mData.date || ''} 
-                         onChange={e => setMeetingData({...meetingData, [clientId]: {...mData, date: e.target.value}})} 
-                         className="w-full bg-[#09090b] border border-[#27272a] rounded-xl px-4 py-3.5 text-sm text-white outline-none focus:border-indigo-500 [color-scheme:dark]" 
-                      />
-                   </div>
-                   <div className="w-full">
-                      <label className="text-[10px] text-neutral-500 uppercase font-bold tracking-widest mb-2 block ml-1">Link da Gravação (Opcional)</label>
-                      <input 
-                         type="text" 
-                         value={mData.link || ''} 
-                         onChange={e => setMeetingData({...meetingData, [clientId]: {...mData, link: e.target.value}})} 
-                         className="w-full bg-[#09090b] border border-[#27272a] rounded-xl px-4 py-3.5 text-sm text-white outline-none focus:border-indigo-500" 
-                         placeholder="Ex: meet.google.com/..." 
-                      />
-                   </div>
-                </div>
-
-                <div className="text-[13px] text-neutral-400 mb-8 max-h-48 overflow-y-auto pr-2 kp-scroll font-mono border border-[#27272a] p-4 rounded-2xl bg-[#09090b]">
-                  {clientTasks.done.length > 0 && (
-                    <div className="mb-5">
-                      <strong className="text-emerald-400 uppercase tracking-widest text-[10px] block mb-3 border-b border-emerald-500/20 pb-2">Demandas Finalizadas:</strong>
-                      {clientTasks.done.map((t: any) => (
-                        <div key={t.id} className="mt-2 pl-2 border-l-2 border-emerald-500/30">
-                          <div className="text-neutral-200 font-bold">- {t.title}</div>
-                          {t.description && <div className="pl-3 opacity-60 line-clamp-2 mt-1 leading-relaxed text-[11px]">{t.description}</div>}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {clientTasks.inProgress.length > 0 && (
-                    <div className="mb-2">
-                      <strong className="text-indigo-400 uppercase tracking-widest text-[10px] block mb-3 border-b border-indigo-500/20 pb-2">Demandas em Andamento:</strong>
-                      {clientTasks.inProgress.map((t: any) => (
-                        <div key={t.id} className="mt-2 pl-2 border-l-2 border-indigo-500/30">
-                          <div className="text-neutral-200 font-bold">- {t.title}</div>
-                          {t.description && <div className="pl-3 opacity-60 line-clamp-2 mt-1 leading-relaxed text-[11px]">{t.description}</div>}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-t border-[#27272a] pt-6">
-                  <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
-                    <a 
-                      href={generateEmailLink(clientTasks, clientData, mData)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex-1 sm:flex-none justify-center inline-flex items-center gap-2 px-5 py-3.5 sm:py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold uppercase tracking-widest transition-all shadow-[0_0_15px_rgba(79,70,229,0.3)]"
-                    >
-                      <Mail size={16} /> Abrir E-mail
-                    </a>
-                    
-                    <button 
-                      onClick={() => handleCopyText(clientTasks, clientId, mData)}
-                      className="flex-1 sm:flex-none justify-center inline-flex items-center gap-2 px-5 py-3.5 sm:py-3 bg-white/5 text-neutral-300 border border-white/10 hover:bg-white/10 rounded-xl text-xs font-bold uppercase tracking-widest transition-colors"
-                    >
-                      {copiedId === clientId ? <Check size={16} className="text-emerald-400" /> : <Copy size={16} />} 
-                      {copiedId === clientId ? "Copiado!" : "Copiar Texto"}
-                    </button>
-
-                    <button 
-                      onClick={() => handleCopyNotion(clientTasks, clientId)}
-                      className="flex-1 sm:flex-none justify-center inline-flex items-center gap-2 px-5 py-3.5 sm:py-3 bg-white/5 text-neutral-300 border border-white/10 hover:bg-white/10 rounded-xl text-xs font-bold uppercase tracking-widest transition-colors"
-                    >
-                      {copiedNotionId === clientId ? <Check size={16} className="text-emerald-400" /> : <ClipboardList size={16} />} 
-                      {copiedNotionId === clientId ? "Copiado!" : "Copiar (Notion)"}
-                    </button>
-                  </div>
-
-                  <button 
-                    onClick={() => onFormalize(clientId)}
-                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3.5 sm:py-3 bg-transparent border border-[#27272a] text-neutral-400 hover:text-white hover:border-emerald-500/50 hover:bg-emerald-500/10 rounded-xl text-xs font-bold uppercase tracking-widest transition-all"
-                  >
-                    <CheckCircle2 size={16} /> Formalizar
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-        
-        <div className="px-5 sm:px-8 py-5 border-t border-[#27272a] flex flex-col sm:flex-row items-center justify-between gap-4 bg-[#0f0f13]">
-          <span className="text-xs font-bold text-neutral-500 uppercase tracking-widest">Ação em lote (Formaliza tudo do sistema)</span>
-          <button 
-            onClick={() => onFormalize(null)} 
-            className="w-full sm:w-auto flex items-center justify-center gap-2 px-8 py-4 sm:py-3.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold uppercase tracking-widest text-xs transition-all shadow-[0_0_15px_rgba(13,148,136,0.3)]"
-          >
-            <Check size={18} /> Formalizar Todos
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function TaskModal({ modal, setModal, clients, responsibles, closeModal, saveModal, validationError, setValidationError }: any) {
-  const updateForm = (patch: any) => { setModal((m: any) => ({ ...m, form: { ...m.form, ...patch } })); if (validationError) setValidationError(null); };
-  const addChecklistRow = () => { setModal((m: any) => ({ ...m, form: { ...m.form, checklist: [...(m.form.checklist || []), { id: nextId(), text: "", done: false }] } })); };
-  return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 z-[85] fade-in" onClick={closeModal}>
-      <div className="w-full max-w-xl rounded-[32px] bg-[#12121a] border border-[#27272a] flex flex-col max-h-[85dvh] md:max-h-[90dvh] shadow-2xl overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
-        <div className="px-6 sm:px-8 py-5 border-b border-[#27272a] flex items-center justify-between bg-[#0f0f13] shrink-0"><h3 className="font-bold text-xl text-white tracking-tight">{modal.mode === "add" ? "Nova Demanda" : "Editar Demanda"}</h3><button onClick={closeModal} className="p-2.5 rounded-xl text-neutral-500 hover:text-white hover:bg-white/5 transition-colors"><X size={20} /></button></div>
-        <div className="p-6 sm:p-8 overflow-y-auto kp-scroll flex flex-col gap-6 bg-[#09090b] flex-1">
-          <div><label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">Título do Card *</label><input autoFocus value={modal.form.title || ''} onChange={(e) => updateForm({ title: e.target.value })} className={`w-full bg-[#12121a] border rounded-xl px-4 py-4 sm:py-3.5 text-sm text-white outline-none focus:border-indigo-500 transition-all ${validationError && String(validationError).includes("Título") ? "border-red-500" : "border-[#27272a]"}`} placeholder="Ex: Ajustar Fluxo de E-mails..." /></div>
-          <div><label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">Contexto / Descrição *</label><textarea value={modal.form.description || ''} onChange={(e) => updateForm({ description: e.target.value })} rows={4} className={`w-full bg-[#12121a] border rounded-xl px-4 py-4 sm:py-3.5 text-sm text-white outline-none focus:border-indigo-500 resize-none transition-all ${validationError && String(validationError).includes("Descrição") ? "border-red-500" : "border-[#27272a]"}`} placeholder="Descreva os requisitos técnicos ou regras de negócio..." /></div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5"><CustomSelect label="Prioridade *" required hasError={validationError && String(validationError).includes("Prioridade")} value={modal.form.priority || ''} onChange={(e: any) => updateForm({ priority: e.target.value })} options={<><option value="" className="bg-[#1c1d26] text-white">Selecione...</option><option value="Baixa" className="bg-[#1c1d26] text-white">Baixa</option><option value="Média" className="bg-[#1c1d26] text-white">Média</option><option value="Alta" className="bg-[#1c1d26] text-white">Alta</option></>} /><div><label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">Est. Minutos</label><input type="number" value={modal.form.durationMin ?? ''} onChange={(e) => updateForm({ durationMin: e.target.value })} className="w-full bg-[#12121a] border border-[#27272a] rounded-xl px-4 py-4 sm:py-3.5 text-sm text-white outline-none focus:border-indigo-500 shadow-sm" placeholder="Ex: 60" /></div></div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5"><CustomSelect label="Responsável *" required hasError={validationError && String(validationError).includes("Responsável")} value={modal.form.responsibleId || ''} onChange={(e: any) => updateForm({ responsibleId: e.target.value })} options={<><option value="" className="bg-[#1c1d26] text-white">Selecione a pessoa...</option>{responsibles.map((r: any) => <option key={r.id} value={r.id} className="bg-[#1c1d26] text-white">{r.name}</option>)}</>} /><CustomSelect label="Cliente *" required hasError={validationError && String(validationError).includes("Cliente")} value={modal.form.clientId || ''} onChange={(e: any) => updateForm({ clientId: e.target.value })} options={<><option value="" className="bg-[#1c1d26] text-white">Selecione a empresa...</option>{clients.map((c: any) => <option key={c.id} value={c.id} className="bg-[#1c1d26] text-white">{c.name}</option>)}</>} /></div>
-          
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-            <div><label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">Data de Início</label><input type="date" value={modal.form.startDate || ''} onChange={(e) => updateForm({ startDate: e.target.value })} className="w-full bg-[#12121a] border border-[#27272a] rounded-xl px-4 py-4 sm:py-3.5 text-sm text-white outline-none focus:border-indigo-500 [color-scheme:dark] shadow-sm" /></div>
-            <div><label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">Prazo / Deadline</label><input type="date" value={modal.form.dueDate || ''} onChange={(e) => updateForm({ dueDate: e.target.value })} className="w-full bg-[#12121a] border border-[#27272a] rounded-xl px-4 py-4 sm:py-3.5 text-sm text-white outline-none focus:border-indigo-500 [color-scheme:dark] shadow-sm" /></div>
-          </div>
-          
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-             <CustomSelect label="Fase do Fluxo *" required hasError={validationError && String(validationError).includes("Fase")} value={modal.form.status || ''} onChange={(e: any) => updateForm({ status: e.target.value, waitingFor: e.target.value === 'waiting' ? modal.form.waitingFor : "" })} options={<><option value="" className="bg-[#1c1d26] text-white">Selecionar...</option>{COLUMNS.map(c => <option key={c.id} value={c.id} className="bg-[#1c1d26] text-white">{c.name}</option>)}</>} />
-             {modal.form.status === 'waiting' && <div className="animate-fade-in"><CustomSelect label="Dependência *" required hasError={validationError && String(validationError).includes("Dependência")} value={modal.form.waitingFor || ''} onChange={(e: any) => updateForm({ waitingFor: e.target.value })} options={<><option value="" className="bg-[#1c1d26] text-white">Pendente de quem?</option><option value="Cliente" className="bg-[#1c1d26] text-white">Cliente</option><option value="Time Interno" className="bg-[#1c1d26] text-white">Time Interno</option></>} /></div>}
-          </div>
-          
-          <div className="mt-2"><div className="flex items-center justify-between mb-3"><label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 ml-1">Checklist de Passos</label><button onClick={addChecklistRow} className="text-[10px] font-black uppercase text-indigo-400 hover:text-indigo-300 transition-colors p-1 flex items-center gap-1"><Plus size={12}/> Adicionar Passo</button></div><div className="flex flex-col gap-3 pb-safe">{(modal.form.checklist || []).map((c: any) => (<div key={c.id} className="flex items-center gap-3"><button onClick={() => { setModal((m: any) => ({ ...m, form: { ...m.form, checklist: m.form.checklist.map((ci: any) => ci.id === c.id ? { ...ci, done: !ci.done } : ci) } })); }} className={`p-2.5 border rounded-xl transition-all shrink-0 ${c.done ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-400 shadow-[0_0_10px_rgba(99,102,241,0.2)]' : 'bg-[#12121a] border-[#27272a] text-neutral-700 hover:text-neutral-500 hover:bg-white/5'}`}><Check size={16}/></button><input value={c.text || ''} onChange={(e) => { setModal((m: any) => ({ ...m, form: { ...m.form, checklist: m.form.checklist.map((ci: any) => ci.id === c.id ? { ...ci, text: e.target.value } : ci) } })); }} className="flex-1 bg-[#12121a] border border-[#27272a] rounded-xl px-4 py-3.5 text-sm text-white outline-none focus:border-indigo-500 transition-all shadow-sm" placeholder="O que precisa ser feito?" /><button onClick={() => setModal((m: any) => ({ ...m, form: { ...m.form, checklist: m.form.checklist.filter((ci: any) => ci.id !== c.id) } }))} className="p-2.5 text-neutral-600 hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-colors"><X size={18} /></button></div>))}</div></div>
-        </div>
-        <div className="px-6 sm:px-8 py-5 border-t border-[#27272a] flex flex-col sm:flex-row items-center justify-end gap-3 bg-[#0f0f13] shrink-0 pb-[max(env(safe-area-inset-bottom),1.25rem)] md:pb-5"><button onClick={closeModal} className="w-full sm:w-auto text-xs font-bold uppercase tracking-widest px-6 py-4 rounded-xl text-neutral-500 hover:text-white hover:bg-white/5 transition-colors">Cancelar</button><button onClick={saveModal} className="w-full sm:w-auto text-xs font-black uppercase tracking-[0.15em] px-10 py-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition-all shadow-[0_0_20px_rgba(79,70,229,0.3)]">Salvar Demanda</button></div>
-      </div>
-      {validationError && <div className="absolute top-6 left-1/2 -translate-x-1/2 bg-red-600 text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 fade-in z-[80] font-bold text-[11px] uppercase tracking-widest w-11/12 max-w-md"><AlertTriangle size={20} className="shrink-0" /> <span className="truncate">{Array.isArray(validationError) ? `Obrigatório: ${validationError.join(", ")}` : String(validationError)}</span></div>}
     </div>
   );
 }

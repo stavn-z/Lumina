@@ -156,49 +156,53 @@ function TopWidgets() {
   )
 }
 
-// --- Componente de Login ---
-function LoginScreen({ onLogin }: { onLogin: any }) {
+// --- Componente de Login (Supabase Auth) ---
+function LoginScreen() {
+  const [mode, setMode] = useState<'login' | 'signup'>('login');
   const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  
-  const handleLoginSubmit = async () => {
+
+  const handleSubmit = async () => {
     setError('');
-    const cleanName = name.trim();
-    if (cleanName.length < 3) return setError("O nome deve ter no mínimo 3 caracteres.");
-    if (password.length < 4) return setError("A senha deve ter no mínimo 4 caracteres.");
-    
+    const supa = (window as any).supabaseClient;
+
+    if (mode === 'signup' && name.trim().length < 3) {
+      return setError("O nome deve ter no mínimo 3 caracteres.");
+    }
+    if (!email.includes('@')) return setError("Informe um e-mail válido.");
+    if (password.length < 6) return setError("A senha deve ter no mínimo 6 caracteres.");
+
     setLoading(true);
     try {
-      const { data: userRow, error: fetchErr } = await (window as any).supabaseClient
-        .from('responsibles')
-        .select('*')
-        .ilike('name', cleanName)
-        .maybeSingle();
-      
-      const isAdmin = cleanName.toLowerCase() === 'othávio campbell';
+      if (mode === 'signup') {
+        const { data, error: signUpErr } = await supa.auth.signUp({ email: email.trim(), password });
+        if (signUpErr) throw signUpErr;
+        if (!data.user) throw new Error("Não foi possível criar a conta.");
 
-      if (userRow) {
-        if (userRow.password && userRow.password !== password) {
-          setError("Senha incorreta!");
+        // Cria o registro correspondente em 'responsibles', ligado à conta de Auth
+        const { error: insertErr } = await supa
+          .from('responsibles')
+          .insert([{ id: 'r' + Date.now(), name: name.trim(), user_id: data.user.id, avatar: '' }]);
+        if (insertErr) throw insertErr;
+
+        // Se o Supabase exigir confirmação por e-mail, não haverá sessão ainda
+        if (!data.session) {
+          setError("Conta criada! Verifique seu e-mail para confirmar antes de entrar.");
           setLoading(false);
           return;
         }
-        if (!userRow.password) {
-           await (window as any).supabaseClient.from('responsibles').update({ password }).eq('id', userRow.id);
-        }
-        onLogin({ id: userRow.id, name: userRow.name, isAdmin, avatar: userRow.avatar || '' });
       } else {
-        const newResp = { id: 'r'+Date.now(), name: cleanName, password, avatar: '' };
-        const { error: insertErr } = await (window as any).supabaseClient.from('responsibles').insert([newResp]);
-        if (insertErr) throw insertErr;
-        onLogin({ id: newResp.id, name: cleanName, isAdmin, avatar: '' });
+        const { error: signInErr } = await supa.auth.signInWithPassword({ email: email.trim(), password });
+        if (signInErr) throw signInErr;
       }
-    } catch (e) {
+      // Não precisamos setar o usuário aqui: o onAuthStateChange no App cuida disso.
+    } catch (e: any) {
       console.error(e);
-      setError("Erro ao conectar no servidor. Tente novamente.");
+      setError(e.message === 'Invalid login credentials' ? "E-mail ou senha incorretos." : (e.message || "Erro ao conectar. Tente novamente."));
     }
     setLoading(false);
   };
@@ -214,6 +218,11 @@ function LoginScreen({ onLogin }: { onLogin: any }) {
           <p className="text-indigo-400/80 text-xs uppercase tracking-[0.2em] font-medium">Kanban & Analytics</p>
         </div>
 
+        <div className="flex bg-[#09090b] border border-[#27272a] rounded-xl p-1 mb-6">
+          <button onClick={() => { setMode('login'); setError(''); }} className={`flex-1 py-2.5 rounded-lg text-xs font-bold uppercase tracking-widest transition-all ${mode === 'login' ? 'bg-indigo-600 text-white' : 'text-neutral-500'}`}>Entrar</button>
+          <button onClick={() => { setMode('signup'); setError(''); }} className={`flex-1 py-2.5 rounded-lg text-xs font-bold uppercase tracking-widest transition-all ${mode === 'signup' ? 'bg-indigo-600 text-white' : 'text-neutral-500'}`}>Criar Conta</button>
+        </div>
+
         {error && (
           <div className="mb-4 bg-red-500/10 border border-red-500/20 text-red-400 text-xs px-3 py-2.5 rounded-lg flex items-center gap-2">
             <AlertTriangle size={14} className="shrink-0" /> {String(error)}
@@ -221,42 +230,51 @@ function LoginScreen({ onLogin }: { onLogin: any }) {
         )}
 
         <div className="space-y-4">
+          {mode === 'signup' && (
+            <div>
+              <label className="text-[11px] font-bold uppercase tracking-widest text-neutral-500 mb-1.5 block ml-1">Nome</label>
+              <input
+                className="w-full bg-[#09090b] border border-[#27272a] rounded-xl px-4 py-3.5 text-sm text-white outline-none focus:border-indigo-500 transition-colors"
+                placeholder="Seu nome completo"
+                value={name}
+                onChange={e => setName(e.target.value)}
+              />
+            </div>
+          )}
           <div>
-            <label className="text-[11px] font-bold uppercase tracking-widest text-neutral-500 mb-1.5 block ml-1">Usuário</label>
-            <input 
+            <label className="text-[11px] font-bold uppercase tracking-widest text-neutral-500 mb-1.5 block ml-1">E-mail</label>
+            <input
               autoFocus
-              className="w-full bg-[#09090b] border border-[#27272a] rounded-xl px-4 py-3.5 text-sm text-white outline-none focus:border-indigo-500 transition-colors" 
-              placeholder="Digite o seu nome" 
-              value={name || ''} 
-              onChange={e => setName(e.target.value)}
+              type="email"
+              className="w-full bg-[#09090b] border border-[#27272a] rounded-xl px-4 py-3.5 text-sm text-white outline-none focus:border-indigo-500 transition-colors"
+              placeholder="voce@empresa.com"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleSubmit()}
             />
           </div>
           <div>
             <label className="text-[11px] font-bold uppercase tracking-widest text-neutral-500 mb-1.5 block ml-1">Senha</label>
             <div className="relative">
-              <input 
+              <input
                 type={showPassword ? "text" : "password"}
-                className="w-full bg-[#09090b] border border-[#27272a] rounded-xl px-4 py-3.5 pr-10 text-sm text-white outline-none focus:border-indigo-500 transition-colors" 
-                placeholder="Sua senha secreta" 
-                value={password || ''} 
+                className="w-full bg-[#09090b] border border-[#27272a] rounded-xl px-4 py-3.5 pr-10 text-sm text-white outline-none focus:border-indigo-500 transition-colors"
+                placeholder="Mínimo de 6 caracteres"
+                value={password}
                 onChange={e => setPassword(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleLoginSubmit()}
+                onKeyDown={e => e.key === 'Enter' && handleSubmit()}
               />
-              <button 
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-neutral-300 transition-colors p-1"
-              >
+              <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-neutral-300 transition-colors p-1">
                 {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
             </div>
           </div>
-          <button 
-            disabled={!name.trim() || !password || loading}
-            className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl px-4 py-4 font-bold tracking-wide transition-all shadow-[0_0_20px_rgba(79,70,229,0.3)] flex justify-center items-center gap-2 mt-4" 
-            onClick={handleLoginSubmit}
+          <button
+            disabled={loading || !email || !password || (mode === 'signup' && !name.trim())}
+            className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl px-4 py-4 font-bold tracking-wide transition-all shadow-[0_0_20px_rgba(79,70,229,0.3)] flex justify-center items-center gap-2 mt-4"
+            onClick={handleSubmit}
           >
-            {loading ? <Cloud size={18} className="animate-pulse" /> : 'Entrar no Sistema'}
+            {loading ? <Cloud size={18} className="animate-pulse" /> : (mode === 'signup' ? 'Criar Conta' : 'Entrar no Sistema')}
           </button>
         </div>
       </div>
@@ -267,26 +285,6 @@ function LoginScreen({ onLogin }: { onLogin: any }) {
 // --- Componente Principal ---
 export default function App() {
   const [supabaseReady, setSupabaseReady] = useState(!!(window as any).supabaseClient);
-
-  // Injetar Polyfill de Drag & Drop para Mobile no carregamento da App
-  useEffect(() => {
-    const loadMobileDragDrop = async () => {
-       const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-       if (!isTouchDevice) return;
-       if ((window as any).MobileDragDrop) return;
-       
-       const script1 = document.createElement('script');
-       script1.src = 'https://cdn.jsdelivr.net/npm/mobile-drag-drop@2.3.0-rc.2/index.min.js';
-       script1.onload = () => {
-          (window as any).MobileDragDrop.polyfill({
-             holdToDrag: 200 // Diminui o delay de arrasto para 0.2s para ficar mais fluido
-          });
-          window.addEventListener('touchmove', function() {}, {passive: false});
-       };
-       document.head.appendChild(script1);
-    };
-    loadMobileDragDrop();
-  }, []);
 
   useEffect(() => {
     if ((window as any).supabase) {
@@ -307,22 +305,39 @@ export default function App() {
     document.body.appendChild(script);
   }, []);
 
-  const [user, setUser] = useState<any>(() => {
-    try {
-      const saved = localStorage.getItem("kanban_user_obj");
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      return null;
+  const [user, setUser] = useState<any>(null);
+  const [authChecked, setAuthChecked] = useState(false);
+
+  useEffect(() => {
+    if (!supabaseReady) return;
+    const supa = (window as any).supabaseClient;
+
+    async function loadProfile(authUser: any) {
+      if (!authUser) { setUser(null); setAuthChecked(true); return; }
+      const { data: profile } = await supa
+        .from('responsibles')
+        .select('*')
+        .eq('user_id', authUser.id)
+        .maybeSingle();
+      if (profile) {
+        setUser({ id: profile.id, name: profile.name, isAdmin: !!profile.is_admin, avatar: profile.avatar || '' });
+      } else {
+        setUser(null);
+      }
+      setAuthChecked(true);
     }
-  });
 
-  const handleLogin = (userData: any) => {
-    localStorage.setItem("kanban_user_obj", JSON.stringify(userData));
-    setUser(userData);
-  };
+    supa.auth.getSession().then(({ data }: any) => loadProfile(data.session?.user || null));
 
-  const handleLogout = () => {
-    localStorage.removeItem("kanban_user_obj");
+    const { data: sub } = supa.auth.onAuthStateChange((_event: string, session: any) => {
+      loadProfile(session?.user || null);
+    });
+
+    return () => sub.subscription.unsubscribe();
+  }, [supabaseReady]);
+
+  const handleLogout = async () => {
+    await (window as any).supabaseClient.auth.signOut();
     setUser(null);
   };
 
@@ -337,8 +352,16 @@ export default function App() {
     );
   }
 
+  if (!authChecked) {
+    return (
+      <div className="fixed inset-0 bg-[#09090b] flex flex-col items-center justify-center p-4 text-center">
+        <div className="text-indigo-500 font-bold uppercase tracking-widest animate-pulse text-xs">Verificando sessão...</div>
+      </div>
+    );
+  }
+
   if (!user) {
-    return <LoginScreen onLogin={handleLogin} />;
+    return <LoginScreen />;
   }
 
   return <KanbanMain user={user} setUser={setUser} onLogout={handleLogout} />;
@@ -380,7 +403,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Busca dados da Nuvem
+  // Busca dados da Nuvem (o RLS já filtra o que cada usuário pode ver)
   useEffect(() => {
     async function fetchCloudData() {
       try {
@@ -406,7 +429,6 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
             checklist: Array.isArray(t.checklist) ? t.checklist : [],
             timerElapsed: t.timerElapsed || 0,
             durationMin: t.durationMin || 0,
-            // Fallbacks inteligentes: Se não existir createdAt, usamos o dueDate ou a data de hoje.
             createdAt: t.createdAt || t.dueDate || getBrasiliaDate(),
             completedAt: t.completedAt || ((t.status === 'done' || t.status === 'formalize') ? (t.dueDate || getBrasiliaDate()) : '')
           })));
@@ -743,7 +765,6 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
 
       if (donePrompt.targetId) {
         let toIndex = newTasks.findIndex(t => t.id.toString() === donePrompt.targetId.toString());
-        // Ajuste de Reordenamento na mesma coluna para baixo
         if (prev[fromIndex].status === 'done' && fromIndex < originalToIndex) {
            toIndex += 1;
         }
@@ -801,7 +822,6 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
       if (targetId) {
         let toIndex = newTasks.findIndex(t => t.id.toString() === targetId.toString());
         
-        // Ajuste fundamental de reordenamento: se foi puxado de cima para baixo na mesma coluna, encaixa abaixo do alvo.
         if (originalStatus === newStatus && fromIndex < originalToIndex) {
             toIndex += 1;
         }
@@ -860,10 +880,58 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
     });
   };
 
-  const handleDragStart = (e: any, taskId: string) => {
-    // text/plain is much more reliable across browsers/mobile polyfills
-    e.dataTransfer.setData("text/plain", taskId);
-  };
+  // --- Drag & Drop universal (mouse + touch) via Pointer Events ---
+  const [dragState, setDragState] = useState<{ id: string, title: string, x: number, y: number } | null>(null);
+  const pointerStartRef = useRef<{ x: number, y: number, id: string, title: string } | null>(null);
+  const DRAG_THRESHOLD = 8;
+
+  function findDropTarget(x: number, y: number) {
+    const el = document.elementFromPoint(x, y);
+    if (!el) return { taskId: null as string | null, columnId: null as string | null };
+    const cardEl = (el as Element).closest('[data-task-id]');
+    const colEl = (el as Element).closest('[data-column-id]');
+    return {
+      taskId: cardEl ? cardEl.getAttribute('data-task-id') : null,
+      columnId: colEl ? colEl.getAttribute('data-column-id') : null,
+    };
+  }
+
+  function handleHandlePointerDown(e: React.PointerEvent, taskId: string, title: string, isEditable: boolean) {
+    if (!isEditable) return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    pointerStartRef.current = { x: e.clientX, y: e.clientY, id: taskId, title };
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+  }
+
+  function handleBoardPointerMove(e: React.PointerEvent) {
+    const start = pointerStartRef.current;
+    if (!start) return;
+    const dx = e.clientX - start.x;
+    const dy = e.clientY - start.y;
+    if (!dragState) {
+      if (Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+      setDragState({ id: start.id, title: start.title, x: e.clientX, y: e.clientY });
+    } else {
+      setDragState(prev => prev ? { ...prev, x: e.clientX, y: e.clientY } : prev);
+      const target = findDropTarget(e.clientX, e.clientY);
+      setDragOverId(target.taskId && target.taskId !== dragState.id ? target.taskId : null);
+    }
+  }
+
+  function handleBoardPointerUp(e: React.PointerEvent) {
+    const start = pointerStartRef.current;
+    if (start && dragState) {
+      const target = findDropTarget(e.clientX, e.clientY);
+      if (target.columnId) {
+        handleRequestMove(dragState.id, target.taskId && target.taskId !== dragState.id ? target.taskId : null, target.columnId);
+      }
+    }
+    pointerStartRef.current = null;
+    setDragState(null);
+    setDragOverId(null);
+  }
 
   // Avatar sempre atualizado buscando do DB com fallback para o nome
   const currentUserDB = responsibles.find(r => r.id === user.id) || responsibles.find(r => r.name.toLowerCase() === user.name.toLowerCase());
@@ -994,7 +1062,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
 
         {/* MODAIS Overlay */}
         {activeTab === 'timer' && <OverlayModal title="Cronómetro" icon={<Clock size={20} className="text-amber-500"/>} isClosing={isClosingModal} onClose={handleCloseTab}><TimerPanelContent tasks={filteredTasks} now={now} getElapsed={getElapsed} onToggleTimer={toggleTimer} user={user} /></OverlayModal>}
-        {activeTab === 'responsibles' && <OverlayModal title="Equipe (Contas)" icon={<Users size={20} className="text-indigo-400"/>} isClosing={isClosingModal} onClose={handleCloseTab}><ResponsiblesPanelContent responsibles={responsibles} setResponsibles={setResponsibles} tasks={tasks} setTasks={setTasks} user={user} /></OverlayModal>}
+        {activeTab === 'responsibles' && <OverlayModal title="Equipe (Contas)" icon={<Users size={20} className="text-indigo-400"/>} isClosing={isClosingModal} onClose={handleCloseTab}><ResponsiblesPanelContent responsibles={responsibles} tasks={tasks} user={user} /></OverlayModal>}
         {activeTab === 'clients' && <OverlayModal title="Gestão de Clientes" icon={<Building2 size={20} className="text-purple-400"/>} isClosing={isClosingModal} onClose={handleCloseTab}><ClientsPanelContent clients={visibleClients} setClients={setClients} tasks={tasks} setTasks={setTasks} user={user} getElapsed={getElapsed} now={now} /></OverlayModal>}
         {activeTab === 'reports' && <AnalyticsModal isClosing={isClosingModal} onClose={handleCloseTab} tasks={filteredTasks} clients={visibleClients} responsibles={responsibles} now={now} getElapsed={getElapsed} globalLookerUrl={globalLookerUrl} setGlobalLookerUrl={setGlobalLookerUrl} />}
 
@@ -1079,13 +1147,18 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
           </div>
 
           {/* Quadro Kanban */}
-          <div className="flex-1 relative min-h-0">
+          <div
+            className="flex-1 relative min-h-0"
+            onPointerMove={handleBoardPointerMove}
+            onPointerUp={handleBoardPointerUp}
+            onPointerCancel={handleBoardPointerUp}
+          >
             <div className="absolute inset-0 overflow-x-auto overflow-y-hidden px-4 md:px-8 pb-4 md:pb-8 kp-scroll">
               <div className="flex gap-4 sm:gap-5 h-full min-w-max items-stretch">
                 {COLUMNS.map((col) => {
                   const colTasks = filteredTasks.filter((t) => t.status === col.id);
                   return (
-                    <div key={col.id} className="w-[88vw] max-w-[340px] sm:w-[340px] shrink-0 glass-panel rounded-2xl flex flex-col h-full shadow-sm relative">
+                    <div key={col.id} data-column-id={col.id} className="w-[88vw] max-w-[340px] sm:w-[340px] shrink-0 glass-panel rounded-2xl flex flex-col h-full shadow-sm relative">
                       
                       {/* Header da Coluna */}
                       <div className="px-5 pt-5 pb-4 flex items-center justify-between border-b border-white/5 shrink-0">
@@ -1112,14 +1185,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                       </div>
                       
                       {/* Área de Cartões */}     
-                      <div 
-                        className="px-3 pb-3 flex-1 overflow-y-auto overflow-x-hidden kp-scroll flex flex-col gap-3 mt-3 min-h-0"
-                        onDragOver={(e) => { e.preventDefault(); }}
-                        onDrop={(e) => {
-                          e.preventDefault();
-                          handleRequestMove(e.dataTransfer.getData("text/plain"), null, col.id);
-                        }}
-                      >
+                      <div className="px-3 pb-3 flex-1 overflow-y-auto overflow-x-hidden kp-scroll flex flex-col gap-3 mt-3 min-h-0">
                         {colTasks.length === 0 && (
                           <div className="text-center text-[10px] font-medium uppercase tracking-widest text-neutral-600 py-10 border border-dashed border-white/5 rounded-xl mx-2">
                             Solte itens aqui
@@ -1152,7 +1218,12 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                           }
 
                           return (
-                            <div key={t.id} className={`rounded-2xl bg-[#1c1d26] border p-4 transition-all group relative ${isDoneOrCancelled ? 'opacity-60' : ''} ${!isEditable ? 'opacity-70 cursor-not-allowed' : 'cursor-grab active:cursor-grabbing hover:border-[#3f3f46] shadow-md'} ${dragOverId === t.id ? 'border-indigo-500 shadow-[0_-2px_15px_rgba(99,102,241,0.3)]' : 'border-[#2d3142]'}`} draggable={isEditable} onDragStart={(e) => { if(isEditable) handleDragStart(e, t.id); }} onDragOver={(e) => { if(isEditable) { e.preventDefault(); e.stopPropagation(); setDragOverId(t.id); } }} onDragLeave={() => setDragOverId(null)} onDrop={(e) => { if(isEditable) { e.preventDefault(); e.stopPropagation(); setDragOverId(null); handleRequestMove(e.dataTransfer.getData("text/plain"), t.id, col.id); } }}>
+                            <div
+                              key={t.id}
+                              data-task-id={t.id}
+                              style={{ touchAction: 'pan-y' }}
+                              className={`rounded-2xl bg-[#1c1d26] border p-4 transition-all group relative ${isDoneOrCancelled ? 'opacity-60' : ''} ${!isEditable ? 'opacity-70 cursor-not-allowed' : 'hover:border-[#3f3f46] shadow-md'} ${dragOverId === t.id ? 'border-indigo-500 shadow-[0_-2px_15px_rgba(99,102,241,0.3)]' : 'border-[#2d3142]'} ${dragState?.id === t.id ? 'opacity-40' : ''}`}
+                            >
                               
                               {/* Badges do Cartão */}
                               <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
@@ -1172,7 +1243,11 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                                           <button onClick={(e) => { e.stopPropagation(); moveTaskVertical(t.id, 'down'); }} className="p-1 bg-white/5 rounded text-neutral-400 active:bg-white/10 active:text-white"><ChevronDown size={12}/></button>
                                        </div>
                                     )}
-                                    <GripVertical size={14} className="text-neutral-600 shrink-0 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity block" />
+                                    <GripVertical
+                                      size={18}
+                                      onPointerDown={(e) => handleHandlePointerDown(e, t.id, t.title, isEditable)}
+                                      className="text-neutral-500 shrink-0 opacity-100 transition-opacity block cursor-grab active:cursor-grabbing p-1 -m-1 touch-none"
+                                    />
                                   </div>
                                 ) : (
                                   <Lock size={12} className="text-neutral-600 shrink-0 block" />
@@ -1267,6 +1342,16 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
         </div>
       </div>
 
+      {/* Fantasma do card durante o arrasto (mouse ou toque) */}
+      {dragState && (
+        <div
+          className="fixed z-[200] pointer-events-none px-4 py-3 rounded-xl bg-[#1c1d26] border border-indigo-500 shadow-2xl text-xs font-bold text-white max-w-[260px] truncate"
+          style={{ left: dragState.x + 12, top: dragState.y + 12 }}
+        >
+          {dragState.title}
+        </div>
+      )}
+
       {/* MOBILE BOTTOM NAV */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 flex items-center justify-around pt-2.5 px-2 pb-[max(env(safe-area-inset-bottom),0.75rem)] bg-[#12121a]/95 backdrop-blur-md border-t border-[#27272a] z-[100] shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
          <MobileNavBtn icon={<LayoutDashboard size={20} />} label="Board" active={activeTab === 'board' && !isClosingModal} onClick={() => {if(activeTab !== 'board') handleCloseTab()}} />
@@ -1277,7 +1362,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
       </div>
 
       {/* Pop-up: Perfil do Utilizador */}
-      {profileModal && <ProfileModal user={user} responsibles={responsibles} onClose={() => setProfileModal(false)} onUpdate={(u: any) => { setUser(u); localStorage.setItem("kanban_user_obj", JSON.stringify(u)); }} />}
+      {profileModal && <ProfileModal user={user} responsibles={responsibles} onClose={() => setProfileModal(false)} onUpdate={(u: any) => { setUser(u); }} />}
 
       {/* Pop-up: Aguardando Retorno */}
       {waitingPrompt && (
@@ -1373,7 +1458,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                   const idToDelete = confirmDelete;
                   setTasks((prev: any) => prev.filter((t: any) => t.id !== idToDelete));
                   setConfirmDelete(null);
-                  if (window.supabaseClient) await window.supabaseClient.from('tasks').delete().eq('id', idToDelete.toString());
+                  if ((window as any).supabaseClient) await (window as any).supabaseClient.from('tasks').delete().eq('id', idToDelete.toString());
                 }} 
                 className="w-full sm:flex-1 py-3.5 sm:py-3 rounded-2xl bg-red-600 hover:bg-red-500 text-white font-bold transition-all text-sm shadow-lg shadow-red-600/10"
               >
@@ -1400,37 +1485,38 @@ function ProfileModal({ user, responsibles, onClose, onUpdate }: any) {
   const [password, setPassword] = useState('');
   const [avatarInput, setAvatarInput] = useState(activeAvatar);
   const [isLoading, setIsLoading] = useState(false);
+  const [feedback, setFeedback] = useState('');
 
   const handleSave = async () => {
     setIsLoading(true);
+    setFeedback('');
     let updatedUser = { ...user };
-    let updates: any = {};
-    
-    if (avatarInput.trim() !== activeAvatar) {
-      updates.avatar = avatarInput.trim();
-      updatedUser.avatar = avatarInput.trim();
-    }
+    const supa = (window as any).supabaseClient;
 
-    if (password.trim()) {
-      if (password.trim().length < 4) {
-        alert("A senha deve ter no mínimo 4 caracteres.");
-        setIsLoading(false);
-        return;
+    try {
+      if (avatarInput.trim() !== activeAvatar) {
+        await supa.from('responsibles').update({ avatar: avatarInput.trim() }).eq('id', currentUserDB?.id || user.id);
+        updatedUser.avatar = avatarInput.trim();
       }
-      updates.password = password.trim();
+
+      if (password.trim()) {
+        if (password.trim().length < 6) {
+          setFeedback("A senha deve ter no mínimo 6 caracteres.");
+          setIsLoading(false);
+          return;
+        }
+        // Senha agora é trocada via Supabase Auth, não mais gravada em texto puro na tabela.
+        const { error } = await supa.auth.updateUser({ password: password.trim() });
+        if (error) throw error;
+      }
+
+      onUpdate(updatedUser);
+      onClose();
+    } catch (e) {
+      console.error("Erro ao alterar dados", e);
+      setFeedback("Não foi possível salvar. Tente novamente.");
     }
-    
-    if (Object.keys(updates).length > 0) {
-       try {
-         await (window as any).supabaseClient.from('responsibles').update(updates).eq('id', currentUserDB?.id || user.id);
-       } catch (e) {
-         console.error("Erro ao alterar dados", e);
-       }
-    }
-    
-    onUpdate(updatedUser);
     setIsLoading(false);
-    onClose();
   };
 
   return (
@@ -1451,6 +1537,12 @@ function ProfileModal({ user, responsibles, onClose, onUpdate }: any) {
              </div>
              <p className="text-sm font-bold text-white">{user.name}</p>
           </div>
+
+          {feedback && (
+            <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs px-3 py-2.5 rounded-lg flex items-center gap-2">
+              <AlertTriangle size={14} className="shrink-0" /> {feedback}
+            </div>
+          )}
 
           <div>
             <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">URL da Fotografia de Perfil</label>
@@ -1582,44 +1674,16 @@ function TimerPanelContent({ tasks, now, getElapsed, onToggleTimer, user }: any)
   );
 }
 
-function ResponsiblesPanelContent({ responsibles, setResponsibles, tasks, setTasks, user }: any) {
-  const [name, setName] = useState('');
-  const [password, setPassword] = useState('');
-  
-  const add = async () => { 
-    if (!name.trim() || !password.trim()) return; 
-    const newId = 'r'+Date.now();
-    const newResp = { id: newId, name: name.trim(), password: password, avatar: '' };
-    setResponsibles([...responsibles, newResp]); 
-    setName(''); 
-    setPassword('');
-    if (window.supabaseClient) {
-      await window.supabaseClient.from('responsibles').insert([newResp]);
-    }
-  };
-
-  const remove = async (id: string) => { 
-    if(!user.isAdmin && id !== user.id) return alert("Apenas administradores podem remover contas.");
-    setResponsibles((prev: any) => prev.filter((r: any) => r.id !== id)); 
-    setTasks((prev: any) => prev.map((t: any) => t.responsibleId === id ? { ...t, responsibleId: '' } : t)); 
-    if (window.supabaseClient) {
-      await window.supabaseClient.from('responsibles').delete().eq('id', id.toString());
-    }
-  };
-
+// A criação de contas agora acontece pela tela de login ("Criar Conta"), via Supabase Auth.
+// Este painel passa a ser apenas de visualização da equipe — não é mais possível criar
+// contas por aqui digitando nome+senha (isso não gerava mais um login funcional).
+function ResponsiblesPanelContent({ responsibles, tasks, user }: any) {
   return (
     <div className="flex flex-col h-full fade-in">
       {user.isAdmin && (
-        <div className="bg-[#12121a] p-6 rounded-3xl border border-[#27272a] mb-8 flex flex-col sm:flex-row gap-5 sm:items-end shadow-sm">
-          <div className="w-full sm:flex-1">
-            <label className="text-[10px] uppercase font-bold tracking-widest text-neutral-500 mb-2 block ml-1">Nome Completo</label>
-            <input value={name || ''} onChange={e=>setName(e.target.value)} className="w-full bg-[#09090b] border border-[#27272a] rounded-xl px-4 py-4 sm:py-3.5 text-sm text-white outline-none focus:border-indigo-500 transition-colors" placeholder="Ex: João da Silva" />
-          </div>
-          <div className="w-full sm:flex-1">
-            <label className="text-[10px] uppercase font-bold tracking-widest text-neutral-500 mb-2 block ml-1">Senha Inicial</label>
-            <input type="password" value={password || ''} onChange={e=>setPassword(e.target.value)} onKeyDown={e=>e.key === 'Enter' && add()} className="w-full bg-[#09090b] border border-[#27272a] rounded-xl px-4 py-4 sm:py-3.5 text-sm text-white outline-none focus:border-indigo-500 transition-colors" placeholder="Ex: lumina123" />
-          </div>
-          <button onClick={add} className="w-full sm:w-auto h-[52px] sm:h-[48px] px-8 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold uppercase tracking-widest transition-colors flex items-center justify-center gap-2 shrink-0 shadow-[0_0_15px_rgba(79,70,229,0.3)]"><Plus size={16}/> Criar</button>
+        <div className="bg-indigo-500/5 border border-indigo-500/20 text-indigo-300 text-xs px-5 py-4 rounded-2xl mb-8 leading-relaxed">
+          Novos consultores criam a própria conta pela tela de login, na aba "Criar Conta".
+          Assim que criarem, aparecem automaticamente nesta lista.
         </div>
       )}
 
@@ -1633,13 +1697,10 @@ function ResponsiblesPanelContent({ responsibles, setResponsibles, tasks, setTas
                   <UserAvatar url={r.avatar} name={r.name} />
                 </div>
                 <div className="flex flex-col">
-                  <span className="text-base font-bold text-neutral-100">{r.name}</span>
+                  <span className="text-base font-bold text-neutral-100">{r.name}{r.is_admin ? ' (Admin)' : ''}</span>
                   <span className="text-[10px] text-neutral-500 font-bold uppercase tracking-widest mt-0.5">{count} Demandas</span>
                 </div>
               </div>
-              {(user.isAdmin || r.id === user.id) && (
-                 <button onClick={() => remove(r.id)} className="p-2.5 text-neutral-600 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-colors sm:opacity-0 group-hover:opacity-100"><Trash2 size={18}/></button>
-              )}
             </div>
           )
         })}
@@ -1665,7 +1726,6 @@ function ClientModal({ modal, setModal, setClients, user }: any) {
   const saveClient = () => {
     if (!form.name || !form.name.trim()) { setValidationError("O nome do cliente é obrigatório."); return; }
     
-    // Tratamento para garantir que as horas contratadas sejam um número ou 0
     const finalForm = { 
        ...form, 
        contractedHours: form.contractedHours === '' ? 0 : parseFloat(form.contractedHours) || 0 
@@ -1751,8 +1811,8 @@ function ClientsPanelContent({ clients, setClients, tasks, setTasks, user, getEl
     if(!user.isAdmin) return alert("Apenas administradores podem remover clientes.");
     setClients((prev: any) => prev.filter((c: any) => c.id !== id)); 
     setTasks((prev: any) => prev.map((t: any) => t.clientId === id ? { ...t, clientId: '' } : t)); 
-    if (window.supabaseClient) {
-      await window.supabaseClient.from('clients').delete().eq('id', id.toString());
+    if ((window as any).supabaseClient) {
+      await (window as any).supabaseClient.from('clients').delete().eq('id', id.toString());
     }
   };
 
@@ -1847,8 +1907,7 @@ function AnalyticsModal({ onClose, tasks, clients, responsibles, now, getElapsed
     setGlobalLookerUrl(finalUrl);
     setIsEditing(false);
     
-    // Salvar no Supabase (Necessário ter a tabela 'settings')
-    if (window.supabaseClient) {
+    if ((window as any).supabaseClient) {
        try {
          const { error } = await (window as any).supabaseClient.from('settings').upsert({ id: 'global', looker_global_url: finalUrl });
          if(error) console.error("Erro ao salvar Looker URL global", error);
@@ -1952,7 +2011,6 @@ function AnalyticsModal({ onClose, tasks, clients, responsibles, now, getElapsed
                </div>
              )}
 
-             {/* Area sem duplo-scroll para permitir que a rolagem funcione livremente no telemóvel */}
              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div>
                    <h3 className="text-[10px] font-bold text-neutral-500 mb-4 uppercase tracking-[0.2em] ml-1">Por Fase do Fluxo</h3>
@@ -2073,7 +2131,6 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize }: an
   const [copiedNotionId, setCopiedNotionId] = useState<string | null>(null);
   const [meetingData, setMeetingData] = useState<any>({});
 
-  // Separação Inteligente: Finalizadas vs Andamento
   const tasksByClient = useMemo(() => {
     return tasks.reduce((acc: any, task: any) => {
       const cId = task.clientId || 'no_client';

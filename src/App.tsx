@@ -410,6 +410,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
             ...c,
             name: c.name || '',
             lookerUrl: c.lookerUrl || '',
+            ownerId: c.ownerId || '',
             emails: Array.isArray(c.emails) ? c.emails : (typeof c.email === 'string' && c.email ? c.email.split(',').map(e => e.trim()) : []),
             contractedHours: parseFloat(c.contractedHours) || 0
           })));
@@ -500,16 +501,22 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
     return t.timerElapsed || 0;
   };
 
+  // Lógica de Visibilidade de Clientes: Admin vê todos, usuário vê os dele ou os que tem tarefas atribuídas.
+  const visibleClients = useMemo(() => {
+    if (user.isAdmin) return clients;
+    return clients.filter(c => c.ownerId === user.id || tasks.some(t => t.clientId === c.id && t.responsibleId === user.id));
+  }, [clients, tasks, user]);
+
   const [dismissedLimits, setDismissedLimits] = useState(new Set());
 
   const clientsNearLimit = useMemo(() => {
-    return clients.filter(c => {
+    return visibleClients.filter(c => {
       if (!c.contractedHours) return false;
       const cTasks = tasks.filter(t => t.clientId === c.id);
       const hours = cTasks.reduce((acc, t) => acc + (getElapsed(t) / 3600), 0);
       return (c.contractedHours - hours) <= 5;
     });
-  }, [clients, tasks, now]);
+  }, [visibleClients, tasks, now]);
 
   const pendingLimitAlerts = clientsNearLimit.filter(c => !dismissedLimits.has(c.id));
 
@@ -979,8 +986,8 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
         {/* MODAIS Overlay */}
         {activeTab === 'timer' && <OverlayModal title="Cronómetro" icon={<Clock size={20} className="text-amber-500"/>} isClosing={isClosingModal} onClose={handleCloseTab}><TimerPanelContent tasks={filteredTasks} now={now} getElapsed={getElapsed} onToggleTimer={toggleTimer} user={user} /></OverlayModal>}
         {activeTab === 'responsibles' && <OverlayModal title="Equipe (Contas)" icon={<Users size={20} className="text-indigo-400"/>} isClosing={isClosingModal} onClose={handleCloseTab}><ResponsiblesPanelContent responsibles={responsibles} setResponsibles={setResponsibles} tasks={tasks} setTasks={setTasks} user={user} /></OverlayModal>}
-        {activeTab === 'clients' && <OverlayModal title="Gestão de Clientes" icon={<Building2 size={20} className="text-purple-400"/>} isClosing={isClosingModal} onClose={handleCloseTab}><ClientsPanelContent clients={clients} setClients={setClients} tasks={tasks} setTasks={setTasks} user={user} getElapsed={getElapsed} now={now} /></OverlayModal>}
-        {activeTab === 'reports' && <AnalyticsModal isClosing={isClosingModal} onClose={handleCloseTab} tasks={filteredTasks} clients={clients} responsibles={responsibles} now={now} getElapsed={getElapsed} globalLookerUrl={globalLookerUrl} setGlobalLookerUrl={setGlobalLookerUrl} />}
+        {activeTab === 'clients' && <OverlayModal title="Gestão de Clientes" icon={<Building2 size={20} className="text-purple-400"/>} isClosing={isClosingModal} onClose={handleCloseTab}><ClientsPanelContent clients={visibleClients} setClients={setClients} tasks={tasks} setTasks={setTasks} user={user} getElapsed={getElapsed} now={now} /></OverlayModal>}
+        {activeTab === 'reports' && <AnalyticsModal isClosing={isClosingModal} onClose={handleCloseTab} tasks={visibleTasks} clients={visibleClients} responsibles={responsibles} now={now} getElapsed={getElapsed} globalLookerUrl={globalLookerUrl} setGlobalLookerUrl={setGlobalLookerUrl} />}
 
         {/* BOARD VIEW */}
         <div className={`flex-1 flex flex-col min-h-0 ${activeTab !== 'board' ? 'hidden md:flex opacity-30 pointer-events-none transition-opacity duration-300' : 'fade-in'}`}>
@@ -997,7 +1004,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                      <Filter size={16} /> <span className="hidden lg:inline">Filtros</span>
                    </button>
 
-                   <div className="glass-panel h-11 flex-1 flex items-center px-4 rounded-xl gap-3 shadow-sm min-w-0">
+                   <div className="glass-panel h-11 flex-1 flex items-center px-4 rounded-xl gap-3 shadow-sm min-w-0 lg:flex">
                      <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-500">Progresso</span>
                      <div className="flex-1 h-1.5 rounded-full bg-black/50 overflow-hidden border border-white/5">
                         <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${overallProgress}%` }} />
@@ -1019,7 +1026,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                   <div className="glass-panel w-full p-4 rounded-xl flex flex-col lg:flex-row lg:flex-wrap items-stretch lg:items-center gap-4 shadow-sm border-indigo-500/20 bg-indigo-500/5">
                     
                     <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 w-full lg:w-auto">
-                       <FilterSelect value={filterClient} onChange={setFilterClient} options={clients} defaultLabel="Todos Clientes" />
+                       <FilterSelect value={filterClient} onChange={setFilterClient} options={visibleClients} defaultLabel="Todos Clientes" />
                        <div className="hidden sm:block w-px h-4 bg-white/10"></div>
                        <FilterSelect value={filterResp} onChange={setFilterResp} options={responsibles} defaultLabel="Todos Responsáveis" />
                        <div className="hidden sm:block w-px h-4 bg-white/10"></div>
@@ -1095,7 +1102,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                         </button>
                       </div>
                       
-                      {/* Área de Cartões - min-h-0 garante que o scroll interno funcione na perfeição no mobile */}     
+                      {/* Área de Cartões */}     
                       <div 
                         className="px-3 pb-3 flex-1 overflow-y-auto overflow-x-hidden kp-scroll flex flex-col gap-3 mt-3 min-h-0"
                       >
@@ -1349,7 +1356,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
 
       {/* Modais de Popups Principais */}
       {closureModal && <ClosureModal tasks={tasksForClosure} clients={clients} responsibles={responsibles} onClose={() => setClosureModal(false)} onFormalize={(clientId: string | null) => { if (clientId) { setTasks((prev: any) => prev.map((t: any) => (t.status === 'done' && t.clientId === clientId) ? { ...t, status: 'formalize' } : t)); } else { setTasks((prev: any) => prev.map((t: any) => t.status === 'done' ? { ...t, status: 'formalize' } : t)); setClosureModal(false); } }} />}
-      {modal && <TaskModal modal={modal} setModal={setModal} clients={clients} responsibles={responsibles} closeModal={closeModal} saveModal={saveModal} validationError={validationError} setValidationError={setValidationError} />}
+      {modal && <TaskModal modal={modal} setModal={setModal} clients={visibleClients} responsibles={responsibles} closeModal={closeModal} saveModal={saveModal} validationError={validationError} setValidationError={setValidationError} user={user} />}
     </div>
   );
 }
@@ -1611,7 +1618,7 @@ function ResponsiblesPanelContent({ responsibles, setResponsibles, tasks, setTas
   );
 }
 
-function ClientModal({ modal, setModal, setClients }: any) {
+function ClientModal({ modal, setModal, setClients, user }: any) {
   const [form, setForm] = useState(modal.form);
   const [newEmail, setNewEmail] = useState("");
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -1627,7 +1634,18 @@ function ClientModal({ modal, setModal, setClients }: any) {
 
   const saveClient = () => {
     if (!form.name || !form.name.trim()) { setValidationError("O nome do cliente é obrigatório."); return; }
-    if (modal.mode === "add") { setClients((prev: any) => [...prev, { ...form, id: 'c' + Date.now() }]); } else { setClients((prev: any) => prev.map((c: any) => c.id === form.id ? form : c)); }
+    
+    // Tratamento para garantir que as horas contratadas sejam um número ou 0
+    const finalForm = { 
+       ...form, 
+       contractedHours: form.contractedHours === '' ? 0 : parseFloat(form.contractedHours) || 0 
+    };
+
+    if (modal.mode === "add") { 
+       setClients((prev: any) => [...prev, { ...finalForm, id: 'c' + Date.now(), ownerId: user.id }]); 
+    } else { 
+       setClients((prev: any) => prev.map((c: any) => c.id === finalForm.id ? finalForm : c)); 
+    }
     setModal(null);
   };
 
@@ -1647,7 +1665,7 @@ function ClientModal({ modal, setModal, setClients }: any) {
 
           <div>
             <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">Teto de Horas Contratadas (Mensal)</label>
-            <input type="number" value={form.contractedHours || ''} onChange={(e) => setForm({ ...form, contractedHours: e.target.value })} className={`w-full bg-[#12121a] border border-[#27272a] rounded-xl px-4 py-4 sm:py-3.5 text-sm text-white outline-none focus:border-purple-500 transition-colors`} placeholder="Ex: 50" />
+            <input type="number" value={form.contractedHours === 0 ? '' : form.contractedHours} onChange={(e) => setForm({ ...form, contractedHours: e.target.value })} className={`w-full bg-[#12121a] border border-[#27272a] rounded-xl px-4 py-4 sm:py-3.5 text-sm text-white outline-none focus:border-purple-500 transition-colors`} placeholder="Ex: 50" />
           </div>
 
           <div>
@@ -1770,7 +1788,7 @@ function ClientsPanelContent({ clients, setClients, tasks, setTasks, user, getEl
           )
         })}
       </div>
-      {clientModal && <ClientModal modal={clientModal} setModal={setClientModal} setClients={setClients} />}
+      {clientModal && <ClientModal modal={clientModal} setModal={setClientModal} setClients={setClients} user={user} />}
     </div>
   );
 }
@@ -1779,6 +1797,15 @@ function AnalyticsModal({ onClose, tasks, clients, responsibles, now, getElapsed
   const [activeView, setActiveView] = useState('internal'); 
   const [isEditing, setIsEditing] = useState(false);
   const [inputUrl, setInputUrl] = useState(globalLookerUrl);
+
+  const [filterClient, setFilterClient] = useState("all");
+  const [filterResp, setFilterResp] = useState("all");
+  const [filterPriority, setFilterPriority] = useState("all");
+  const [filterCreatedStart, setFilterCreatedStart] = useState("");
+  const [filterCreatedEnd, setFilterCreatedEnd] = useState("");
+  const [filterCompletedStart, setFilterCompletedStart] = useState("");
+  const [filterCompletedEnd, setFilterCompletedEnd] = useState("");
+  const hasDateFilters = filterCreatedStart || filterCreatedEnd || filterCompletedStart || filterCompletedEnd;
 
   const saveUrl = async () => {
     let finalUrl = inputUrl.trim();
@@ -1799,9 +1826,17 @@ function AnalyticsModal({ onClose, tasks, clients, responsibles, now, getElapsed
     }
   };
 
+  const filteredTasks = tasks.filter((t: any) =>
+      (filterClient === "all" || t.clientId === filterClient) &&
+      (filterResp === "all" || t.responsibleId === filterResp) &&
+      (filterPriority === "all" || t.priority === filterPriority) &&
+      filterByPeriod(t.createdAt, filterCreatedStart, filterCreatedEnd) &&
+      filterByPeriod(t.completedAt, filterCompletedStart, filterCompletedEnd)
+  );
+
   const exportTasksCSV = () => {
     const headers = ["ID", "Título", "Status", "Prioridade", "Cliente", "Responsável", "Estimado (min)", "Gasto (h)"];
-    const rows = tasks.map((t: any) => {
+    const rows = filteredTasks.map((t: any) => {
       const clientName = clients.find((c: any) => c.id === t.clientId)?.name || '-';
       const respName = responsibles.find((r: any) => r.id === t.responsibleId)?.name || '-';
       const statusName = COLUMNS.find(c => c.id === t.status)?.name || t.status;
@@ -1813,7 +1848,7 @@ function AnalyticsModal({ onClose, tasks, clients, responsibles, now, getElapsed
 
   return (
     <OverlayModal title="Lumina Analytics" icon={<BarChart3 className="text-blue-500" size={24}/>} onClose={onClose} fullWidth isClosing={isClosing}>
-      <div className="flex flex-col h-full fade-in">
+      <div className="flex flex-col h-full fade-in pb-8">
         
         {/* Toggle View */}
         <div className="flex justify-center mb-8 shrink-0">
@@ -1826,13 +1861,63 @@ function AnalyticsModal({ onClose, tasks, clients, responsibles, now, getElapsed
         {/* View 1: Relatórios Internos */}
         {activeView === 'internal' && (
            <div className="flex flex-col gap-8 fade-in h-full">
-             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div><h3 className="text-[10px] font-bold text-neutral-500 mb-4 uppercase tracking-[0.2em] ml-1">Por Fase do Fluxo</h3><div className="flex flex-col gap-3">{COLUMNS.map(col => { const count = tasks.filter((t: any) => t.status === col.id).length; return (<div key={col.id} className="flex justify-between items-center bg-[#12121a] border border-[#27272a] p-5 rounded-2xl shadow-sm"><div className="flex items-center gap-4"><span className={`w-3 h-3 rounded-full ${col.dot} shadow-[0_0_8px_currentColor]`} /><span className="text-xs text-neutral-300 font-bold uppercase">{col.name}</span></div><span className="text-lg font-black text-white">{count}</span></div>)})}</div></div>
-                <div><h3 className="text-[10px] font-bold text-neutral-500 mb-4 uppercase tracking-[0.2em] ml-1">Por Responsável</h3><div className="flex flex-col gap-3">{responsibles.map((r: any) => { const rTasks = tasks.filter((t: any) => t.responsibleId === r.id); const hours = rTasks.reduce((acc: number, t: any) => acc + (getElapsed(t) / 3600), 0); return (<div key={r.id} className="bg-[#12121a] border border-[#27272a] p-5 rounded-2xl shadow-sm"><div className="text-base text-neutral-100 font-bold mb-2">{r.name}</div><div className="flex items-center gap-4 text-[10px] text-neutral-500 font-bold uppercase tracking-widest"><span className="bg-white/5 px-2.5 py-1 rounded-md border border-white/5">{rTasks.length} Demandas</span><span className="bg-white/5 px-2.5 py-1 rounded-md border border-white/5">{hours.toFixed(1)}h Totais</span></div></div>)})}</div></div>
-                <div><h3 className="text-[10px] font-bold text-neutral-500 mb-4 uppercase tracking-[0.2em] ml-1">Por Cliente</h3><div className="flex flex-col gap-3 max-h-[500px] overflow-y-auto kp-scroll pr-2">{clients.map((c: any) => { const cTasks = tasks.filter((t: any) => t.clientId === c.id); if (cTasks.length === 0) return null; const hours = cTasks.reduce((acc: number, t: any) => acc + (getElapsed(t) / 3600), 0); return (<div key={c.id} className="bg-[#12121a] border border-[#27272a] p-5 rounded-2xl shadow-sm"><div className="text-base text-neutral-100 font-bold mb-2">{c.name}</div><div className="flex items-center gap-4 text-[10px] text-neutral-500 font-bold uppercase tracking-widest"><span className="bg-white/5 px-2.5 py-1 rounded-md border border-white/5">{cTasks.length} Demandas</span><span className="bg-white/5 px-2.5 py-1 rounded-md border border-white/5">{hours.toFixed(1)}h Totais</span></div></div>)})}</div></div>
+             
+             {/* Filtros Container */}
+             <div className="flex flex-col items-stretch gap-3 w-full shrink-0">
+                <div className="glass-panel w-full p-4 rounded-xl flex flex-col lg:flex-row lg:flex-wrap items-stretch lg:items-center gap-4 shadow-sm border-indigo-500/20 bg-[#12121a]">
+                  
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 w-full lg:w-auto">
+                     <FilterSelect value={filterClient} onChange={setFilterClient} options={clients} defaultLabel="Todos Clientes" />
+                     <div className="hidden sm:block w-px h-4 bg-white/10"></div>
+                     <FilterSelect value={filterResp} onChange={setFilterResp} options={responsibles} defaultLabel="Todos Responsáveis" />
+                     <div className="hidden sm:block w-px h-4 bg-white/10"></div>
+                     <FilterSelect value={filterPriority} onChange={setFilterPriority} options={[{id: 'Baixa', name: 'Baixa'}, {id: 'Média', name: 'Média'}, {id: 'Alta', name: 'Alta'}]} defaultLabel="Prioridades" />
+                  </div>
+
+                  <div className="hidden lg:block w-px h-4 bg-white/10"></div>
+                  
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 w-full lg:w-auto bg-black/20 p-3 lg:p-0 lg:bg-transparent rounded-lg border border-white/5 lg:border-none">
+                     <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-start">
+                        <label className="text-[10px] uppercase font-bold text-indigo-300 whitespace-nowrap">Criado de:</label>
+                        <input type="date" value={filterCreatedStart} onChange={e => setFilterCreatedStart(e.target.value)} className="bg-[#12121a] lg:bg-transparent border border-[#27272a] lg:border-none rounded-lg px-2.5 py-1.5 lg:py-0 text-xs text-white outline-none focus:border-indigo-500 [color-scheme:dark]" />
+                     </div>
+                     <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-start">
+                        <label className="text-[10px] uppercase font-bold text-neutral-500 whitespace-nowrap text-right">Até:</label>
+                        <input type="date" value={filterCreatedEnd} onChange={e => setFilterCreatedEnd(e.target.value)} className="bg-[#12121a] lg:bg-transparent border border-[#27272a] lg:border-none rounded-lg px-2.5 py-1.5 lg:py-0 text-xs text-white outline-none focus:border-indigo-500 [color-scheme:dark]" />
+                     </div>
+                  </div>
+                  
+                  <div className="hidden lg:block w-px h-4 bg-white/10"></div>
+                  
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 w-full lg:w-auto bg-black/20 p-3 lg:p-0 lg:bg-transparent rounded-lg border border-white/5 lg:border-none">
+                     <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-start">
+                        <label className="text-[10px] uppercase font-bold text-emerald-300 whitespace-nowrap">Concluído de:</label>
+                        <input type="date" value={filterCompletedStart} onChange={e => setFilterCompletedStart(e.target.value)} className="bg-[#12121a] lg:bg-transparent border border-[#27272a] lg:border-none rounded-lg px-2.5 py-1.5 lg:py-0 text-xs text-white outline-none focus:border-emerald-500 [color-scheme:dark]" />
+                     </div>
+                     <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-start">
+                        <label className="text-[10px] uppercase font-bold text-neutral-500 whitespace-nowrap text-right">Até:</label>
+                        <input type="date" value={filterCompletedEnd} onChange={e => setFilterCompletedEnd(e.target.value)} className="bg-[#12121a] lg:bg-transparent border border-[#27272a] lg:border-none rounded-lg px-2.5 py-1.5 lg:py-0 text-xs text-white outline-none focus:border-emerald-500 [color-scheme:dark]" />
+                     </div>
+                  </div>
+
+                  {hasDateFilters && (
+                     <button onClick={() => { setFilterCreatedStart(''); setFilterCreatedEnd(''); setFilterCompletedStart(''); setFilterCompletedEnd(''); }} className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 text-[10px] font-bold uppercase tracking-widest transition-colors ml-auto lg:ml-0 mt-2 lg:mt-0">
+                       <X size={12}/> Limpar Datas
+                     </button>
+                  )}
+                </div>
              </div>
-             <div className="flex justify-center mt-auto pt-8 border-t border-[#27272a]">
-                <button onClick={exportTasksCSV} className="w-full md:w-auto flex items-center justify-center gap-2 px-10 py-4 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 rounded-2xl text-xs font-bold uppercase tracking-widest transition-all shadow-sm"><Download size={18}/> Baixar Dados (CSV)</button>
+
+             {/* Area com Scroll e Botão Centralizado */}
+             <div className="flex flex-col gap-6 flex-1 overflow-y-auto min-h-0 pr-2 kp-scroll pb-16">
+               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div><h3 className="text-[10px] font-bold text-neutral-500 mb-4 uppercase tracking-[0.2em] ml-1">Por Fase do Fluxo</h3><div className="flex flex-col gap-3">{COLUMNS.map(col => { const count = filteredTasks.filter((t: any) => t.status === col.id).length; return (<div key={col.id} className="flex justify-between items-center bg-[#12121a] border border-[#27272a] p-5 rounded-2xl shadow-sm"><div className="flex items-center gap-4"><span className={`w-3 h-3 rounded-full ${col.dot} shadow-[0_0_8px_currentColor]`} /><span className="text-xs text-neutral-300 font-bold uppercase">{col.name}</span></div><span className="text-lg font-black text-white">{count}</span></div>)})}</div></div>
+                  <div><h3 className="text-[10px] font-bold text-neutral-500 mb-4 uppercase tracking-[0.2em] ml-1">Por Responsável</h3><div className="flex flex-col gap-3">{responsibles.map((r: any) => { const rTasks = filteredTasks.filter((t: any) => t.responsibleId === r.id); const hours = rTasks.reduce((acc: number, t: any) => acc + (getElapsed(t) / 3600), 0); return (<div key={r.id} className="bg-[#12121a] border border-[#27272a] p-5 rounded-2xl shadow-sm"><div className="text-base text-neutral-100 font-bold mb-2">{r.name}</div><div className="flex items-center gap-4 text-[10px] text-neutral-500 font-bold uppercase tracking-widest"><span className="bg-white/5 px-2.5 py-1 rounded-md border border-white/5">{rTasks.length} Demandas</span><span className="bg-white/5 px-2.5 py-1 rounded-md border border-white/5">{hours.toFixed(1)}h Totais</span></div></div>)})}</div></div>
+                  <div><h3 className="text-[10px] font-bold text-neutral-500 mb-4 uppercase tracking-[0.2em] ml-1">Por Cliente</h3><div className="flex flex-col gap-3">{clients.map((c: any) => { const cTasks = filteredTasks.filter((t: any) => t.clientId === c.id); if (cTasks.length === 0) return null; const hours = cTasks.reduce((acc: number, t: any) => acc + (getElapsed(t) / 3600), 0); return (<div key={c.id} className="bg-[#12121a] border border-[#27272a] p-5 rounded-2xl shadow-sm"><div className="text-base text-neutral-100 font-bold mb-2">{c.name}</div><div className="flex items-center gap-4 text-[10px] text-neutral-500 font-bold uppercase tracking-widest"><span className="bg-white/5 px-2.5 py-1 rounded-md border border-white/5">{cTasks.length} Demandas</span><span className="bg-white/5 px-2.5 py-1 rounded-md border border-white/5">{hours.toFixed(1)}h Totais</span></div></div>)})}</div></div>
+               </div>
+               <div className="flex justify-center mt-6">
+                  <button onClick={exportTasksCSV} className="w-full sm:w-auto flex items-center justify-center gap-2 px-10 py-4 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 rounded-2xl text-xs font-bold uppercase tracking-widest transition-all shadow-sm"><Download size={18}/> Baixar Dados (CSV)</button>
+               </div>
              </div>
            </div>
         )}

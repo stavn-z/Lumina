@@ -1683,8 +1683,8 @@ function MobileNavBtn({ icon, label, active, onClick, alert }: any) {
 
 function OverlayModal({ title, icon, onClose, children, fullWidth, isClosing }: any) {
   return (
-    <div className={`fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center p-4 z-[60] ${isClosing ? 'fade-out' : 'fade-in'}`} onClick={onClose}>
-      <div className={`bg-[#12121a] border border-[#27272a] rounded-[32px] shadow-2xl flex flex-col overflow-hidden w-full ${isClosing ? 'animate-modal-out' : 'animate-modal-pop'} ${fullWidth ? 'max-w-7xl h-[90vh]' : 'max-w-4xl max-h-[85vh]'}`} onClick={(e) => e.stopPropagation()}>
+    <div className={`fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 z-[60] ${isClosing ? 'fade-out' : 'fade-in'}`} onClick={onClose}>
+      <div className={`bg-[#12121a] border border-[#27272a] rounded-3xl sm:rounded-[32px] shadow-2xl flex flex-col overflow-hidden w-full ${isClosing ? 'animate-modal-out' : 'animate-modal-pop'} ${fullWidth ? 'max-w-7xl h-[92dvh] sm:h-[90dvh]' : 'max-w-4xl max-h-[90dvh] sm:max-h-[85dvh]'}`} onClick={(e) => e.stopPropagation()}>
         <div className="px-5 sm:px-8 py-5 sm:py-6 border-b border-[#27272a] flex items-center justify-between bg-[#0f0f13]">
            <div className="flex items-center gap-4">
              <div className="p-2.5 bg-white/5 rounded-xl border border-white/10 hidden sm:block">{icon}</div>
@@ -1833,8 +1833,8 @@ function ClientModal({ modal, setModal, setClients, user }: any) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-[70] fade-in" onClick={() => setModal(null)}>
-      <div className="w-full max-w-md rounded-[32px] bg-[#12121a] border border-[#27272a] flex flex-col max-h-[85dvh] shadow-2xl overflow-hidden animate-modal-pop" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 z-[70] fade-in" onClick={() => setModal(null)}>
+      <div className="w-full max-w-md rounded-3xl sm:rounded-[32px] bg-[#12121a] border border-[#27272a] flex flex-col max-h-[90dvh] sm:max-h-[85dvh] shadow-2xl overflow-hidden animate-modal-pop" onClick={(e) => e.stopPropagation()}>
         <div className="px-5 sm:px-8 py-5 border-b border-[#27272a] flex items-center justify-between bg-[#0f0f13] shrink-0">
           <h3 className="font-bold text-xl text-white tracking-tight">{modal.mode === "add" ? "Novo Cliente" : "Editar Cliente"}</h3>
           <button onClick={() => setModal(null)} className="p-2.5 rounded-xl text-neutral-500 hover:text-white hover:bg-white/5 transition-colors"><X size={20} /></button>
@@ -2240,10 +2240,15 @@ function buildGCalLink(task: any, clientName: string) {
   if (isNaN(start.getTime())) return '#';
   const durMin = task.durationMin && task.durationMin > 0 ? task.durationMin : 60;
   const end = new Date(start.getTime() + durMin * 60000);
-  const text = encodeURIComponent(task.title || 'Demanda');
+  // Título no padrão "CLIENTE - DEMANDA"
+  const title = clientName ? `${clientName} - ${task.title || 'Demanda'}` : (task.title || 'Demanda');
+  // Descrição: só o contexto (sem o cliente) + checklist, se houver
   let details = task.description || '';
-  if (clientName) details = `Cliente: ${clientName}\n\n${details}`;
-  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${text}&details=${encodeURIComponent(details)}&dates=${toGCalStamp(start)}/${toGCalStamp(end)}`;
+  const checklist = Array.isArray(task.checklist) ? task.checklist : [];
+  if (checklist.length > 0) {
+    details += (details ? '\n\n' : '') + 'Checklist:\n' + checklist.map((c: any) => `${c.done ? '☑' : '☐'} ${c.text || ''}`).join('\n');
+  }
+  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(title)}&details=${encodeURIComponent(details)}&dates=${toGCalStamp(start)}/${toGCalStamp(end)}`;
 }
 
 function CalendarView({ tasks, setTasks, clients, handleRequestMove }: any) {
@@ -2281,21 +2286,18 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove }: any) {
     const start = new Date(day); start.setHours(hour, minute, 0, 0);
     const value = toLocalInput(start);
     setTasks((prev: any) => prev.map((t: any) => t.id === task.id ? { ...t, scheduledStart: value, status: 'inprogress' } : t));
-    const durMin = task.durationMin && task.durationMin > 0 ? task.durationMin : 60;
-    const end = new Date(start.getTime() + durMin * 60000);
-    const text = encodeURIComponent(task.title || 'Demanda');
-    const cn = clientName(task.clientId);
-    let details = task.description || '';
-    if (cn) details = `Cliente: ${cn}\n\n${details}`;
-    const link = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${text}&details=${encodeURIComponent(details)}&dates=${toGCalStamp(start)}/${toGCalStamp(end)}`;
-    window.open(link, '_blank', 'noopener');
+    const link = buildGCalLink({ ...task, scheduledStart: value }, clientName(task.clientId));
+    if (link !== '#') window.open(link, '_blank', 'noopener');
   };
 
   // Arraste (colocar/mover) e redimensionar via Pointer Events
   const dragRef = useRef<any>(null);
   const resizeRef = useRef<any>(null);
   const [ghost, setGhost] = useState<{ x: number, y: number, label: string } | null>(null);
+  const [dropHint, setDropHint] = useState<{ dayIndex: number, minutes: number, dur: number } | null>(null);
   const [resizePreview, setResizePreview] = useState<{ id: string, dur: number } | null>(null);
+
+  const durationOf = (t: any) => (t.durationMin && t.durationMin > 0 ? t.durationMin : 60);
 
   const beginDrag = (e: React.PointerEvent, task: any, mode: 'place' | 'move') => {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
@@ -2312,6 +2314,18 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove }: any) {
     (e.target as Element).setPointerCapture?.(e.pointerId);
   };
 
+  const resolveDrop = (x: number, y: number) => {
+    const el = document.elementFromPoint(x, y);
+    const col = el ? (el as Element).closest('[data-cal-day]') : null;
+    if (!col) return null;
+    const idx = parseInt(col.getAttribute('data-cal-day') || '-1', 10);
+    if (idx < 0) return null;
+    const rect = col.getBoundingClientRect();
+    const rawMin = ((y - rect.top) / ROW_H) * 60;
+    const snapped = Math.max(0, Math.min(23 * 60 + 30, Math.round(rawMin / 30) * 30));
+    return { dayIndex: idx, hour: Math.floor(snapped / 60), minute: snapped % 60, minutes: snapped };
+  };
+
   const onPointerMove = (e: React.PointerEvent) => {
     const d = dragRef.current;
     if (!d) return;
@@ -2322,19 +2336,9 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove }: any) {
       setResizePreview({ id: d.task.id, dur: snapped });
     } else {
       setGhost({ x: e.clientX, y: e.clientY, label: d.task.title });
+      const drop = resolveDrop(e.clientX, e.clientY);
+      setDropHint(drop ? { dayIndex: drop.dayIndex, minutes: drop.minutes, dur: durationOf(d.task) } : null);
     }
-  };
-
-  const resolveDrop = (x: number, y: number) => {
-    const el = document.elementFromPoint(x, y);
-    const col = el ? (el as Element).closest('[data-cal-day]') : null;
-    if (!col) return null;
-    const idx = parseInt(col.getAttribute('data-cal-day') || '-1', 10);
-    if (idx < 0) return null;
-    const rect = col.getBoundingClientRect();
-    const rawMin = ((y - rect.top) / ROW_H) * 60;
-    const snapped = Math.max(0, Math.min(23 * 60 + 30, Math.round(rawMin / 30) * 30));
-    return { dayIndex: idx, hour: Math.floor(snapped / 60), minute: snapped % 60 };
   };
 
   const onPointerUp = (e: React.PointerEvent) => {
@@ -2347,6 +2351,7 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove }: any) {
       return;
     }
     setGhost(null);
+    setDropHint(null);
     if (!d) return;
     const drop = resolveDrop(e.clientX, e.clientY);
     if (!drop) return;
@@ -2365,6 +2370,7 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove }: any) {
   const weekLabel = `${pad(days[0].getDate())}/${pad(days[0].getMonth() + 1)} – ${pad(days[6].getDate())}/${pad(days[6].getMonth() + 1)}`;
   const shiftWeek = (dir: number) => setWeekStart(prev => { const d = new Date(prev); d.setDate(prev.getDate() + dir * 7); return d; });
   const goToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); const dow = (d.getDay() + 6) % 7; d.setDate(d.getDate() - dow); setWeekStart(d); };
+  const hintTime = dropHint ? `${pad(Math.floor(dropHint.minutes / 60))}:${pad(dropHint.minutes % 60)}` : '';
 
   return (
     <div className="flex flex-col h-full fade-in gap-5" onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}>
@@ -2415,7 +2421,7 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove }: any) {
           <div className="sticky left-0 z-20 bg-[#0d0d12] border-r border-white/5 shrink-0" style={{ width: 46 }}>
             <div className="h-9 border-b border-white/5" />
             {hours.map(h => (
-              <div key={h} className="text-[9px] font-mono text-neutral-600 text-right pr-2" style={{ height: ROW_H, marginTop: h === 0 ? 0 : 0 }}>
+              <div key={h} className="text-[9px] font-mono text-neutral-600 text-right pr-2" style={{ height: ROW_H }}>
                 <span className="relative -top-1.5">{pad(h)}:00</span>
               </div>
             ))}
@@ -2425,6 +2431,7 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove }: any) {
           {days.map((day, i) => {
             const dayTasks = tasksOnDay(day);
             const isToday = new Date(day).setHours(0, 0, 0, 0) === todayKey;
+            const showHint = dropHint && dropHint.dayIndex === i;
             return (
               <div key={i} className={`shrink-0 border-r border-white/5 ${isToday ? 'bg-teal-500/[0.04]' : ''}`} style={{ width: 150 }}>
                 <div className={`h-9 sticky top-0 z-10 flex items-center justify-center border-b border-white/5 ${isToday ? 'bg-teal-600/20 text-teal-300' : 'bg-[#12121a] text-neutral-300'}`}>
@@ -2434,14 +2441,23 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove }: any) {
                   {hours.map(h => (
                     <div key={h} className="absolute left-0 right-0 border-b border-white/5 pointer-events-none" style={{ top: h * ROW_H, height: ROW_H }} />
                   ))}
+
+                  {/* Indicador ao vivo de onde vai cair */}
+                  {showHint && (
+                    <div className="absolute left-1 right-1 rounded-lg border-2 border-dashed border-teal-400 bg-teal-400/15 pointer-events-none z-30 flex items-start justify-center" style={{ top: (dropHint!.minutes / 60) * ROW_H, height: Math.max(ROW_H * 0.6, (dropHint!.dur / 60) * ROW_H) }}>
+                      <span className="text-[10px] font-mono font-bold text-teal-200 mt-1 bg-black/40 px-1.5 py-0.5 rounded">{hintTime}</span>
+                    </div>
+                  )}
+
                   {dayTasks.map((t: any) => {
                     const s = new Date(t.scheduledStart);
                     const top = (s.getHours() + s.getMinutes() / 60) * ROW_H;
-                    const dur = (resizePreview && resizePreview.id === t.id) ? resizePreview.dur : (t.durationMin > 0 ? t.durationMin : 60);
+                    const dur = (resizePreview && resizePreview.id === t.id) ? resizePreview.dur : durationOf(t);
                     const bh = Math.max(ROW_H * 0.6, (dur / 60) * ROW_H);
                     const cn = clientName(t.clientId);
+                    const isDragging = dragRef.current && dragRef.current.task && dragRef.current.task.id === t.id && dragRef.current.mode === 'move';
                     return (
-                      <div key={t.id} className="absolute left-1 right-1 rounded-lg bg-teal-500/15 border border-teal-500/40 overflow-hidden group" style={{ top, height: bh }}>
+                      <div key={t.id} className={`absolute left-1 right-1 rounded-lg bg-teal-500/15 border border-teal-500/40 overflow-hidden group ${isDragging ? 'opacity-40' : ''}`} style={{ top, height: bh }}>
                         <div onPointerDown={(e) => beginDrag(e, t, 'move')} style={{ touchAction: 'none' }} className="h-full p-1.5 cursor-grab active:cursor-grabbing select-none">
                           <div className="text-[9px] font-mono font-bold text-teal-300 leading-none mb-1">{pad(s.getHours())}:{pad(s.getMinutes())} · {dur}min</div>
                           <div className="text-[10px] font-bold text-white leading-tight line-clamp-2">{t.title}</div>
@@ -2462,9 +2478,9 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove }: any) {
         </div>
       </div>
 
-      {/* Ghost durante o arraste */}
+      {/* Fantasma colado ao cursor */}
       {ghost && (
-        <div className="fixed z-[300] pointer-events-none px-3 py-2 rounded-lg bg-teal-600 border border-teal-400 shadow-2xl text-[11px] font-bold text-white max-w-[220px] truncate" style={{ left: ghost.x + 12, top: ghost.y + 12 }}>
+        <div className="fixed z-[300] pointer-events-none px-3 py-2 rounded-lg bg-teal-600 border border-teal-400 shadow-2xl text-[11px] font-bold text-white max-w-[220px] truncate" style={{ left: ghost.x, top: ghost.y, transform: 'translate(-50%, 18px)' }}>
           {ghost.label}
         </div>
       )}
@@ -2581,8 +2597,8 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize }: an
   };
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-[80] fade-in" onClick={onClose}>
-      <div className="w-full max-w-4xl rounded-[32px] bg-[#12121a] border border-[#27272a] flex flex-col max-h-[90vh] shadow-2xl overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 z-[80] fade-in" onClick={onClose}>
+      <div className="w-full max-w-4xl rounded-3xl sm:rounded-[32px] bg-[#12121a] border border-[#27272a] flex flex-col max-h-[92dvh] sm:max-h-[90dvh] shadow-2xl overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
         
         <div className="px-5 sm:px-8 py-5 sm:py-6 border-b border-[#27272a] flex items-center justify-between bg-[#0f0f13]">
           <div className="flex items-center gap-4">

@@ -77,6 +77,45 @@ function downloadCSV(dataArray: any[], filename: string) {
   document.body.removeChild(link);
 }
 
+// Serialização estável (chaves ordenadas) para comparar registros com segurança,
+// independente da ordem dos campos vinda do banco.
+function stableStringify(obj: any): string {
+  if (obj === null || typeof obj !== 'object') return JSON.stringify(obj);
+  if (Array.isArray(obj)) return '[' + obj.map(stableStringify).join(',') + ']';
+  return '{' + Object.keys(obj).sort().map(k => JSON.stringify(k) + ':' + stableStringify(obj[k])).join(',') + '}';
+}
+
+// Normalização única de tarefas (usada no carregamento inicial E nos eventos Realtime).
+// Inclui a trava de segurança do cronômetro: se um timer ficou "rodando" por mais de
+// 8 horas (aba fechada com timer ligado), ele é pausado automaticamente com teto de 8h,
+// evitando que o banco de horas do cliente exploda por esquecimento.
+const MAX_TIMER_SESSION_MS = 8 * 3600 * 1000;
+function normalizeTask(t: any) {
+  const norm: any = {
+    ...t,
+    title: t.title || '',
+    description: t.description || '',
+    status: t.status || 'backlog',
+    priority: t.priority || 'Média',
+    clientId: t.clientId || '',
+    responsibleId: t.responsibleId || '',
+    startDate: t.startDate || '',
+    dueDate: t.dueDate || '',
+    waitingFor: t.waitingFor || '',
+    checklist: Array.isArray(t.checklist) ? t.checklist : [],
+    timerElapsed: t.timerElapsed || 0,
+    durationMin: t.durationMin || 0,
+    createdAt: t.createdAt || t.dueDate || getBrasiliaDate(),
+    completedAt: t.completedAt || ((t.status === 'done' || t.status === 'formalize') ? (t.dueDate || getBrasiliaDate()) : '')
+  };
+  if (norm.timerRunning && norm.timerStart && (Date.now() - norm.timerStart) > MAX_TIMER_SESSION_MS) {
+    norm.timerRunning = false;
+    norm.timerElapsed = (norm.timerElapsed || 0) + MAX_TIMER_SESSION_MS / 1000;
+    norm.timerStart = null;
+  }
+  return norm;
+}
+
 // --- Componente Inteligente de Avatar ---
 function UserAvatar({ url, name, className }: { url?: string, name?: string, className?: string }) {
   const [error, setError] = useState(false);
@@ -395,6 +434,12 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
   const [isCloudSynced, setIsCloudSynced] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
+  // "Fotografia" do último estado sincronizado de cada registro.
+  // Permite salvar SÓ o que mudou (em vez de reenviar tudo) e
+  // ignorar ecos dos próprios saves vindos do Realtime.
+  const lastSyncedTasksRef = useRef<Record<string, string>>({});
+  const lastSyncedClientsRef = useRef<Record<string, string>>({});
+
   // Monitora se está em Mobile
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   useEffect(() => {
@@ -415,23 +460,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
         ]);
 
         if (resTasks.data) {
-          setTasks(resTasks.data.map((t: any) => ({
-            ...t, 
-            title: t.title || '',
-            description: t.description || '',
-            status: t.status || 'backlog',
-            priority: t.priority || 'Média',
-            clientId: t.clientId || '',
-            responsibleId: t.responsibleId || '',
-            startDate: t.startDate || '',
-            dueDate: t.dueDate || '',
-            waitingFor: t.waitingFor || '',
-            checklist: Array.isArray(t.checklist) ? t.checklist : [],
-            timerElapsed: t.timerElapsed || 0,
-            durationMin: t.durationMin || 0,
-            createdAt: t.createdAt || t.dueDate || getBrasiliaDate(),
-            completedAt: t.completedAt || ((t.status === 'done' || t.status === 'formalize') ? (t.dueDate || getBrasiliaDate()) : '')
-          })));
+          setTasks(resTasks.data.map(normalizeTask));
         }
 
         if (resClients.data) {
@@ -467,19 +496,66 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
     fetchCloudData();
   }, []);
 
-  // Sincroniza Tarefas
+  // Sincroniza Tarefas — versão inteligente: salva APENAS os registros que mudaram.
+  // Isso evita reenviar o quadro inteiro a cada clique e reduz drasticamente o risco
+  // de um usuário sobrescrever alterações simultâneas de outro.
   useEffect(() => {
-    if (isCloudSynced && tasks.length > 0) {
-      (window as any).supabaseClient.from('tasks').upsert(tasks).then();
-    }
+    if (!isCloudSynced) return;
+    const changed = tasks.filter(t => lastSyncedTasksRef.current[t.id] !== stableStringify(t));
+    if (changed.length === 0) return;
+    changed.forEach(t => { lastSyncedTasksRef.current[t.id] = stableStringify(t); });
+    (window as any).supabaseClient.from('tasks').upsert(changed).then(({ error }: any) => {
+      if (error) console.error("Erro ao sincronizar tarefas:", error);
+    });
   }, [tasks, isCloudSynced]);
 
-  // Sincroniza Clientes
+  // Sincroniza Clientes — apenas o admin escreve em 'clients' (o RLS bloqueia os demais).
+  // Sem esse filtro, consultores gerariam erros silenciosos a cada mudança de estado.
   useEffect(() => {
-    if (isCloudSynced && clients.length > 0) {
-      (window as any).supabaseClient.from('clients').upsert(clients).then();
-    }
-  }, [clients, isCloudSynced]);
+    if (!isCloudSynced || !user.isAdmin) return;
+    const changed = clients.filter(c => lastSyncedClientsRef.current[c.id] !== stableStringify(c));
+    if (changed.length === 0) return;
+    changed.forEach(c => { lastSyncedClientsRef.current[c.id] = stableStringify(c); });
+    (window as any).supabaseClient.from('clients').upsert(changed).then(({ error }: any) => {
+      if (error) console.error("Erro ao sincronizar clientes:", error);
+    });
+  }, [clients, isCloudSynced, user.isAdmin]);
+
+  // Realtime: quando outro usuário (ex: o admin) altera uma tarefa sua,
+  // o seu quadro atualiza sozinho, sem precisar recarregar a página.
+  useEffect(() => {
+    if (!isCloudSynced) return;
+    const supa = (window as any).supabaseClient;
+    if (!supa?.channel) return;
+
+    const channel = supa
+      .channel('lumina-tasks-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, (payload: any) => {
+        if (payload.eventType === 'DELETE') {
+          const oldId = payload.old?.id;
+          if (!oldId) return;
+          delete lastSyncedTasksRef.current[oldId];
+          setTasks(prev => prev.filter(t => t.id.toString() !== oldId.toString()));
+          return;
+        }
+        const row = payload.new;
+        if (!row?.id) return;
+        const normalized = normalizeTask(row);
+        const snap = stableStringify(normalized);
+        if (lastSyncedTasksRef.current[row.id] === snap) return; // eco do nosso próprio save
+        lastSyncedTasksRef.current[row.id] = snap;
+        setTasks(prev => {
+          const idx = prev.findIndex(t => t.id.toString() === row.id.toString());
+          if (idx === -1) return [...prev, normalized];
+          const copy = [...prev];
+          copy[idx] = normalized;
+          return copy;
+        });
+      })
+      .subscribe();
+
+    return () => { supa.removeChannel(channel); };
+  }, [isCloudSynced]);
 
   const [activeTab, setActiveTab] = useState('board'); 
   const [isClosingModal, setIsClosingModal] = useState(false);
@@ -1064,7 +1140,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
         {activeTab === 'timer' && <OverlayModal title="Cronómetro" icon={<Clock size={20} className="text-amber-500"/>} isClosing={isClosingModal} onClose={handleCloseTab}><TimerPanelContent tasks={filteredTasks} now={now} getElapsed={getElapsed} onToggleTimer={toggleTimer} user={user} /></OverlayModal>}
         {activeTab === 'responsibles' && <OverlayModal title="Equipe (Contas)" icon={<Users size={20} className="text-indigo-400"/>} isClosing={isClosingModal} onClose={handleCloseTab}><ResponsiblesPanelContent responsibles={responsibles} tasks={tasks} user={user} /></OverlayModal>}
         {activeTab === 'clients' && <OverlayModal title="Gestão de Clientes" icon={<Building2 size={20} className="text-purple-400"/>} isClosing={isClosingModal} onClose={handleCloseTab}><ClientsPanelContent clients={visibleClients} setClients={setClients} tasks={tasks} setTasks={setTasks} user={user} getElapsed={getElapsed} now={now} /></OverlayModal>}
-        {activeTab === 'reports' && <AnalyticsModal isClosing={isClosingModal} onClose={handleCloseTab} tasks={filteredTasks} clients={visibleClients} responsibles={responsibles} now={now} getElapsed={getElapsed} globalLookerUrl={globalLookerUrl} setGlobalLookerUrl={setGlobalLookerUrl} />}
+        {activeTab === 'reports' && <AnalyticsModal isClosing={isClosingModal} onClose={handleCloseTab} tasks={filteredTasks} clients={visibleClients} responsibles={responsibles} now={now} getElapsed={getElapsed} globalLookerUrl={globalLookerUrl} setGlobalLookerUrl={setGlobalLookerUrl} user={user} />}
 
         {/* BOARD VIEW */}
         <div className={`flex-1 flex flex-col min-h-0 ${activeTab !== 'board' ? 'hidden md:flex opacity-30 pointer-events-none transition-opacity duration-300' : 'fade-in'}`}>
@@ -1456,9 +1532,10 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
               <button onClick={() => setConfirmDelete(null)} className="w-full sm:flex-1 py-3.5 sm:py-3 rounded-2xl border border-[#27272a] hover:bg-white/5 text-white font-bold transition-all text-sm">Cancelar</button>
               <button onClick={async () => {
                   const idToDelete = confirmDelete;
+                  delete lastSyncedTasksRef.current[idToDelete as string];
                   setTasks((prev: any) => prev.filter((t: any) => t.id !== idToDelete));
                   setConfirmDelete(null);
-                  if ((window as any).supabaseClient) await (window as any).supabaseClient.from('tasks').delete().eq('id', idToDelete.toString());
+                  if ((window as any).supabaseClient) await (window as any).supabaseClient.from('tasks').delete().eq('id', (idToDelete as string).toString());
                 }} 
                 className="w-full sm:flex-1 py-3.5 sm:py-3 rounded-2xl bg-red-600 hover:bg-red-500 text-white font-bold transition-all text-sm shadow-lg shadow-red-600/10"
               >
@@ -1505,7 +1582,7 @@ function ProfileModal({ user, responsibles, onClose, onUpdate }: any) {
           setIsLoading(false);
           return;
         }
-        // Senha agora é trocada via Supabase Auth, não mais gravada em texto puro na tabela.
+        // Senha trocada via Supabase Auth — nunca mais gravada em texto puro na tabela.
         const { error } = await supa.auth.updateUser({ password: password.trim() });
         if (error) throw error;
       }
@@ -1675,8 +1752,8 @@ function TimerPanelContent({ tasks, now, getElapsed, onToggleTimer, user }: any)
 }
 
 // A criação de contas agora acontece pela tela de login ("Criar Conta"), via Supabase Auth.
-// Este painel passa a ser apenas de visualização da equipe — não é mais possível criar
-// contas por aqui digitando nome+senha (isso não gerava mais um login funcional).
+// Este painel é apenas de visualização da equipe — criar conta por aqui digitando
+// nome+senha deixou de existir (não gerava mais um login funcional e era inseguro).
 function ResponsiblesPanelContent({ responsibles, tasks, user }: any) {
   return (
     <div className="flex flex-col h-full fade-in">
@@ -1802,7 +1879,10 @@ function ClientsPanelContent({ clients, setClients, tasks, setTasks, user, getEl
 
   const openAdd = () => setClientModal({ mode: 'add', form: { name: '', emails: [], contractedHours: '' } });
   
+  // Apenas admin edita clientes — o RLS já bloqueia a escrita dos demais no banco,
+  // então a UI acompanha a regra para evitar salvamentos que falhariam em silêncio.
   const openEdit = (client: any) => {
+    if (!user.isAdmin) return;
     const emailsArray = Array.isArray(client.emails) ? client.emails : [];
     setClientModal({ mode: 'edit', form: { ...client, emails: emailsArray } });
   };
@@ -1842,7 +1922,7 @@ function ClientsPanelContent({ clients, setClients, tasks, setTasks, user, getEl
           const isNearLimit = remaining !== null && remaining <= 5;
           
           return (
-            <div key={c.id} onClick={() => openEdit(c)} className="flex flex-col sm:flex-row sm:items-center justify-between bg-[#12121a] border border-[#27272a] rounded-[20px] p-6 hover:border-purple-500/50 transition-all cursor-pointer gap-5 sm:gap-0 shadow-sm relative group">
+            <div key={c.id} onClick={() => openEdit(c)} className={`flex flex-col sm:flex-row sm:items-center justify-between bg-[#12121a] border border-[#27272a] rounded-[20px] p-6 transition-all gap-5 sm:gap-0 shadow-sm relative group ${user.isAdmin ? 'hover:border-purple-500/50 cursor-pointer' : 'cursor-default'}`}>
               <div className="flex items-center gap-5">
                 <div className="p-4 bg-white/5 rounded-2xl border border-white/10 group-hover:border-purple-500/30 transition-colors"><Building2 size={24} className="text-purple-400" /></div>
                 <div className="flex flex-col">
@@ -1883,7 +1963,7 @@ function ClientsPanelContent({ clients, setClients, tasks, setTasks, user, getEl
   );
 }
 
-function AnalyticsModal({ onClose, tasks, clients, responsibles, now, getElapsed, isClosing, globalLookerUrl, setGlobalLookerUrl }: any) {
+function AnalyticsModal({ onClose, tasks, clients, responsibles, now, getElapsed, isClosing, globalLookerUrl, setGlobalLookerUrl, user }: any) {
   const [activeView, setActiveView] = useState('internal'); 
   const [isEditing, setIsEditing] = useState(false);
   const [inputUrl, setInputUrl] = useState(globalLookerUrl);
@@ -2077,27 +2157,36 @@ function AnalyticsModal({ onClose, tasks, clients, responsibles, now, getElapsed
            </div>
         )}
 
-        {/* View 2: Looker Studio (iFrame) */}
+        {/* View 2: Looker Studio (iFrame) — configuração restrita ao admin */}
         {activeView === 'looker' && (
           <div className="flex-1 flex flex-col min-h-0 h-full fade-in">
             {(!globalLookerUrl || isEditing) ? (
-               <div className="flex-1 flex flex-col items-center justify-center max-w-xl mx-auto w-full text-center gap-8">
-                 <div className="w-24 h-24 rounded-[32px] bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-500 shadow-[0_0_30px_rgba(59,130,246,0.15)]"><BarChart3 size={40} /></div>
-                 <div>
-                   <h3 className="text-3xl font-bold text-white mb-3 tracking-tight">Painel Analítico Global</h3>
-                   <p className="text-sm text-neutral-400 leading-relaxed max-w-md mx-auto">Configure aqui o Link de Incorporação (Embed) do Looker Studio para o painel de uso da sua equipe interna.</p>
+               user.isAdmin ? (
+                 <div className="flex-1 flex flex-col items-center justify-center max-w-xl mx-auto w-full text-center gap-8">
+                   <div className="w-24 h-24 rounded-[32px] bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-500 shadow-[0_0_30px_rgba(59,130,246,0.15)]"><BarChart3 size={40} /></div>
+                   <div>
+                     <h3 className="text-3xl font-bold text-white mb-3 tracking-tight">Painel Analítico Global</h3>
+                     <p className="text-sm text-neutral-400 leading-relaxed max-w-md mx-auto">Configure aqui o Link de Incorporação (Embed) do Looker Studio para o painel de uso da sua equipe interna.</p>
+                   </div>
+                   <div className="w-full">
+                      <input value={inputUrl} onChange={e => setInputUrl(e.target.value)} placeholder="https://lookerstudio.google.com/embed/reporting/..." className="w-full bg-[#12121a] border border-[#27272a] rounded-2xl px-6 py-5 text-sm text-white outline-none focus:border-blue-500 text-center shadow-inner mb-5" />
+                      <button onClick={saveUrl} className="w-full py-5 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-bold uppercase tracking-widest text-sm transition-all shadow-[0_0_20px_rgba(37,99,235,0.3)]">Ligar Relatório Global</button>
+                   </div>
+                   {globalLookerUrl && <button onClick={() => setIsEditing(false)} className="text-xs font-bold text-neutral-500 uppercase tracking-widest hover:text-white mt-2">Cancelar</button>}
                  </div>
-                 <div className="w-full">
-                    <input value={inputUrl} onChange={e => setInputUrl(e.target.value)} placeholder="https://lookerstudio.google.com/embed/reporting/..." className="w-full bg-[#12121a] border border-[#27272a] rounded-2xl px-6 py-5 text-sm text-white outline-none focus:border-blue-500 text-center shadow-inner mb-5" />
-                    <button onClick={saveUrl} className="w-full py-5 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-bold uppercase tracking-widest text-sm transition-all shadow-[0_0_20px_rgba(37,99,235,0.3)]">Ligar Relatório Global</button>
+               ) : (
+                 <div className="flex-1 flex flex-col items-center justify-center text-center gap-4">
+                   <div className="w-20 h-20 rounded-[24px] bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-500"><Lock size={32} /></div>
+                   <p className="text-sm text-neutral-400 max-w-sm">O painel do Looker Studio ainda não foi configurado. Peça ao administrador do Lumina para conectar o relatório global.</p>
                  </div>
-                 {globalLookerUrl && <button onClick={() => setIsEditing(false)} className="text-xs font-bold text-neutral-500 uppercase tracking-widest hover:text-white mt-2">Cancelar</button>}
-               </div>
+               )
             ) : (
                <div className="flex flex-col h-full gap-5">
-                 <div className="flex justify-end shrink-0">
-                    <button onClick={() => {setInputUrl(globalLookerUrl); setIsEditing(true);}} className="flex justify-center items-center gap-2 px-6 py-3.5 bg-white/5 text-neutral-300 border border-white/10 hover:bg-white/10 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-colors"><Settings size={16}/> Trocar Conexão Looker</button>
-                 </div>
+                 {user.isAdmin && (
+                   <div className="flex justify-end shrink-0">
+                      <button onClick={() => {setInputUrl(globalLookerUrl); setIsEditing(true);}} className="flex justify-center items-center gap-2 px-6 py-3.5 bg-white/5 text-neutral-300 border border-white/10 hover:bg-white/10 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-colors"><Settings size={16}/> Trocar Conexão Looker</button>
+                   </div>
+                 )}
                  <div className="flex-1 w-full bg-[#12121a] rounded-[32px] border border-[#27272a] overflow-hidden relative shadow-inner">
                    <div className="absolute inset-0 flex flex-col gap-4 items-center justify-center -z-10">
                      <Cloud size={40} className="text-indigo-500/20 animate-pulse" />

@@ -1458,7 +1458,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
 
       {/* Pop-up: Aguardando Retorno */}
       {waitingPrompt && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-[70] fade-in" onClick={() => setWaitingPrompt(null)}>
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center px-4 pt-4 pb-24 sm:p-4 z-[70] fade-in" onClick={() => setWaitingPrompt(null)}>
           <div className="w-full max-w-sm rounded-[32px] bg-[#12121a] border border-[#27272a] p-8 shadow-2xl relative animate-modal-pop" onClick={e => e.stopPropagation()}>
             <button onClick={() => setWaitingPrompt(null)} className="absolute top-6 right-6 text-neutral-500 hover:text-white transition-colors"><X size={20} /></button>
             <div className="flex items-center gap-3 mb-6 text-pink-500">
@@ -1476,7 +1476,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
 
       {/* Pop-up: Conclusão de Demanda */}
       {donePrompt && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-[90] fade-in" onClick={() => { setDonePrompt(null); setValidationError(null); }}>
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center px-4 pt-4 pb-24 sm:p-4 z-[90] fade-in" onClick={() => { setDonePrompt(null); setValidationError(null); }}>
           <div className="w-full max-w-sm rounded-[32px] bg-[#12121a] border border-[#27272a] shadow-2xl relative overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
             <div className="px-5 sm:px-8 py-5 sm:py-6 border-b border-[#27272a] flex items-center gap-3 text-emerald-500">
               <CheckCircle2 size={24} />
@@ -1503,7 +1503,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
 
       {/* Alerta de Banco de Horas */}
       {pendingLimitAlerts.length > 0 && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-[100] fade-in" onClick={() => setDismissedLimits(new Set([...dismissedLimits, ...pendingLimitAlerts.map(c => c.id)]))}>
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center px-4 pt-4 pb-24 sm:p-4 z-[100] fade-in" onClick={() => setDismissedLimits(new Set([...dismissedLimits, ...pendingLimitAlerts.map(c => c.id)]))}>
           <div className="w-full max-w-md rounded-[32px] bg-[#12121a] border border-red-500/30 flex flex-col shadow-2xl overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
             <div className="px-5 sm:px-8 py-5 sm:py-6 border-b border-[#27272a] flex items-center gap-3">
               <div className="p-3 bg-red-500/10 rounded-2xl shadow-inner text-red-500"><AlertTriangle size={24} /></div>
@@ -1535,7 +1535,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
 
       {/* Confirmar Exclusão de Cartão */}
       {confirmDelete !== null && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-[110] fade-in" onClick={() => setConfirmDelete(null)}>
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center px-4 pt-4 pb-24 sm:p-4 z-[110] fade-in" onClick={() => setConfirmDelete(null)}>
           <div className="w-full max-w-sm rounded-[32px] bg-[#12121a] border border-[#27272a] p-5 sm:p-8 shadow-2xl relative animate-modal-pop" onClick={e => e.stopPropagation()}>
             <div className="flex items-center gap-3 mb-4 text-red-500">
               <div className="p-3 bg-red-500/10 rounded-2xl shadow-inner"><Trash2 size={24} /></div>
@@ -1613,7 +1613,7 @@ function ProfileModal({ user, responsibles, onClose, onUpdate }: any) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-[90] fade-in" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center px-4 pt-4 pb-24 sm:p-4 z-[90] fade-in" onClick={onClose}>
       <div className="w-full max-w-sm rounded-[32px] bg-[#12121a] border border-[#27272a] shadow-2xl relative overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
         <div className="px-5 sm:px-8 py-5 sm:py-6 border-b border-[#27272a] bg-[#0f0f13] flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -1683,8 +1683,8 @@ function MobileNavBtn({ icon, label, active, onClick, alert }: any) {
 
 function OverlayModal({ title, icon, onClose, children, fullWidth, isClosing }: any) {
   return (
-    <div className={`fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 z-[60] ${isClosing ? 'fade-out' : 'fade-in'}`} onClick={onClose}>
-      <div className={`bg-[#12121a] border border-[#27272a] rounded-3xl sm:rounded-[32px] shadow-2xl flex flex-col overflow-hidden w-full ${isClosing ? 'animate-modal-out' : 'animate-modal-pop'} ${fullWidth ? 'max-w-7xl h-[92dvh] sm:h-[90dvh]' : 'max-w-4xl max-h-[90dvh] sm:max-h-[85dvh]'}`} onClick={(e) => e.stopPropagation()}>
+    <div className={`fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center px-3 pt-3 pb-24 sm:p-4 z-[60] ${isClosing ? 'fade-out' : 'fade-in'}`} onClick={onClose}>
+      <div className={`bg-[#12121a] border border-[#27272a] rounded-3xl sm:rounded-[32px] shadow-2xl flex flex-col overflow-hidden w-full ${isClosing ? 'animate-modal-out' : 'animate-modal-pop'} ${fullWidth ? 'max-w-7xl h-[80dvh] sm:h-[88dvh]' : 'max-w-4xl max-h-[80dvh] sm:max-h-[85dvh]'}`} onClick={(e) => e.stopPropagation()}>
         <div className="px-5 sm:px-8 py-5 sm:py-6 border-b border-[#27272a] flex items-center justify-between bg-[#0f0f13]">
            <div className="flex items-center gap-4">
              <div className="p-2.5 bg-white/5 rounded-xl border border-white/10 hidden sm:block">{icon}</div>
@@ -1833,8 +1833,8 @@ function ClientModal({ modal, setModal, setClients, user }: any) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 z-[70] fade-in" onClick={() => setModal(null)}>
-      <div className="w-full max-w-md rounded-3xl sm:rounded-[32px] bg-[#12121a] border border-[#27272a] flex flex-col max-h-[90dvh] sm:max-h-[85dvh] shadow-2xl overflow-hidden animate-modal-pop" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center px-3 pt-3 pb-24 sm:p-4 z-[70] fade-in" onClick={() => setModal(null)}>
+      <div className="w-full max-w-md rounded-3xl sm:rounded-[32px] bg-[#12121a] border border-[#27272a] flex flex-col max-h-[80dvh] sm:max-h-[85dvh] shadow-2xl overflow-hidden animate-modal-pop" onClick={(e) => e.stopPropagation()}>
         <div className="px-5 sm:px-8 py-5 border-b border-[#27272a] flex items-center justify-between bg-[#0f0f13] shrink-0">
           <h3 className="font-bold text-xl text-white tracking-tight">{modal.mode === "add" ? "Novo Cliente" : "Editar Cliente"}</h3>
           <button onClick={() => setModal(null)} className="p-2.5 rounded-xl text-neutral-500 hover:text-white hover:bg-white/5 transition-colors"><X size={20} /></button>
@@ -2597,8 +2597,8 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize }: an
   };
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 z-[80] fade-in" onClick={onClose}>
-      <div className="w-full max-w-4xl rounded-3xl sm:rounded-[32px] bg-[#12121a] border border-[#27272a] flex flex-col max-h-[92dvh] sm:max-h-[90dvh] shadow-2xl overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center px-3 pt-3 pb-24 sm:p-4 z-[80] fade-in" onClick={onClose}>
+      <div className="w-full max-w-4xl rounded-3xl sm:rounded-[32px] bg-[#12121a] border border-[#27272a] flex flex-col max-h-[80dvh] sm:max-h-[88dvh] shadow-2xl overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
         
         <div className="px-5 sm:px-8 py-5 sm:py-6 border-b border-[#27272a] flex items-center justify-between bg-[#0f0f13]">
           <div className="flex items-center gap-4">
@@ -2744,8 +2744,8 @@ function TaskModal({ modal, setModal, clients, responsibles, closeModal, saveMod
   const updateForm = (patch: any) => { setModal((m: any) => ({ ...m, form: { ...m.form, ...patch } })); if (validationError) setValidationError(null); };
   const addChecklistRow = () => { setModal((m: any) => ({ ...m, form: { ...m.form, checklist: [...(m.form.checklist || []), { id: nextId(), text: "", done: false }] } })); };
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 z-[85] fade-in" onClick={closeModal}>
-      <div className="w-full max-w-xl rounded-[32px] bg-[#12121a] border border-[#27272a] flex flex-col max-h-[85dvh] md:max-h-[90dvh] shadow-2xl overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center px-3 pt-3 pb-24 sm:p-4 z-[85] fade-in" onClick={closeModal}>
+      <div className="w-full max-w-xl rounded-[32px] bg-[#12121a] border border-[#27272a] flex flex-col max-h-[80dvh] sm:max-h-[85dvh] shadow-2xl overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
         <div className="px-6 sm:px-8 py-5 border-b border-[#27272a] flex items-center justify-between bg-[#0f0f13] shrink-0"><h3 className="font-bold text-xl text-white tracking-tight">{modal.mode === "add" ? "Nova Demanda" : "Editar Demanda"}</h3><button onClick={closeModal} className="p-2.5 rounded-xl text-neutral-500 hover:text-white hover:bg-white/5 transition-colors"><X size={20} /></button></div>
         <div className="p-6 sm:p-8 overflow-y-auto kp-scroll flex flex-col gap-6 bg-[#09090b] flex-1">
           <div><label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">Título do Card *</label><input autoFocus value={modal.form.title || ''} onChange={(e) => updateForm({ title: e.target.value })} className={`w-full bg-[#12121a] border rounded-xl px-4 py-4 sm:py-3.5 text-sm text-white outline-none focus:border-indigo-500 transition-all ${validationError && String(validationError).includes("Título") ? "border-red-500" : "border-[#27272a]"}`} placeholder="Ex: Ajustar Fluxo de E-mails..." /></div>

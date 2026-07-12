@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { 
   Plus, Pencil, Timer as TimerIcon, Trash2, X, Clock, 
   Users, Building2, BarChart3, LogOut, RotateCcw, 
-  Filter, AlertTriangle, GripVertical, Download, 
+  Filter, Search, AlertTriangle, GripVertical, Download, 
   Play, Pause, Square, CheckCircle2, User, CheckSquare,
   HelpCircle, ChevronDown, LayoutDashboard, Mail, Check, Copy, ClipboardList, Cloud, Lock,
   Eye, EyeOff, Settings, MonitorPlay, CloudRain, Sun, Moon, CloudLightning, Snowflake, CloudFog, UserCog, Calendar, ChevronUp,
@@ -450,6 +450,17 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault();
+        setSearchOpen(true);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   // Busca dados da Nuvem (o RLS já filtra o que cada usuário pode ver)
   useEffect(() => {
     async function fetchCloudData() {
@@ -579,6 +590,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
   const [modal, setModal] = useState<any>(null); 
   const [profileModal, setProfileModal] = useState(false);
   const [quickAdd, setQuickAdd] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [validationError, setValidationError] = useState<any>(null);
   
@@ -1207,6 +1219,14 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                      <Filter size={16} /> <span className="hidden lg:inline">Filtros</span>
                    </button>
 
+                   <button
+                     onClick={() => setSearchOpen(true)}
+                     title="Buscar (Ctrl/Cmd + K)"
+                     className="h-11 w-11 lg:w-auto px-0 lg:px-4 flex items-center justify-center gap-2 rounded-xl transition-all shadow-sm shrink-0 border font-bold uppercase tracking-widest text-[10px] glass-panel text-neutral-400 border-white/5 hover:text-white"
+                   >
+                     <Search size={16} /> <span className="hidden lg:inline">Buscar</span>
+                   </button>
+
                    <div className="glass-panel h-11 flex-1 flex items-center px-4 rounded-xl gap-3 shadow-sm min-w-0 lg:flex">
                      <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-500">Progresso</span>
                      <div className="flex-1 h-1.5 rounded-full bg-black/50 overflow-hidden border border-white/5">
@@ -1613,6 +1633,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
         <Plus size={24} />
       </button>
       {quickAdd && <QuickAddModal clients={visibleClients} onClose={() => setQuickAdd(false)} onCreate={(data: any) => setTasks((prev: any) => [...prev, { id: nextId(), title: data.title, description: '', priority: data.priority, durationMin: 0, clientId: data.clientId, responsibleId: user.id, startDate: '', dueDate: '', status: 'backlog', waitingFor: '', checklist: [], timerRunning: false, timerStart: null, timerElapsed: 0, createdAt: getBrasiliaDate(), completedAt: '' }])} />}
+      {searchOpen && <SearchModal tasks={visibleTasks} clients={clients} onOpen={openEditModal} onClose={() => setSearchOpen(false)} />}
 
       {/* Modais de Popups Principais */}
       {closureModal && <ClosureModal tasks={tasksForClosure} clients={clients} responsibles={responsibles} onClose={() => setClosureModal(false)} onFormalize={(clientId: string | null) => { if (clientId) { setTasks((prev: any) => prev.map((t: any) => (t.status === 'done' && t.clientId === clientId) ? { ...t, status: 'formalize' } : t)); } else { setTasks((prev: any) => prev.map((t: any) => t.status === 'done' ? { ...t, status: 'formalize' } : t)); setClosureModal(false); } }} />}
@@ -2469,6 +2490,69 @@ function FocusSection({ label, count, dot, children }: any) {
         <span className="text-[10px] font-bold text-neutral-500 bg-white/5 border border-white/10 px-2 py-0.5 rounded-md">{count}</span>
       </div>
       <div className="flex flex-col gap-2">{children}</div>
+    </div>
+  );
+}
+
+function SearchModal({ tasks, clients, onOpen, onClose }: any) {
+  const [q, setQ] = useState('');
+  const query = q.trim().toLowerCase();
+  const clientName = (id: string) => clients.find((c: any) => c.id === id)?.name || '';
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const results = query.length === 0 ? [] : tasks.filter((t: any) => {
+    const hay = `${t.title || ''} ${t.description || ''} ${clientName(t.clientId)}`.toLowerCase();
+    return hay.includes(query);
+  }).slice(0, 40);
+
+  return (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-start justify-center px-3 pt-[12vh] pb-24 sm:p-4 sm:pt-[12vh] z-[95] fade-in" onClick={onClose}>
+      <div className="w-full max-w-xl rounded-3xl bg-[#12121a] border border-[#27272a] shadow-2xl overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-[#27272a]">
+          <Search size={18} className="text-neutral-500 shrink-0" />
+          <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar por título, cliente ou descrição..." className="flex-1 bg-transparent text-sm text-white outline-none placeholder:text-neutral-600" />
+          <button onClick={onClose} className="p-1.5 rounded-lg text-neutral-500 hover:text-white transition-colors"><X size={18} /></button>
+        </div>
+        <div className="max-h-[52vh] overflow-y-auto kp-scroll p-2">
+          {query.length === 0 && (
+            <div className="text-center text-xs text-neutral-600 py-12">Digite para buscar entre suas demandas.</div>
+          )}
+          {query.length > 0 && results.length === 0 && (
+            <div className="text-center text-xs text-neutral-600 py-12">Nenhuma demanda encontrada para "{q}".</div>
+          )}
+          {results.map((t: any) => {
+            const col = COLUMNS.find(c => c.id === t.status);
+            const cn = clientName(t.clientId);
+            const pr = PRIORITY_STYLE[t.priority] || PRIORITY_STYLE['Média'];
+            return (
+              <button key={t.id} onClick={() => { onOpen(t); onClose(); }} className="w-full text-left flex items-center gap-3 p-3 rounded-xl hover:bg-white/5 transition-colors group">
+                <span className={`w-2 h-2 rounded-full shrink-0 ${col?.dot || 'bg-neutral-500'}`} />
+                <div className="min-w-0 flex-1">
+                  <div className="text-[13px] font-bold text-white truncate">{t.title}</div>
+                  <div className="text-[10px] text-neutral-500 uppercase tracking-widest font-bold mt-0.5 flex items-center gap-2 flex-wrap">
+                    {cn && <><span className="truncate max-w-[140px]">{cn}</span><span className="opacity-40">·</span></>}
+                    <span>{col?.name || t.status}</span>
+                    <span className="opacity-40">·</span>
+                    <span className={pr.text}>{t.priority}</span>
+                  </div>
+                </div>
+                <ChevronRight size={16} className="text-neutral-700 group-hover:text-neutral-400 shrink-0 transition-colors" />
+              </button>
+            );
+          })}
+        </div>
+        {results.length > 0 && (
+          <div className="px-5 py-3 border-t border-[#27272a] text-[10px] text-neutral-600 uppercase tracking-widest font-bold flex items-center justify-between">
+            <span>{results.length} resultado{results.length > 1 ? 's' : ''}</span>
+            <span>Esc para fechar</span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -1155,7 +1155,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
         </div>
 
         {/* MODAIS Overlay */}
-        {activeTab === 'today' && <OverlayModal title="Meu Dia" icon={<Sun size={20} className="text-amber-400"/>} isClosing={isClosingModal} onClose={handleCloseTab}><TodayView tasks={tasks} clients={clients} user={user} now={now} getElapsed={getElapsed} onOpen={openEditModal} onToggleTimer={toggleTimer} /></OverlayModal>}
+        {activeTab === 'today' && <OverlayModal title="Meu Dia" icon={<Sun size={20} className="text-amber-400"/>} isClosing={isClosingModal} onClose={handleCloseTab}><TodayView tasks={tasks} clients={clients} user={user} now={now} getElapsed={getElapsed} onOpen={openEditModal} onToggleTimer={toggleTimer} onComplete={(t) => handleRequestMove(t.id, null, 'done')} /></OverlayModal>}
         {activeTab === 'timer' && <OverlayModal title="Cronómetro" icon={<Clock size={20} className="text-amber-500"/>} isClosing={isClosingModal} onClose={handleCloseTab}><TimerPanelContent tasks={filteredTasks} now={now} getElapsed={getElapsed} onToggleTimer={toggleTimer} user={user} /></OverlayModal>}
         {activeTab === 'responsibles' && <OverlayModal title="Equipe (Contas)" icon={<Users size={20} className="text-indigo-400"/>} isClosing={isClosingModal} onClose={handleCloseTab}><ResponsiblesPanelContent responsibles={responsibles} tasks={tasks} user={user} /></OverlayModal>}
         {activeTab === 'clients' && <OverlayModal title="Gestão de Clientes" icon={<Building2 size={20} className="text-purple-400"/>} isClosing={isClosingModal} onClose={handleCloseTab}><ClientsPanelContent clients={visibleClients} setClients={setClients} tasks={tasks} setTasks={setTasks} user={user} getElapsed={getElapsed} now={now} /></OverlayModal>}
@@ -1865,11 +1865,7 @@ function ClientModal({ modal, setModal, setClients, user }: any) {
             <input type="number" value={form.contractedHours === 0 ? '' : form.contractedHours} onChange={(e) => setForm({ ...form, contractedHours: e.target.value })} className={`w-full bg-[#12121a] border border-[#27272a] rounded-xl px-4 py-4 sm:py-3.5 text-sm text-white outline-none focus:border-purple-500 transition-colors`} placeholder="Ex: 50" />
           </div>
 
-          <div>
-            <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">URL do Relatório (Looker Studio)</label>
-            <input type="text" value={form.lookerUrl || ''} onChange={(e) => setForm({ ...form, lookerUrl: e.target.value })} className={`w-full bg-[#12121a] border border-[#27272a] rounded-xl px-4 py-4 sm:py-3.5 text-sm text-white outline-none focus:border-purple-500 transition-colors`} placeholder="https://lookerstudio.google.com/reporting/..." />
-          </div>
-          
+
           <div>
             <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">E-mails (Contatos)</label>
             <div className="flex flex-col sm:flex-row items-center gap-3 mb-4">
@@ -1904,6 +1900,144 @@ function ClientModal({ modal, setModal, setClients, user }: any) {
   );
 }
 
+function ClientDetailModal({ client, tasks, getElapsed, user, onClose, onEdit, onRemove }: any) {
+  const cTasks = tasks.filter((t: any) => t.clientId === client.id);
+  const worked = cTasks.reduce((acc: number, t: any) => acc + (getElapsed(t) / 3600), 0);
+  const teto = client.contractedHours || 0;
+  const remaining = teto ? teto - worked : null;
+  const pct = teto ? Math.min(100, (worked / teto) * 100) : 0;
+  const emails = Array.isArray(client.emails) ? client.emails : [];
+
+  const over = remaining !== null && remaining < 0;
+  const near = remaining !== null && remaining >= 0 && remaining <= 5;
+  const barColor = over ? 'bg-red-500' : near ? 'bg-amber-500' : 'bg-emerald-500';
+  const accentText = over ? 'text-red-400' : near ? 'text-amber-400' : 'text-emerald-400';
+
+  const doneCount = cTasks.filter((t: any) => t.status === 'done' || t.status === 'formalize').length;
+  const activeCount = cTasks.filter((t: any) => !['done', 'cancelled', 'formalize'].includes(t.status)).length;
+
+  const sorted = [...cTasks].sort((a: any, b: any) => COLUMNS.findIndex(c => c.id === a.status) - COLUMNS.findIndex(c => c.id === b.status));
+
+  return (
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center px-3 pt-3 pb-24 sm:p-4 z-[75] fade-in" onClick={onClose}>
+      <div className="w-full max-w-2xl rounded-3xl sm:rounded-[32px] bg-[#12121a] border border-[#27272a] flex flex-col max-h-[80dvh] sm:max-h-[85dvh] shadow-2xl overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
+        <div className="px-5 sm:px-8 py-5 border-b border-[#27272a] flex items-center justify-between bg-[#0f0f13] shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="p-2.5 bg-purple-500/10 rounded-xl border border-purple-500/20 shrink-0"><Building2 size={22} className="text-purple-400" /></div>
+            <h3 className="font-bold text-xl text-white tracking-tight truncate">{client.name}</h3>
+          </div>
+          <button onClick={onClose} className="p-2.5 rounded-xl text-neutral-500 hover:text-white hover:bg-white/5 transition-colors shrink-0"><X size={20} /></button>
+        </div>
+
+        <div className="p-5 sm:p-8 flex flex-col gap-6 bg-[#09090b] flex-1 overflow-y-auto kp-scroll">
+
+          {/* Banco de horas */}
+          <div className="rounded-2xl border border-[#27272a] bg-[#12121a] p-5 sm:p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-neutral-400">Banco de Horas</h4>
+              {teto > 0 && (
+                <span className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-md border ${over ? 'bg-red-500/10 text-red-400 border-red-500/20' : near ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'}`}>
+                  {over ? `${Math.abs(remaining as number).toFixed(1)}h acima` : `${(remaining as number).toFixed(1)}h restam`}
+                </span>
+              )}
+            </div>
+            {teto > 0 ? (
+              <>
+                <div className="flex items-end justify-between mb-3">
+                  <span className="text-3xl font-black text-white">{worked.toFixed(1)}<span className="text-lg text-neutral-500 font-bold">h</span></span>
+                  <span className="text-xs font-bold uppercase tracking-widest text-neutral-500">de {teto}h contratadas</span>
+                </div>
+                <div className="h-2.5 rounded-full bg-black/50 overflow-hidden border border-white/5">
+                  <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${pct}%` }} />
+                </div>
+                {(over || near) && (
+                  <a href={generateLimitEmailLink(client, worked)} target="_blank" rel="noreferrer" className="mt-4 inline-flex items-center gap-2 px-4 py-2.5 bg-red-500/10 text-red-400 border border-red-500/20 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-red-500/20 transition-colors">
+                    <AlertTriangle size={14} /> Enviar aviso de horas
+                  </a>
+                )}
+              </>
+            ) : (
+              <div className="flex items-end justify-between">
+                <span className="text-3xl font-black text-white">{worked.toFixed(1)}<span className="text-lg text-neutral-500 font-bold">h</span></span>
+                <span className="text-xs font-bold uppercase tracking-widest text-neutral-600">sem teto definido</span>
+              </div>
+            )}
+          </div>
+
+          {/* Mini-stats */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="rounded-xl border border-[#27272a] bg-[#12121a] p-4 flex flex-col gap-1">
+              <span className="text-2xl font-black text-white">{cTasks.length}</span>
+              <span className="text-[9px] font-bold uppercase tracking-widest text-neutral-500">Demandas</span>
+            </div>
+            <div className="rounded-xl border border-[#27272a] bg-[#12121a] p-4 flex flex-col gap-1">
+              <span className="text-2xl font-black text-blue-400">{activeCount}</span>
+              <span className="text-[9px] font-bold uppercase tracking-widest text-neutral-500">Ativas</span>
+            </div>
+            <div className="rounded-xl border border-[#27272a] bg-[#12121a] p-4 flex flex-col gap-1">
+              <span className="text-2xl font-black text-emerald-400">{doneCount}</span>
+              <span className="text-[9px] font-bold uppercase tracking-widest text-neutral-500">Concluídas</span>
+            </div>
+          </div>
+
+          {/* Contatos */}
+          <div>
+            <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-neutral-400 mb-3 ml-0.5">Contatos</h4>
+            {emails.length === 0 ? (
+              <div className="text-center text-xs text-neutral-600 py-5 border border-dashed border-[#27272a] rounded-xl">Nenhum contato cadastrado.</div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {emails.map((e: string, i: number) => (
+                  <a key={i} href={`mailto:${e}`} className="flex items-center gap-3 bg-[#12121a] border border-[#27272a] rounded-xl px-4 py-3 text-sm text-neutral-300 hover:border-purple-500/40 transition-colors">
+                    <Mail size={16} className="text-purple-400 shrink-0" /> <span className="truncate">{e}</span>
+                  </a>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Demandas */}
+          <div>
+            <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-neutral-400 mb-3 ml-0.5">Demandas ({cTasks.length})</h4>
+            {cTasks.length === 0 ? (
+              <div className="text-center text-xs text-neutral-600 py-5 border border-dashed border-[#27272a] rounded-xl">Nenhuma demanda para este cliente.</div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {sorted.map((t: any) => {
+                  const col = COLUMNS.find(c => c.id === t.status);
+                  const tempo = getElapsed(t);
+                  const closed = ['done', 'cancelled', 'formalize'].includes(t.status);
+                  return (
+                    <div key={t.id} className="flex items-center gap-3 bg-[#12121a] border border-[#27272a] rounded-xl p-3">
+                      <span className={`w-2 h-2 rounded-full shrink-0 ${col?.dot || 'bg-neutral-500'}`} />
+                      <div className="min-w-0 flex-1">
+                        <div className={`text-[13px] font-bold leading-snug truncate ${closed ? 'text-neutral-500' : 'text-white'}`}>{t.title}</div>
+                        <div className="text-[9px] font-bold uppercase tracking-widest text-neutral-500 mt-0.5">{col?.name || t.status}</div>
+                      </div>
+                      {tempo > 0 && <span className="text-[10px] font-mono font-bold text-neutral-400 shrink-0">{formatTime(tempo)}</span>}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {user.isAdmin && (
+          <div className="px-5 sm:px-8 py-5 border-t border-[#27272a] bg-[#0f0f13] flex items-center justify-between gap-3 shrink-0">
+            <button onClick={() => onRemove(client.id)} className="flex items-center gap-2 px-4 py-3 rounded-xl text-red-400/70 hover:text-red-400 hover:bg-red-500/10 text-[10px] font-bold uppercase tracking-widest transition-colors">
+              <Trash2 size={16} /> Remover
+            </button>
+            <button onClick={() => onEdit(client)} className="flex items-center gap-2 px-6 py-3.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold uppercase tracking-widest transition-all shadow-[0_0_15px_rgba(147,51,234,0.3)]">
+              <Pencil size={16} /> Editar Cliente
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ClientsPanelContent({ clients, setClients, tasks, setTasks, user, getElapsed, now }: any) {
   const [clientModal, setClientModal] = useState<any>(null);
 
@@ -1911,6 +2045,8 @@ function ClientsPanelContent({ clients, setClients, tasks, setTasks, user, getEl
   
   // Apenas admin edita clientes — o RLS já bloqueia a escrita dos demais no banco,
   // então a UI acompanha a regra para evitar salvamentos que falhariam em silêncio.
+  const [detailClient, setDetailClient] = useState<any>(null);
+
   const openEdit = (client: any) => {
     if (!user.isAdmin) return;
     const emailsArray = Array.isArray(client.emails) ? client.emails : [];
@@ -1952,7 +2088,7 @@ function ClientsPanelContent({ clients, setClients, tasks, setTasks, user, getEl
           const isNearLimit = remaining !== null && remaining <= 5;
           
           return (
-            <div key={c.id} onClick={() => openEdit(c)} className={`flex flex-col sm:flex-row sm:items-center justify-between bg-[#12121a] border border-[#27272a] rounded-[20px] p-6 transition-all gap-5 sm:gap-0 shadow-sm relative group ${user.isAdmin ? 'hover:border-purple-500/50 cursor-pointer' : 'cursor-default'}`}>
+            <div key={c.id} onClick={() => setDetailClient(c)} className="flex flex-col sm:flex-row sm:items-center justify-between bg-[#12121a] border border-[#27272a] rounded-[20px] p-6 transition-all gap-5 sm:gap-0 shadow-sm relative group hover:border-purple-500/50 cursor-pointer">
               <div className="flex items-center gap-5">
                 <div className="p-4 bg-white/5 rounded-2xl border border-white/10 group-hover:border-purple-500/30 transition-colors"><Building2 size={24} className="text-purple-400" /></div>
                 <div className="flex flex-col">
@@ -1960,15 +2096,6 @@ function ClientsPanelContent({ clients, setClients, tasks, setTasks, user, getEl
                   <span className="text-xs text-neutral-500 mt-1 uppercase tracking-widest font-bold">
                     {c.contractedHours ? <span className="text-indigo-400">Teto: {c.contractedHours}h | </span> : ''} {emailsArray.length === 0 ? "0 E-mails" : `${emailsArray.length} Contato(s)`} • {count} Demandas
                   </span>
-                  
-                  {c.lookerUrl && (
-                    <div className="mt-3 flex gap-2">
-                       <button onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(c.lookerUrl); alert('Link do Looker Studio copiado!'); }} className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-1.5 bg-blue-500/10 text-blue-400 px-3 py-1.5 rounded-lg border border-blue-500/20 hover:bg-blue-500/20 transition-colors">
-                          <Copy size={12}/> Copiar Link Relatório
-                       </button>
-                    </div>
-                  )}
-
                 </div>
               </div>
               
@@ -1989,6 +2116,7 @@ function ClientsPanelContent({ clients, setClients, tasks, setTasks, user, getEl
         })}
       </div>
       {clientModal && <ClientModal modal={clientModal} setModal={setClientModal} setClients={setClients} user={user} />}
+      {detailClient && <ClientDetailModal client={detailClient} tasks={tasks} getElapsed={getElapsed} user={user} onClose={() => setDetailClient(null)} onEdit={(c: any) => { setDetailClient(null); setClientModal({ mode: 'edit', form: { ...c, emails: Array.isArray(c.emails) ? c.emails : [] } }); }} onRemove={(id: string) => { setDetailClient(null); remove(id); }} />}
     </div>
   );
 }
@@ -2265,7 +2393,7 @@ function buildGCalLink(task: any, clientName: string) {
   return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(title)}&details=${encodeURIComponent(details)}&dates=${toGCalStamp(start)}/${toGCalStamp(end)}`;
 }
 
-function FocusRow({ t, clientName, onOpen, onToggleTimer, accent, meta, metaColor }: any) {
+function FocusRow({ t, clientName, onOpen, onToggleTimer, onComplete, accent, meta, metaColor }: any) {
   const pr = PRIORITY_STYLE[t.priority] || PRIORITY_STYLE['Média'];
   const closed = ['done', 'cancelled', 'formalize'].includes(t.status);
   return (
@@ -2280,9 +2408,14 @@ function FocusRow({ t, clientName, onOpen, onToggleTimer, accent, meta, metaColo
         {meta && <div className={`text-[10px] font-bold mt-1 ${metaColor || 'text-neutral-500'}`}>{meta}</div>}
       </div>
       {!closed && (
-        <button onClick={(e) => { e.stopPropagation(); onToggleTimer(t.id); }} className={`self-center shrink-0 p-2 rounded-lg border transition-colors ${t.timerRunning ? 'text-amber-400 bg-amber-400/10 border-amber-400/20' : 'text-neutral-400 bg-white/5 border-transparent hover:bg-white/10'}`} title={t.timerRunning ? 'Pausar' : 'Iniciar timer'}>
-          {t.timerRunning ? <Pause size={14} /> : <Play size={14} />}
-        </button>
+        <div className="self-center shrink-0 flex items-center gap-1.5">
+          <button onClick={(e) => { e.stopPropagation(); onToggleTimer(t.id); }} className={`p-2 rounded-lg border transition-colors ${t.timerRunning ? 'text-amber-400 bg-amber-400/10 border-amber-400/20' : 'text-neutral-400 bg-white/5 border-transparent hover:bg-white/10'}`} title={t.timerRunning ? 'Pausar' : 'Iniciar timer'}>
+            {t.timerRunning ? <Pause size={14} /> : <Play size={14} />}
+          </button>
+          <button onClick={(e) => { e.stopPropagation(); onComplete(t); }} className="p-2 rounded-lg border border-transparent bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-colors" title="Concluir">
+            <CheckCircle2 size={14} />
+          </button>
+        </div>
       )}
     </div>
   );
@@ -2302,7 +2435,7 @@ function FocusSection({ label, count, dot, children }: any) {
   );
 }
 
-function TodayView({ tasks, clients, user, now, getElapsed, onOpen, onToggleTimer }: any) {
+function TodayView({ tasks, clients, user, now, getElapsed, onOpen, onToggleTimer, onComplete }: any) {
   const pad = (n: number) => String(n).padStart(2, '0');
   const nowD = new Date();
   const todayMs = new Date(nowD).setHours(0, 0, 0, 0);
@@ -2389,27 +2522,27 @@ function TodayView({ tasks, clients, user, now, getElapsed, onOpen, onToggleTime
         )}
 
         <FocusSection label="Atrasadas" count={overdue.length} dot="bg-red-500">
-          {overdue.map((t: any) => <FocusRow key={t.id} t={t} clientName={clientName(t.clientId)} onOpen={onOpen} onToggleTimer={onToggleTimer} accent="bg-red-500" meta={`Venceu em ${fmtBR(t.dueDate)}`} metaColor="text-red-400" />)}
+          {overdue.map((t: any) => <FocusRow key={t.id} t={t} clientName={clientName(t.clientId)} onOpen={onOpen} onToggleTimer={onToggleTimer} onComplete={onComplete} accent="bg-red-500" meta={`Venceu em ${fmtBR(t.dueDate)}`} metaColor="text-red-400" />)}
         </FocusSection>
 
         <FocusSection label="Vence hoje" count={dueToday.length} dot="bg-orange-500">
-          {dueToday.map((t: any) => <FocusRow key={t.id} t={t} clientName={clientName(t.clientId)} onOpen={onOpen} onToggleTimer={onToggleTimer} accent="bg-orange-500" meta="Prazo é hoje" metaColor="text-orange-400" />)}
+          {dueToday.map((t: any) => <FocusRow key={t.id} t={t} clientName={clientName(t.clientId)} onOpen={onOpen} onToggleTimer={onToggleTimer} onComplete={onComplete} accent="bg-orange-500" meta="Prazo é hoje" metaColor="text-orange-400" />)}
         </FocusSection>
 
         <FocusSection label="Agendadas para hoje" count={scheduledToday.length} dot="bg-teal-500">
-          {scheduledToday.map((t: any) => { const s = new Date(t.scheduledStart); const dur = t.durationMin > 0 ? t.durationMin : 60; return <FocusRow key={t.id} t={t} clientName={clientName(t.clientId)} onOpen={onOpen} onToggleTimer={onToggleTimer} accent="bg-teal-500" meta={`${pad(s.getHours())}:${pad(s.getMinutes())} · ${dur}min`} metaColor="text-teal-400" />; })}
+          {scheduledToday.map((t: any) => { const s = new Date(t.scheduledStart); const dur = t.durationMin > 0 ? t.durationMin : 60; return <FocusRow key={t.id} t={t} clientName={clientName(t.clientId)} onOpen={onOpen} onToggleTimer={onToggleTimer} onComplete={onComplete} accent="bg-teal-500" meta={`${pad(s.getHours())}:${pad(s.getMinutes())} · ${dur}min`} metaColor="text-teal-400" />; })}
         </FocusSection>
 
         <FocusSection label="Em andamento" count={inProgress.length} dot="bg-blue-500">
-          {inProgress.map((t: any) => <FocusRow key={t.id} t={t} clientName={clientName(t.clientId)} onOpen={onOpen} onToggleTimer={onToggleTimer} accent="bg-blue-500" meta={t.timerRunning ? `Rodando · ${formatTime(getElapsed(t))}` : (getElapsed(t) > 0 ? `Tempo: ${formatTime(getElapsed(t))}` : '')} metaColor="text-blue-400" />)}
+          {inProgress.map((t: any) => <FocusRow key={t.id} t={t} clientName={clientName(t.clientId)} onOpen={onOpen} onToggleTimer={onToggleTimer} onComplete={onComplete} accent="bg-blue-500" meta={t.timerRunning ? `Rodando · ${formatTime(getElapsed(t))}` : (getElapsed(t) > 0 ? `Tempo: ${formatTime(getElapsed(t))}` : '')} metaColor="text-blue-400" />)}
         </FocusSection>
 
         <FocusSection label="Aguardando retorno" count={waiting.length} dot="bg-pink-500">
-          {waiting.map((t: any) => <FocusRow key={t.id} t={t} clientName={clientName(t.clientId)} onOpen={onOpen} onToggleTimer={onToggleTimer} accent="bg-pink-500" meta={t.waitingFor ? `Depende de: ${t.waitingFor}` : 'Aguardando'} metaColor="text-pink-400" />)}
+          {waiting.map((t: any) => <FocusRow key={t.id} t={t} clientName={clientName(t.clientId)} onOpen={onOpen} onToggleTimer={onToggleTimer} onComplete={onComplete} accent="bg-pink-500" meta={t.waitingFor ? `Depende de: ${t.waitingFor}` : 'Aguardando'} metaColor="text-pink-400" />)}
         </FocusSection>
 
         <FocusSection label="Concluídas hoje" count={doneToday.length} dot="bg-emerald-500">
-          {doneToday.map((t: any) => <FocusRow key={t.id} t={t} clientName={clientName(t.clientId)} onOpen={onOpen} onToggleTimer={onToggleTimer} accent="bg-emerald-500" meta="Finalizada hoje" metaColor="text-emerald-400" />)}
+          {doneToday.map((t: any) => <FocusRow key={t.id} t={t} clientName={clientName(t.clientId)} onOpen={onOpen} onToggleTimer={onToggleTimer} onComplete={onComplete} accent="bg-emerald-500" meta="Finalizada hoje" metaColor="text-emerald-400" />)}
         </FocusSection>
       </div>
     </div>

@@ -204,31 +204,42 @@ function TopWidgets() {
 }
 
 // --- Componente de Login (Supabase Auth) ---
+// Traduz erros do Supabase Auth para mensagens claras ao usuário final
+function friendlyAuthError(msg?: string) {
+  const m = (msg || '').toLowerCase();
+  if (m.includes('invalid login credentials')) return 'E-mail ou senha incorretos.';
+  if (m.includes('already registered') || m.includes('already been registered') || m.includes('user already')) return 'Este e-mail já tem uma conta. Use a aba "Entrar".';
+  if (m.includes('email not confirmed')) return 'Confirme seu e-mail antes de entrar (verifique sua caixa de entrada e o spam).';
+  if (m.includes('at least 6') || m.includes('password should be')) return 'A senha deve ter no mínimo 6 caracteres.';
+  if (m.includes('rate limit') || m.includes('too many') || m.includes('for security purposes')) return 'Muitas tentativas em pouco tempo. Aguarde um instante e tente de novo.';
+  if (m.includes('invalid email') || m.includes('unable to validate email') || m.includes('invalid format')) return 'Informe um e-mail válido.';
+  if (m.includes('network') || m.includes('failed to fetch') || m.includes('load failed')) return 'Sem conexão. Verifique sua internet e tente novamente.';
+  return 'Não foi possível concluir. Tente novamente em instantes.';
+}
+
 function LoginScreen() {
   const [mode, setMode] = useState<'login' | 'signup'>('login');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState('');
+  const [feedback, setFeedback] = useState<{ type: 'error' | 'success', text: string } | null>(null);
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async () => {
-    setError('');
+    setFeedback(null);
     const supa = (window as any).supabaseClient;
 
-    if (mode === 'signup' && name.trim().length < 3) {
-      return setError("O nome deve ter no mínimo 3 caracteres.");
-    }
-    if (!email.includes('@')) return setError("Informe um e-mail válido.");
-    if (password.length < 6) return setError("A senha deve ter no mínimo 6 caracteres.");
+    if (mode === 'signup' && name.trim().length < 3) return setFeedback({ type: 'error', text: 'Informe seu nome (mínimo 3 letras).' });
+    if (!email.includes('@')) return setFeedback({ type: 'error', text: 'Informe um e-mail válido.' });
+    if (password.length < 6) return setFeedback({ type: 'error', text: 'A senha deve ter no mínimo 6 caracteres.' });
 
     setLoading(true);
     try {
       if (mode === 'signup') {
         const { data, error: signUpErr } = await supa.auth.signUp({ email: email.trim(), password });
         if (signUpErr) throw signUpErr;
-        if (!data.user) throw new Error("Não foi possível criar a conta.");
+        if (!data.user) throw new Error('signup failed');
 
         // Cria o registro correspondente em 'responsibles', ligado à conta de Auth
         const { error: insertErr } = await supa
@@ -236,20 +247,27 @@ function LoginScreen() {
           .insert([{ id: 'r' + Date.now(), name: name.trim(), user_id: data.user.id, avatar: '' }]);
         if (insertErr) throw insertErr;
 
-        // Se o Supabase exigir confirmação por e-mail, não haverá sessão ainda
+        // Sem sessão = Supabase exige confirmação por e-mail
         if (!data.session) {
-          setError("Conta criada! Verifique seu e-mail para confirmar antes de entrar.");
+          setMode('login');
+          setPassword('');
+          setFeedback({ type: 'success', text: 'Conta criada! Confirme o e-mail que enviamos e depois faça login.' });
           setLoading(false);
           return;
         }
+        // Com sessão ativa: o app carrega o perfil e entra automaticamente
+        setFeedback({ type: 'success', text: 'Conta criada! Entrando...' });
+        return; // mantém o carregamento até o redirecionamento
       } else {
         const { error: signInErr } = await supa.auth.signInWithPassword({ email: email.trim(), password });
         if (signInErr) throw signInErr;
+        setFeedback({ type: 'success', text: 'Entrando...' });
       }
-      // Não precisamos setar o usuário aqui: o onAuthStateChange no App cuida disso.
     } catch (e: any) {
       console.error(e);
-      setError(e.message === 'Invalid login credentials' ? "E-mail ou senha incorretos." : (e.message || "Erro ao conectar. Tente novamente."));
+      setFeedback({ type: 'error', text: friendlyAuthError(e?.message) });
+      setLoading(false);
+      return;
     }
     setLoading(false);
   };
@@ -266,13 +284,14 @@ function LoginScreen() {
         </div>
 
         <div className="flex bg-[#09090b] border border-[#27272a] rounded-xl p-1 mb-6">
-          <button onClick={() => { setMode('login'); setError(''); }} className={`flex-1 py-2.5 rounded-lg text-xs font-bold uppercase tracking-widest transition-all ${mode === 'login' ? 'bg-indigo-600 text-white' : 'text-neutral-500'}`}>Entrar</button>
-          <button onClick={() => { setMode('signup'); setError(''); }} className={`flex-1 py-2.5 rounded-lg text-xs font-bold uppercase tracking-widest transition-all ${mode === 'signup' ? 'bg-indigo-600 text-white' : 'text-neutral-500'}`}>Criar Conta</button>
+          <button onClick={() => { setMode('login'); setFeedback(null); }} className={`flex-1 py-2.5 rounded-lg text-xs font-bold uppercase tracking-widest transition-all ${mode === 'login' ? 'bg-indigo-600 text-white' : 'text-neutral-500'}`}>Entrar</button>
+          <button onClick={() => { setMode('signup'); setFeedback(null); }} className={`flex-1 py-2.5 rounded-lg text-xs font-bold uppercase tracking-widest transition-all ${mode === 'signup' ? 'bg-indigo-600 text-white' : 'text-neutral-500'}`}>Criar Conta</button>
         </div>
 
-        {error && (
-          <div className="mb-4 bg-red-500/10 border border-red-500/20 text-red-400 text-xs px-3 py-2.5 rounded-lg flex items-center gap-2">
-            <AlertTriangle size={14} className="shrink-0" /> {String(error)}
+        {feedback && (
+          <div className={`mb-5 px-4 py-3.5 rounded-xl flex items-center gap-3 text-sm font-medium border animate-modal-pop ${feedback.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300' : 'bg-red-500/10 border-red-500/25 text-red-300'}`}>
+            {feedback.type === 'success' ? <CheckCircle2 size={18} className="shrink-0" /> : <AlertTriangle size={18} className="shrink-0" />}
+            <span className="leading-snug">{feedback.text}</span>
           </div>
         )}
 
@@ -359,7 +378,7 @@ export default function App() {
     if (!supabaseReady) return;
     const supa = (window as any).supabaseClient;
 
-    async function loadProfile(authUser: any) {
+    async function loadProfile(authUser: any, attempt = 0) {
       if (!authUser) { setUser(null); setAuthChecked(true); return; }
       const { data: profile } = await supa
         .from('responsibles')
@@ -368,9 +387,15 @@ export default function App() {
         .maybeSingle();
       if (profile) {
         setUser({ id: profile.id, name: profile.name, isAdmin: !!profile.is_admin, avatar: profile.avatar || '' });
-      } else {
-        setUser(null);
+        setAuthChecked(true);
+        return;
       }
+      // Perfil ainda não gravado (ex: conta recém-criada) — tenta de novo antes de desistir
+      if (attempt < 4) {
+        setTimeout(() => loadProfile(authUser, attempt + 1), 600);
+        return;
+      }
+      setUser(null);
       setAuthChecked(true);
     }
 
@@ -581,17 +606,37 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [activeTooltipCol, setActiveTooltipCol] = useState<string | null>(null);
   
-  // Controle de Filtros Principais
+  // Controle de Filtros Principais (persistidos entre sessões)
+  const savedFilters = useMemo(() => {
+    try { return JSON.parse(localStorage.getItem('lumina_filters') || '{}'); } catch { return {}; }
+  }, []);
   const [showFilters, setShowFilters] = useState(false);
-  const [filterClient, setFilterClient] = useState("all");
-  const [filterResp, setFilterResp] = useState("all");
-  const [filterPriority, setFilterPriority] = useState("all");
-  const [filterCreatedStart, setFilterCreatedStart] = useState("");
-  const [filterCreatedEnd, setFilterCreatedEnd] = useState("");
-  const [filterCompletedStart, setFilterCompletedStart] = useState("");
-  const [filterCompletedEnd, setFilterCompletedEnd] = useState("");
-  
+  const [filterClient, setFilterClient] = useState(savedFilters.filterClient || "all");
+  const [filterResp, setFilterResp] = useState(savedFilters.filterResp || "all");
+  const [filterPriority, setFilterPriority] = useState(savedFilters.filterPriority || "all");
+  const [filterCreatedStart, setFilterCreatedStart] = useState(savedFilters.filterCreatedStart || "");
+  const [filterCreatedEnd, setFilterCreatedEnd] = useState(savedFilters.filterCreatedEnd || "");
+  const [filterCompletedStart, setFilterCompletedStart] = useState(savedFilters.filterCompletedStart || "");
+  const [filterCompletedEnd, setFilterCompletedEnd] = useState(savedFilters.filterCompletedEnd || "");
+
+  // Salva os filtros sempre que mudam (ficam fixos mesmo recarregando)
+  useEffect(() => {
+    try {
+      localStorage.setItem('lumina_filters', JSON.stringify({ filterClient, filterResp, filterPriority, filterCreatedStart, filterCreatedEnd, filterCompletedStart, filterCompletedEnd }));
+    } catch {}
+  }, [filterClient, filterResp, filterPriority, filterCreatedStart, filterCreatedEnd, filterCompletedStart, filterCompletedEnd]);
+
+  // Consultor não filtra por responsável (só vê as próprias demandas)
+  useEffect(() => {
+    if (!user.isAdmin && filterResp !== 'all') setFilterResp('all');
+  }, [user.isAdmin]);
+
   const hasDateFilters = filterCreatedStart || filterCreatedEnd || filterCompletedStart || filterCompletedEnd;
+  const hasAnyFilter = filterClient !== 'all' || filterResp !== 'all' || filterPriority !== 'all' || !!hasDateFilters;
+  const resetFilters = () => {
+    setFilterClient('all'); setFilterResp('all'); setFilterPriority('all');
+    setFilterCreatedStart(''); setFilterCreatedEnd(''); setFilterCompletedStart(''); setFilterCompletedEnd('');
+  };
 
   const [modal, setModal] = useState<any>(null); 
   const [profileModal, setProfileModal] = useState(false);
@@ -1266,8 +1311,10 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                     {/* Seletores (Cliente / Responsável / Prioridade) */}
                     <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-5">
                        <FilterSelect value={filterClient} onChange={setFilterClient} options={visibleClients} defaultLabel="Todos Clientes" />
-                       <div className="hidden sm:block w-px h-4 bg-white/10"></div>
-                       <FilterSelect value={filterResp} onChange={setFilterResp} options={responsibles} defaultLabel="Todos Responsáveis" />
+                       {user.isAdmin && <>
+                         <div className="hidden sm:block w-px h-4 bg-white/10"></div>
+                         <FilterSelect value={filterResp} onChange={setFilterResp} options={responsibles} defaultLabel="Todos Responsáveis" />
+                       </>}
                        <div className="hidden sm:block w-px h-4 bg-white/10"></div>
                        <FilterSelect value={filterPriority} onChange={setFilterPriority} options={[{id: 'Baixa', name: 'Baixa'}, {id: 'Média', name: 'Média'}, {id: 'Alta', name: 'Alta'}]} defaultLabel="Prioridades" />
                     </div>
@@ -1305,9 +1352,9 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                        </div>
                     </div>
 
-                    {hasDateFilters && (
-                       <button onClick={() => { setFilterCreatedStart(''); setFilterCreatedEnd(''); setFilterCompletedStart(''); setFilterCompletedEnd(''); }} className="self-end flex items-center justify-center gap-1.5 px-4 h-9 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 text-[10px] font-bold uppercase tracking-widest transition-colors">
-                         <X size={12}/> Limpar Datas
+                    {hasAnyFilter && (
+                       <button onClick={resetFilters} className="self-end flex items-center justify-center gap-1.5 px-4 h-9 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 text-[10px] font-bold uppercase tracking-widest transition-colors">
+                         <RotateCcw size={12}/> Resetar filtros
                        </button>
                     )}
                   </div>
@@ -2283,8 +2330,10 @@ function AnalyticsModal({ onClose, tasks, clients, responsibles, now, getElapsed
                       {/* Seletores */}
                       <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-5">
                          <FilterSelect value={filterClient} onChange={setFilterClient} options={clients} defaultLabel="Todos Clientes" />
-                         <div className="hidden sm:block w-px h-4 bg-white/10"></div>
-                         <FilterSelect value={filterResp} onChange={setFilterResp} options={responsibles} defaultLabel="Todos Responsáveis" />
+                         {user.isAdmin && <>
+                           <div className="hidden sm:block w-px h-4 bg-white/10"></div>
+                           <FilterSelect value={filterResp} onChange={setFilterResp} options={responsibles} defaultLabel="Todos Responsáveis" />
+                         </>}
                          <div className="hidden sm:block w-px h-4 bg-white/10"></div>
                          <FilterSelect value={filterPriority} onChange={setFilterPriority} options={[{id: 'Baixa', name: 'Baixa'}, {id: 'Média', name: 'Média'}, {id: 'Alta', name: 'Alta'}]} defaultLabel="Prioridades" />
                       </div>

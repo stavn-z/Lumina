@@ -1309,7 +1309,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
         {activeTab === 'responsibles' && <OverlayModal title="Equipe (Contas)" icon={<Users size={20} className="text-indigo-400"/>} isClosing={isClosingModal} onClose={handleCloseTab}><ResponsiblesPanelContent responsibles={responsibles} tasks={tasks} user={user} /></OverlayModal>}
         {activeTab === 'clients' && <OverlayModal title="Gestão de Clientes" icon={<Building2 size={20} className="text-purple-400"/>} isClosing={isClosingModal} onClose={handleCloseTab}><ClientsPanelContent clients={visibleClients} setClients={setClients} tasks={tasks} setTasks={setTasks} user={user} getElapsed={getElapsed} /></OverlayModal>}
         {activeTab === 'reports' && <AnalyticsModal isClosing={isClosingModal} onClose={handleCloseTab} tasks={filteredTasks} clients={visibleClients} responsibles={responsibles} getElapsed={getElapsed} globalLookerUrl={globalLookerUrl} setGlobalLookerUrl={setGlobalLookerUrl} user={user} />}
-        {activeTab === 'agenda' && <OverlayModal title="Agenda" icon={<CalendarDays size={20} className="text-teal-400"/>} isClosing={isClosingModal} onClose={handleCloseTab} fullWidth><CalendarView tasks={visibleTasks} setTasks={setTasks} clients={clients} handleRequestMove={handleRequestMove} /></OverlayModal>}
+        {activeTab === 'agenda' && <OverlayModal title="Agenda" icon={<CalendarDays size={20} className="text-teal-400"/>} isClosing={isClosingModal} onClose={handleCloseTab} fullWidth><CalendarView tasks={visibleTasks} setTasks={setTasks} clients={clients} handleRequestMove={handleRequestMove} user={user} /></OverlayModal>}
 
         {/* BOARD VIEW */}
         <div className={`flex-1 flex flex-col min-h-0 ${activeTab !== 'board' ? 'hidden md:flex opacity-30 pointer-events-none transition-opacity duration-300' : 'fade-in'}`}>
@@ -1470,23 +1470,32 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                           const dueMs = parseDateLocal(t.dueDate);
                           
                           let alertBadge = null;
+                          let alertAccent: string | null = null;
                           if (!isDoneOrCancelled) {
                             if (dueMs !== null && dueMs < todayMs) {
                               alertBadge = <span className="flex items-center gap-1 text-[9px] uppercase tracking-wider px-2 py-1 rounded-md bg-red-500/10 text-red-400 border border-red-500/20 font-bold"><AlertTriangle size={10}/> Atrasado</span>;
+                              alertAccent = 'red';
                             } else if (dueMs === todayMs) {
                               alertBadge = <span className="flex items-center gap-1 text-[9px] uppercase tracking-wider px-2 py-1 rounded-md bg-orange-500/10 text-orange-400 border border-orange-500/20 font-bold"><Clock size={10}/> Entregar Hoje</span>;
+                              alertAccent = 'orange';
                             } else if (startMs === todayMs) {
                               alertBadge = <span className="flex items-center gap-1 text-[9px] uppercase tracking-wider px-2 py-1 rounded-md bg-blue-500/10 text-blue-400 border border-blue-500/20 font-bold"><Play size={10}/> Iniciar Hoje</span>;
+                              alertAccent = 'blue';
                             }
                           }
+                          const alertRing = alertAccent === 'red' ? 'ring-1 ring-red-500/60 shadow-[0_0_18px_rgba(239,68,68,0.2)]'
+                            : alertAccent === 'orange' ? 'ring-1 ring-orange-500/60 shadow-[0_0_18px_rgba(249,115,22,0.2)]'
+                            : alertAccent === 'blue' ? 'ring-1 ring-blue-500/60 shadow-[0_0_18px_rgba(59,130,246,0.2)]' : '';
+                          const alertBar = alertAccent === 'red' ? 'bg-red-500' : alertAccent === 'orange' ? 'bg-orange-500' : alertAccent === 'blue' ? 'bg-blue-500' : '';
 
                           return (
                             <div
                               key={t.id}
                               data-task-id={t.id}
                               style={{ touchAction: 'pan-y' }}
-                              className={`rounded-2xl bg-[#1c1d26] border p-4 transition-all group relative ${isDoneOrCancelled ? 'opacity-60' : ''} ${!isEditable ? 'opacity-70 cursor-not-allowed' : 'hover:border-[#3f3f46] shadow-md'} ${dragOverId === t.id ? 'border-indigo-500 shadow-[0_-2px_15px_rgba(99,102,241,0.3)]' : 'border-[#2d3142]'} ${dragState?.id === t.id ? 'opacity-40' : ''}`}
+                              className={`rounded-2xl bg-[#1c1d26] border p-4 transition-all group relative overflow-hidden ${isDoneOrCancelled ? 'opacity-60' : ''} ${!isEditable ? 'opacity-70 cursor-not-allowed' : 'hover:border-[#3f3f46] shadow-md'} ${dragOverId === t.id ? 'border-indigo-500 shadow-[0_-2px_15px_rgba(99,102,241,0.3)]' : 'border-[#2d3142]'} ${dragState?.id === t.id ? 'opacity-40' : ''} ${alertRing}`}
                             >
+                              {alertBar && <span className={`absolute left-0 top-0 bottom-0 w-1 ${alertBar}`} />}
                               
                               {/* Badges do Cartão */}
                               <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
@@ -2386,7 +2395,7 @@ function AnalyticsModal({ onClose, tasks, clients, responsibles, getElapsed, isC
         <div className="flex justify-center mb-8 shrink-0">
           <div className="bg-[#12121a] border border-[#27272a] p-1.5 rounded-2xl flex gap-2">
              <button onClick={() => setActiveView('internal')} className={`px-8 py-3 rounded-xl text-xs font-bold uppercase tracking-widest transition-all ${activeView === 'internal' ? 'bg-[#27272a] text-white shadow-sm' : 'text-neutral-500 hover:text-white'}`}>Sistema Interno</button>
-             <button onClick={() => setActiveView('looker')} className={`px-8 py-3 rounded-xl text-xs font-bold uppercase tracking-widest transition-all flex items-center gap-2 ${activeView === 'looker' ? 'bg-blue-600 text-white shadow-[0_0_15px_rgba(37,99,235,0.4)]' : 'text-neutral-500 hover:text-white'}`}><MonitorPlay size={16}/> Looker Studio</button>
+             {user.isAdmin && <button onClick={() => setActiveView('looker')} className={`px-8 py-3 rounded-xl text-xs font-bold uppercase tracking-widest transition-all flex items-center gap-2 ${activeView === 'looker' ? 'bg-blue-600 text-white shadow-[0_0_15px_rgba(37,99,235,0.4)]' : 'text-neutral-500 hover:text-white'}`}><MonitorPlay size={16}/> Looker Studio</button>}
           </div>
         </div>
 
@@ -2529,7 +2538,7 @@ function AnalyticsModal({ onClose, tasks, clients, responsibles, getElapsed, isC
         )}
 
         {/* View 2: Looker Studio (iFrame) — configuração restrita ao admin */}
-        {activeView === 'looker' && (
+        {activeView === 'looker' && user.isAdmin && (
           <div className="flex-1 flex flex-col min-h-0 h-full fade-in">
             {(!globalLookerUrl || isEditing) ? (
                user.isAdmin ? (
@@ -2897,7 +2906,7 @@ function TodayView({ tasks, clients, user, getElapsed, onOpen, onToggleTimer, on
   );
 }
 
-function CalendarView({ tasks, setTasks, clients, handleRequestMove }: any) {
+function CalendarView({ tasks, setTasks, clients, handleRequestMove, user }: any) {
   const ROW_H = 44; // pixels por hora
   const hours = Array.from({ length: 24 }, (_, i) => i);
 
@@ -2948,6 +2957,39 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove }: any) {
   const [ghost, setGhost] = useState<{ x: number, y: number, label: string } | null>(null);
   const [dropHint, setDropHint] = useState<{ dayIndex: number, minutes: number, dur: number } | null>(null);
   const [resizePreview, setResizePreview] = useState<{ id: string, dur: number } | null>(null);
+
+  // Criação de evento pela Agenda (clicar num horário vazio)
+  const [createSlot, setCreateSlot] = useState<{ day: Date, hour: number, minute: number } | null>(null);
+  const [cTitle, setCTitle] = useState('');
+  const [cClient, setCClient] = useState('');
+  const [cDur, setCDur] = useState(60);
+  const [cRecur, setCRecur] = useState(false);
+  const [cErr, setCErr] = useState('');
+
+  const openCreateAt = (e: React.MouseEvent, day: Date) => {
+    const rect = (e.currentTarget as Element).getBoundingClientRect();
+    const rawMin = ((e.clientY - rect.top) / ROW_H) * 60;
+    const snapped = Math.max(0, Math.min(23 * 60 + 30, Math.round(rawMin / 30) * 30));
+    setCTitle(''); setCClient(''); setCDur(60); setCRecur(false); setCErr('');
+    setCreateSlot({ day, hour: Math.floor(snapped / 60), minute: snapped % 60 });
+  };
+
+  const createEvent = () => {
+    if (!cTitle.trim()) { setCErr('Dê um título ao evento.'); return; }
+    if (!createSlot) return;
+    const start = new Date(createSlot.day); start.setHours(createSlot.hour, createSlot.minute, 0, 0);
+    const value = toLocalInput(start);
+    const newTask = {
+      id: nextId(), title: cTitle.trim(), description: '', priority: 'Média',
+      durationMin: cDur, clientId: cClient, responsibleId: user.id,
+      startDate: '', dueDate: '', status: 'todo', waitingFor: '', checklist: [],
+      timerRunning: false, timerStart: null, timerElapsed: 0,
+      createdAt: getBrasiliaDate(), completedAt: '',
+      scheduledStart: value, recurringWeekly: cRecur, history: [histEntry('created')],
+    };
+    setTasks((prev: any) => [...prev, newTask]);
+    setCreateSlot(null);
+  };
 
   const durationOf = (t: any) => (t.durationMin && t.durationMin > 0 ? t.durationMin : 60);
 
@@ -3089,7 +3131,7 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove }: any) {
                 <div className={`h-9 sticky top-0 z-10 flex items-center justify-center border-b border-white/5 ${isToday ? 'bg-teal-600/20 text-teal-300' : 'bg-[#12121a] text-neutral-300'}`}>
                   <span className="text-[11px] font-bold uppercase tracking-widest">{dayNames[i]} {pad(day.getDate())}</span>
                 </div>
-                <div data-cal-day={i} className="relative" style={{ height: 24 * ROW_H }}>
+                <div data-cal-day={i} className="relative cursor-pointer" style={{ height: 24 * ROW_H }} onClick={(e) => openCreateAt(e, day)}>
                   {hours.map(h => (
                     <div key={h} className="absolute left-0 right-0 border-b border-white/5 pointer-events-none" style={{ top: h * ROW_H, height: ROW_H }} />
                   ))}
@@ -3109,7 +3151,7 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove }: any) {
                     const cn = clientName(t.clientId);
                     const isDragging = dragRef.current && dragRef.current.task && dragRef.current.task.id === t.id && dragRef.current.mode === 'move';
                     return (
-                      <div key={t.id} className={`absolute left-1 right-1 rounded-lg bg-teal-500/15 border border-teal-500/40 overflow-hidden group ${isDragging ? 'opacity-40' : ''}`} style={{ top, height: bh }}>
+                      <div key={t.id} onClick={(e) => e.stopPropagation()} className={`absolute left-1 right-1 rounded-lg bg-teal-500/15 border border-teal-500/40 overflow-hidden group ${isDragging ? 'opacity-40' : ''}`} style={{ top, height: bh }}>
                         <div onPointerDown={(e) => beginDrag(e, t, 'move')} style={{ touchAction: 'none' }} className="h-full p-1.5 cursor-grab active:cursor-grabbing select-none">
                           <div className="text-[9px] font-mono font-bold text-teal-300 leading-none mb-1 flex items-center gap-1">{t.recurringWeekly && <RotateCcw size={8} />}{pad(s.getHours())}:{pad(s.getMinutes())} · {dur}min</div>
                           <div className="text-[10px] font-bold text-white leading-tight line-clamp-2">{t.title}</div>
@@ -3135,6 +3177,56 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove }: any) {
       {ghost && (
         <div className="fixed z-[300] pointer-events-none px-3 py-2 rounded-lg bg-teal-600 border border-teal-400 shadow-2xl text-[11px] font-bold text-white max-w-[220px] truncate" style={{ left: ghost.x, top: ghost.y, transform: 'translate(-50%, 18px)' }}>
           {ghost.label}
+        </div>
+      )}
+
+      {createSlot && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center px-3 pt-3 pb-24 sm:p-4 z-[95] fade-in" onClick={() => setCreateSlot(null)}>
+          <div className="w-full max-w-md rounded-3xl bg-[#12121a] border border-[#27272a] shadow-2xl overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
+            <div className="px-6 py-5 border-b border-[#27272a] flex items-center justify-between bg-[#0f0f13]">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-teal-500/10 rounded-xl border border-teal-500/20"><CalendarDays size={18} className="text-teal-400" /></div>
+                <div>
+                  <h3 className="font-display font-bold text-lg text-white">Novo evento</h3>
+                  <p className="text-[11px] text-neutral-500 mt-0.5 capitalize">{new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }).format(createSlot.day)} · {pad(createSlot.hour)}:{pad(createSlot.minute)}</p>
+                </div>
+              </div>
+              <button onClick={() => setCreateSlot(null)} className="p-2 rounded-xl text-neutral-500 hover:text-white transition-colors"><X size={20} /></button>
+            </div>
+            <div className="p-6 flex flex-col gap-5 bg-[#09090b]">
+              {cErr && <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs px-3 py-2.5 rounded-lg flex items-center gap-2"><AlertTriangle size={14} className="shrink-0" /> {cErr}</div>}
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">Título *</label>
+                <input autoFocus value={cTitle} onChange={e => { setCTitle(e.target.value); setCErr(''); }} onKeyDown={e => e.key === 'Enter' && createEvent()} className="w-full bg-[#12121a] border border-[#27272a] rounded-xl px-4 py-3.5 text-sm text-white outline-none focus:border-teal-500 transition-colors" placeholder="Reunião, atividade, demanda..." />
+              </div>
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">Cliente</label>
+                <div className="relative">
+                  <select value={cClient} onChange={e => setCClient(e.target.value)} className="appearance-none w-full bg-[#12121a] border border-[#27272a] rounded-xl pl-4 pr-10 py-3.5 text-sm text-white outline-none focus:border-teal-500 cursor-pointer transition-colors">
+                    <option value="" className="bg-[#1c1d26]">Pessoal / sem cliente</option>
+                    {clients.map((c: any) => <option key={c.id} value={c.id} className="bg-[#1c1d26]">{c.name}</option>)}
+                  </select>
+                  <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-neutral-600 pointer-events-none" />
+                </div>
+              </div>
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">Duração</label>
+                <div className="flex gap-2">
+                  {[30, 60, 90, 120].map(m => (
+                    <button key={m} onClick={() => setCDur(m)} className={`flex-1 py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-widest border transition-colors ${cDur === m ? 'bg-teal-500/15 text-teal-300 border-teal-500/40' : 'bg-[#12121a] text-neutral-500 border-[#27272a] hover:text-neutral-300'}`}>{m < 60 ? `${m}min` : `${m / 60}h${m % 60 ? '30' : ''}`}</button>
+                  ))}
+                </div>
+              </div>
+              <button onClick={() => setCRecur(!cRecur)} className={`flex items-center justify-between px-4 py-3.5 rounded-xl border transition-colors ${cRecur ? 'bg-teal-500/10 border-teal-500/40' : 'bg-[#12121a] border-[#27272a]'}`}>
+                <span className="flex items-center gap-2 text-sm font-medium text-white"><RotateCcw size={15} className={cRecur ? 'text-teal-400' : 'text-neutral-500'} /> Repetir toda semana</span>
+                <span className={`w-10 h-6 rounded-full transition-colors relative ${cRecur ? 'bg-teal-500' : 'bg-[#27272a]'}`}><span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${cRecur ? 'left-[18px]' : 'left-0.5'}`} /></span>
+              </button>
+            </div>
+            <div className="px-6 py-5 border-t border-[#27272a] bg-[#0f0f13] flex items-center justify-end gap-3">
+              <button onClick={() => setCreateSlot(null)} className="text-xs font-bold uppercase tracking-widest px-5 py-3.5 rounded-xl text-neutral-500 hover:text-white transition-colors">Cancelar</button>
+              <button onClick={createEvent} className="text-xs font-black uppercase tracking-widest px-8 py-3.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white transition-all shadow-[0_0_15px_rgba(20,184,166,0.3)]">Criar</button>
+            </div>
+          </div>
         </div>
       )}
     </div>

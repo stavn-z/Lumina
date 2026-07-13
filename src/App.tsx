@@ -650,8 +650,6 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
   const [closureModal, setClosureModal] = useState(false);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   
-  const [now, setNow] = useState(Date.now());
-
   const handleCloseTab = () => {
     setIsClosingModal(true);
     setTimeout(() => {
@@ -660,15 +658,8 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
     }, 250);
   };
 
-  useEffect(() => {
-    const anyRunning = tasks.some((t) => t.timerRunning);
-    if (!anyRunning) return;
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, [tasks]);
-
   const getElapsed = (t: any) => {
-    if (t.timerRunning) return t.timerElapsed + (now - t.timerStart) / 1000;
+    if (t.timerRunning && t.timerStart) return t.timerElapsed + (Date.now() - t.timerStart) / 1000;
     return t.timerElapsed || 0;
   };
 
@@ -686,7 +677,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
       const hours = cTasks.reduce((acc, t) => acc + (getElapsed(t) / 3600), 0);
       return (c.contractedHours - hours) <= 5;
     });
-  }, [visibleClients, tasks, now]);
+  }, [visibleClients, tasks]);
 
   const pendingLimitAlerts = clientsNearLimit.filter(c => !dismissedLimits.has(c.id));
 
@@ -1257,11 +1248,11 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
         </div>
 
         {/* MODAIS Overlay */}
-        {activeTab === 'today' && <OverlayModal title="Meu Dia" icon={<Sun size={20} className="text-amber-400"/>} isClosing={isClosingModal} onClose={handleCloseTab}><TodayView tasks={tasks} clients={clients} user={user} now={now} getElapsed={getElapsed} onOpen={openEditModal} onToggleTimer={toggleTimer} onComplete={(t) => handleRequestMove(t.id, null, 'done')} /></OverlayModal>}
-        {activeTab === 'timer' && <OverlayModal title="Cronómetro" icon={<Clock size={20} className="text-amber-500"/>} isClosing={isClosingModal} onClose={handleCloseTab}><TimerPanelContent tasks={filteredTasks} now={now} getElapsed={getElapsed} onToggleTimer={toggleTimer} user={user} /></OverlayModal>}
+        {activeTab === 'today' && <OverlayModal title="Meu Dia" icon={<Sun size={20} className="text-amber-400"/>} isClosing={isClosingModal} onClose={handleCloseTab}><TodayView tasks={tasks} clients={clients} user={user} getElapsed={getElapsed} onOpen={openEditModal} onToggleTimer={toggleTimer} onComplete={(t) => handleRequestMove(t.id, null, 'done')} /></OverlayModal>}
+        {activeTab === 'timer' && <OverlayModal title="Cronómetro" icon={<Clock size={20} className="text-amber-500"/>} isClosing={isClosingModal} onClose={handleCloseTab}><TimerPanelContent tasks={filteredTasks} getElapsed={getElapsed} onToggleTimer={toggleTimer} user={user} /></OverlayModal>}
         {activeTab === 'responsibles' && <OverlayModal title="Equipe (Contas)" icon={<Users size={20} className="text-indigo-400"/>} isClosing={isClosingModal} onClose={handleCloseTab}><ResponsiblesPanelContent responsibles={responsibles} tasks={tasks} user={user} /></OverlayModal>}
-        {activeTab === 'clients' && <OverlayModal title="Gestão de Clientes" icon={<Building2 size={20} className="text-purple-400"/>} isClosing={isClosingModal} onClose={handleCloseTab}><ClientsPanelContent clients={visibleClients} setClients={setClients} tasks={tasks} setTasks={setTasks} user={user} getElapsed={getElapsed} now={now} /></OverlayModal>}
-        {activeTab === 'reports' && <AnalyticsModal isClosing={isClosingModal} onClose={handleCloseTab} tasks={filteredTasks} clients={visibleClients} responsibles={responsibles} now={now} getElapsed={getElapsed} globalLookerUrl={globalLookerUrl} setGlobalLookerUrl={setGlobalLookerUrl} user={user} />}
+        {activeTab === 'clients' && <OverlayModal title="Gestão de Clientes" icon={<Building2 size={20} className="text-purple-400"/>} isClosing={isClosingModal} onClose={handleCloseTab}><ClientsPanelContent clients={visibleClients} setClients={setClients} tasks={tasks} setTasks={setTasks} user={user} getElapsed={getElapsed} /></OverlayModal>}
+        {activeTab === 'reports' && <AnalyticsModal isClosing={isClosingModal} onClose={handleCloseTab} tasks={filteredTasks} clients={visibleClients} responsibles={responsibles} getElapsed={getElapsed} globalLookerUrl={globalLookerUrl} setGlobalLookerUrl={setGlobalLookerUrl} user={user} />}
         {activeTab === 'agenda' && <OverlayModal title="Agenda" icon={<CalendarDays size={20} className="text-teal-400"/>} isClosing={isClosingModal} onClose={handleCloseTab} fullWidth><CalendarView tasks={visibleTasks} setTasks={setTasks} clients={clients} handleRequestMove={handleRequestMove} /></OverlayModal>}
 
         {/* BOARD VIEW */}
@@ -1511,7 +1502,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                                     
                                     {(t.timerRunning || t.timerElapsed > 0) && !isDoneOrCancelled && (
                                       <div className="flex items-center gap-1 text-[10px] font-mono font-bold bg-black/30 border border-white/5 px-2 py-1 rounded-md text-neutral-400">
-                                        <Clock size={10} className={t.timerRunning ? "text-amber-500 animate-pulse" : "text-neutral-500"} /> {formatTime(getElapsed(t))}
+                                        <Clock size={10} className={t.timerRunning ? "text-amber-500 animate-pulse" : "text-neutral-500"} /> <LiveElapsed task={t} getElapsed={getElapsed} />
                                       </div>
                                     )}
 
@@ -1862,7 +1853,18 @@ function CustomSelect({ label, value, onChange, options, hasError, required }: a
 }
 
 // --- Componentes Internos de Modais ---
-function TimerPanelContent({ tasks, now, getElapsed, onToggleTimer, user }: any) {
+// Exibe o tempo decorrido e se atualiza sozinho a cada segundo (só ele, não o quadro todo)
+function LiveElapsed({ task, getElapsed }: any) {
+  const [, force] = useState(0);
+  useEffect(() => {
+    if (!task.timerRunning) return;
+    const id = setInterval(() => force((x: number) => x + 1), 1000);
+    return () => clearInterval(id);
+  }, [task.timerRunning]);
+  return <>{formatTime(getElapsed(task))}</>;
+}
+
+function TimerPanelContent({ tasks, getElapsed, onToggleTimer, user }: any) {
   const activeTasks = tasks.filter((t: any) => (t.timerRunning || t.timerElapsed > 0) && t.responsibleId === user.id).sort((a: any, b: any) => b.timerRunning - a.timerRunning);
   return (
     <div className="flex flex-col h-full fade-in">
@@ -1883,7 +1885,7 @@ function TimerPanelContent({ tasks, now, getElapsed, onToggleTimer, user }: any)
               </div>
               <h3 className={`font-bold text-base mb-5 truncate w-full ${isDoneOrCancelled ? 'text-neutral-500 line-through' : 'text-white'}`} title={t.title}>{t.title}</h3>
               <div className={`text-5xl font-mono font-light mb-8 tracking-wider ${t.timerRunning ? 'text-amber-400 drop-shadow-md' : 'text-white'}`}>
-                {formatTime(getElapsed(t))}
+                <LiveElapsed task={t} getElapsed={getElapsed} />
               </div>
               {!isDoneOrCancelled ? (
                 <button onClick={() => onToggleTimer(t.id)} className={`w-full flex items-center justify-center gap-2 py-4 rounded-xl font-bold uppercase tracking-widest text-[11px] transition-all ${t.timerRunning ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20 hover:bg-amber-500/20 shadow-[0_0_15px_rgba(245,158,11,0.2)]' : 'bg-white/5 text-neutral-300 hover:bg-white/10 border border-white/10'}`}>
@@ -2159,7 +2161,7 @@ function ClientDetailModal({ client, tasks, getElapsed, user, onClose, onEdit, o
   );
 }
 
-function ClientsPanelContent({ clients, setClients, tasks, setTasks, user, getElapsed, now }: any) {
+function ClientsPanelContent({ clients, setClients, tasks, setTasks, user, getElapsed }: any) {
   const [clientModal, setClientModal] = useState<any>(null);
 
   const openAdd = () => setClientModal({ mode: 'add', form: { name: '', emails: [], contractedHours: '' } });
@@ -2242,7 +2244,7 @@ function ClientsPanelContent({ clients, setClients, tasks, setTasks, user, getEl
   );
 }
 
-function AnalyticsModal({ onClose, tasks, clients, responsibles, now, getElapsed, isClosing, globalLookerUrl, setGlobalLookerUrl, user }: any) {
+function AnalyticsModal({ onClose, tasks, clients, responsibles, getElapsed, isClosing, globalLookerUrl, setGlobalLookerUrl, user }: any) {
   const [activeView, setActiveView] = useState('internal'); 
   const [isEditing, setIsEditing] = useState(false);
   const [inputUrl, setInputUrl] = useState(globalLookerUrl);
@@ -2681,7 +2683,7 @@ function QuickAddModal({ clients, onCreate, onClose }: any) {
   );
 }
 
-function TodayView({ tasks, clients, user, now, getElapsed, onOpen, onToggleTimer, onComplete }: any) {
+function TodayView({ tasks, clients, user, getElapsed, onOpen, onToggleTimer, onComplete }: any) {
   const pad = (n: number) => String(n).padStart(2, '0');
   const nowD = new Date();
   const todayMs = new Date(nowD).setHours(0, 0, 0, 0);
@@ -2693,11 +2695,21 @@ function TodayView({ tasks, clients, user, now, getElapsed, onOpen, onToggleTime
   const isActive = (t: any) => !['done', 'cancelled', 'formalize'].includes(t.status);
   const dueMs = (t: any) => { if (!t.dueDate) return null; const [y, m, d] = t.dueDate.split('-'); return new Date(+y, +m - 1, +d).setHours(0, 0, 0, 0); };
   const schedDay = (t: any) => t.scheduledStart ? t.scheduledStart.slice(0, 10) : null;
+  const startDay = (t: any) => t.startDate ? t.startDate.slice(0, 10) : null;
   const fmtBR = (s: string) => s ? s.split('-').reverse().join('/') : '';
 
   const overdue = mine.filter((t: any) => isActive(t) && dueMs(t) !== null && (dueMs(t) as number) < todayMs);
   const dueToday = mine.filter((t: any) => isActive(t) && dueMs(t) === todayMs);
-  const scheduledToday = mine.filter((t: any) => schedDay(t) === todayStr && isActive(t)).sort((a: any, b: any) => new Date(a.scheduledStart).getTime() - new Date(b.scheduledStart).getTime());
+  // "Para hoje": agendada na Agenda (scheduledStart) OU com início previsto (startDate) para hoje.
+  // Exclui as que já caem em Atrasadas/Vence hoje, pra não repetir.
+  const scheduledToday = mine.filter((t: any) => isActive(t)
+      && (schedDay(t) === todayStr || startDay(t) === todayStr)
+      && (dueMs(t) === null || (dueMs(t) as number) > todayMs)
+    ).sort((a: any, b: any) => {
+      const aS = a.scheduledStart ? new Date(a.scheduledStart).getTime() : Infinity;
+      const bS = b.scheduledStart ? new Date(b.scheduledStart).getTime() : Infinity;
+      return aS - bS;
+    });
   const inProgress = mine.filter((t: any) => t.status === 'inprogress');
   const waiting = mine.filter((t: any) => t.status === 'waiting');
   const doneToday = mine.filter((t: any) => (t.status === 'done' || t.status === 'formalize') && t.completedAt === todayStr);
@@ -2710,7 +2722,7 @@ function TodayView({ tasks, clients, user, now, getElapsed, onOpen, onToggleTime
   const stats = [
     { label: 'Atrasadas', value: overdue.length, color: 'text-red-400', bg: 'bg-red-500/10 border-red-500/20' },
     { label: 'Vence hoje', value: dueToday.length, color: 'text-orange-400', bg: 'bg-orange-500/10 border-orange-500/20' },
-    { label: 'Agendadas hoje', value: scheduledToday.length, color: 'text-teal-400', bg: 'bg-teal-500/10 border-teal-500/20' },
+    { label: 'Para hoje', value: scheduledToday.length, color: 'text-teal-400', bg: 'bg-teal-500/10 border-teal-500/20' },
     { label: 'Feitas hoje', value: doneToday.length, color: 'text-emerald-400', bg: 'bg-emerald-500/10 border-emerald-500/20' },
   ];
 
@@ -2740,7 +2752,7 @@ function TodayView({ tasks, clients, user, now, getElapsed, onOpen, onToggleTime
         <div className="grid grid-cols-7 gap-2">
           {week.map((d, i) => {
             const dStr = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-            const dayTasks = mine.filter((t: any) => schedDay(t) === dStr);
+            const dayTasks = mine.filter((t: any) => isActive(t) && (schedDay(t) === dStr || startDay(t) === dStr));
             const load = dayTasks.reduce((acc: number, t: any) => acc + (t.durationMin > 0 ? t.durationMin : 60), 0);
             const isToday = new Date(d).setHours(0, 0, 0, 0) === todayMs;
             return (
@@ -2775,8 +2787,13 @@ function TodayView({ tasks, clients, user, now, getElapsed, onOpen, onToggleTime
           {dueToday.map((t: any) => <FocusRow key={t.id} t={t} clientName={clientName(t.clientId)} onOpen={onOpen} onToggleTimer={onToggleTimer} onComplete={onComplete} accent="bg-orange-500" meta="Prazo é hoje" metaColor="text-orange-400" />)}
         </FocusSection>
 
-        <FocusSection label="Agendadas para hoje" count={scheduledToday.length} dot="bg-teal-500">
-          {scheduledToday.map((t: any) => { const s = new Date(t.scheduledStart); const dur = t.durationMin > 0 ? t.durationMin : 60; return <FocusRow key={t.id} t={t} clientName={clientName(t.clientId)} onOpen={onOpen} onToggleTimer={onToggleTimer} onComplete={onComplete} accent="bg-teal-500" meta={`${pad(s.getHours())}:${pad(s.getMinutes())} · ${dur}min`} metaColor="text-teal-400" />; })}
+        <FocusSection label="Para hoje" count={scheduledToday.length} dot="bg-teal-500">
+          {scheduledToday.map((t: any) => {
+            let meta;
+            if (t.scheduledStart) { const s = new Date(t.scheduledStart); const dur = t.durationMin > 0 ? t.durationMin : 60; meta = `${pad(s.getHours())}:${pad(s.getMinutes())} · ${dur}min`; }
+            else meta = 'Início previsto para hoje';
+            return <FocusRow key={t.id} t={t} clientName={clientName(t.clientId)} onOpen={onOpen} onToggleTimer={onToggleTimer} onComplete={onComplete} accent="bg-teal-500" meta={meta} metaColor="text-teal-400" />;
+          })}
         </FocusSection>
 
         <FocusSection label="Em andamento" count={inProgress.length} dot="bg-blue-500">

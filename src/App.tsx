@@ -18,6 +18,7 @@ const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 
 // --- Funções Auxiliares ---
 const nextId = () => Math.random().toString(36).substr(2, 9);
+const upper = (v: any) => (v == null ? '' : String(v)).toUpperCase();
 
 // Registro de eventos do histórico da demanda
 function histEntry(type: string, from?: string, to?: string) {
@@ -550,46 +551,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
     return () => clearInterval(id);
   }, [tasks, user]);
 
-  // Materialização de recorrências: gera um card real por ocorrência (modelos "geram cards")
-  useEffect(() => {
-    const gen = () => {
-      const today = new Date(); today.setHours(0, 0, 0, 0);
-      const pad2 = (n: number) => String(n).padStart(2, '0');
-      const todayStr = `${today.getFullYear()}-${pad2(today.getMonth() + 1)}-${pad2(today.getDate())}`;
-      const existingIds = new Set(tasks.map((t: any) => t.id));
-      const news: any[] = [];
-      tasks.forEach((t: any) => {
-        if (!t.generatesCards || !t.scheduledStart) return;
-        if (t.responsibleId !== user.id) return;
-        const s = new Date(t.scheduledStart);
-        const occToday = t.recurrence === 'daily' || (t.recurrence === 'weekly' && s.getDay() === today.getDay());
-        if (!occToday) return;
-        const instId = `inst_${t.id}_${todayStr}`;
-        if (existingIds.has(instId)) return;
-        news.push({
-          id: instId,
-          title: t.title, description: t.description || '', priority: t.priority || 'Média',
-          durationMin: t.durationMin || 0, clientId: t.clientId || '', responsibleId: t.responsibleId,
-          startDate: todayStr, dueDate: '', status: 'todo', waitingFor: '',
-          checklist: (t.checklist || []).map((c: any) => ({ id: nextId(), text: c.text, done: false })),
-          timerRunning: false, timerStart: null, timerElapsed: 0,
-          createdAt: getBrasiliaDate(), completedAt: '',
-          scheduledStart: `${todayStr}T${pad2(s.getHours())}:${pad2(s.getMinutes())}`,
-          recurrence: 'none', agendaOnly: false, generatesCards: false,
-          templateId: t.id, occurrenceKey: `${t.id}|${todayStr}`,
-          history: [histEntry('created')],
-        });
-      });
-      if (news.length) setTasks((prev: any) => {
-        const have = new Set(prev.map((p: any) => p.id));
-        const add = news.filter(n => !have.has(n.id));
-        return add.length ? [...prev, ...add] : prev;
-      });
-    };
-    gen();
-    const gid = setInterval(gen, 60000);
-    return () => clearInterval(gid);
-  }, [tasks, user]);
+  // (Recorrências ficam apenas na Agenda; não geram cards automaticamente no quadro.)
 
   // Busca dados da Nuvem (o RLS já filtra o que cada usuário pode ver)
   useEffect(() => {
@@ -880,8 +842,8 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
     if (modal.mode === "add") {
       const newTask = {
         id: nextId(),
-        title: f.title.trim(),
-        description: f.description.trim(),
+        title: upper(f.title.trim()),
+        description: upper(f.description.trim()),
         priority: f.priority || 'Média',
         durationMin: parseInt(f.durationMin) || 0,
         clientId: f.clientId || '',
@@ -889,8 +851,8 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
         startDate: f.startDate || '',
         dueDate: f.dueDate || '',
         status: finalStatus,
-        waitingFor: f.waitingFor || '',
-        checklist: (f.checklist || []).filter((c: any) => c.text.trim()),
+        waitingFor: upper(f.waitingFor || ''),
+        checklist: (f.checklist || []).filter((c: any) => c.text.trim()).map((c: any) => ({ ...c, text: upper(c.text) })),
         timerRunning: false,
         timerStart: null,
         timerElapsed: 0,
@@ -902,6 +864,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
         generatesCards: !!f.generatesCards,
         templateId: f.templateId || '',
         occurrenceKey: f.occurrenceKey || '',
+        isMeeting: !!f.isMeeting,
         history: [histEntry('created')]
       };
       setTasks((prev) => [...prev, newTask]);
@@ -926,8 +889,8 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
 
           return { 
             id: t.id,
-            title: f.title.trim(), 
-            description: f.description.trim(), 
+            title: upper(f.title.trim()), 
+            description: upper(f.description.trim()), 
             priority: f.priority || 'Média',
             durationMin: parseInt(f.durationMin) || 0,
             clientId: f.clientId || '',
@@ -935,10 +898,15 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
             startDate: f.startDate || '',
             dueDate: f.dueDate || '',
             status: finalStatus,
-            waitingFor: f.waitingFor || '',
-            checklist: (f.checklist || []).filter((c: any) => c.text.trim()),
+            waitingFor: upper(f.waitingFor || ''),
+            checklist: (f.checklist || []).filter((c: any) => c.text.trim()).map((c: any) => ({ ...c, text: upper(c.text) })),
             recurrence: f.recurrence || 'none',
             agendaOnly: !!f.agendaOnly,
+            scheduledStart: f.scheduledStart || '',
+            generatesCards: !!f.generatesCards,
+            templateId: f.templateId || '',
+            occurrenceKey: f.occurrenceKey || '',
+            isMeeting: !!f.isMeeting,
             timerRunning, timerElapsed, timerStart,
             createdAt: t.createdAt || getBrasiliaDate(),
             completedAt: (finalStatus === 'done' || finalStatus === 'formalize') ? (t.completedAt || getBrasiliaDate()) : t.completedAt,
@@ -1554,7 +1522,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                           let alertBadge = null;
                           let alertAccent: string | null = null;
                           if (!isDoneOrCancelled) {
-                            if (dueMs !== null && dueMs < todayMs) {
+                            if ((dueMs !== null && dueMs < todayMs) || (startMs !== null && startMs < todayMs && ['backlog', 'todo'].includes(t.status))) {
                               alertBadge = <span className="flex items-center gap-1 text-[9px] uppercase tracking-wider px-2 py-1 rounded-md bg-red-500/10 text-red-400 border border-red-500/20 font-bold"><AlertTriangle size={10}/> Atrasado</span>;
                               alertAccent = 'red';
                             } else if (dueMs === todayMs) {
@@ -1857,7 +1825,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
       <button onClick={() => setQuickAdd(true)} className="fixed bottom-[88px] right-4 md:bottom-6 md:right-6 z-40 w-14 h-14 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white flex items-center justify-center shadow-[0_8px_30px_rgba(79,70,229,0.4)] transition-all active:scale-95" title="Captura rápida">
         <Plus size={24} />
       </button>
-      {quickAdd && <QuickAddModal clients={visibleClients} onClose={() => setQuickAdd(false)} onCreate={(data: any) => setTasks((prev: any) => [...prev, { id: nextId(), title: data.title, description: '', priority: data.priority, durationMin: 0, clientId: data.clientId, responsibleId: user.id, startDate: '', dueDate: '', status: 'backlog', waitingFor: '', checklist: [], timerRunning: false, timerStart: null, timerElapsed: 0, createdAt: getBrasiliaDate(), completedAt: '', history: [histEntry('created')] }])} />}
+      {quickAdd && <QuickAddModal clients={visibleClients} onClose={() => setQuickAdd(false)} onCreate={(data: any) => setTasks((prev: any) => [...prev, { id: nextId(), title: upper(data.title), description: '', priority: data.priority, durationMin: 0, clientId: data.clientId, responsibleId: user.id, startDate: '', dueDate: '', status: 'backlog', waitingFor: '', checklist: [], timerRunning: false, timerStart: null, timerElapsed: 0, createdAt: getBrasiliaDate(), completedAt: '', history: [histEntry('created')] }])} />}
       {searchOpen && <SearchModal tasks={visibleTasks} clients={clients} onOpen={openEditModal} onClose={() => setSearchOpen(false)} />}
 
       {/* Modais de Popups Principais */}
@@ -2134,6 +2102,7 @@ function ClientModal({ modal, setModal, setClients, user }: any) {
     
     const finalForm = { 
        ...form, 
+       name: (form.name || '').toUpperCase(),
        contractedHours: form.contractedHours === '' ? 0 : parseFloat(form.contractedHours) || 0 
     };
 
@@ -2879,7 +2848,17 @@ function TodayView({ tasks, clients, user, getElapsed, onOpen, onToggleTimer, on
   const startDay = (t: any) => t.startDate ? t.startDate.slice(0, 10) : null;
   const fmtBR = (s: string) => s ? s.split('-').reverse().join('/') : '';
 
-  const overdue = mine.filter((t: any) => isActive(t) && dueMs(t) !== null && (dueMs(t) as number) < todayMs);
+  const overdue = mine.filter((t: any) => {
+    if (!isActive(t)) return false;
+    const d = dueMs(t);
+    if (d !== null && d < todayMs) return true;
+    const sd = startDay(t);
+    if (sd && ['backlog', 'todo'].includes(t.status)) {
+      const [y, m, dd] = sd.split('-');
+      if (new Date(+y, +m - 1, +dd).setHours(0, 0, 0, 0) < todayMs) return true;
+    }
+    return false;
+  });
   const dueToday = mine.filter((t: any) => isActive(t) && dueMs(t) === todayMs);
   // "Para hoje": agendada na Agenda (scheduledStart) OU com início previsto (startDate) para hoje.
   // Exclui as que já caem em Atrasadas/Vence hoje, pra não repetir.
@@ -3101,7 +3080,7 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove, user, onCre
     if (cShowBoard) {
       // Vai pro quadro: abre o formulário completo pra detalhar (descrição, checklist)
       onCreateCard({
-        title: cTitle.trim(), clientId: cClient, durationMin: String(cDur),
+        title: upper(cTitle.trim()), clientId: cClient, durationMin: String(cDur),
         startDate: cRecur === 'none' ? cDate : '', status: 'todo', scheduledStart: value,
         recurrence: cRecur, agendaOnly: false, generatesCards: cRecur !== 'none',
       });
@@ -3109,7 +3088,7 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove, user, onCre
       return;
     }
     const newTask = {
-      id: nextId(), title: cTitle.trim(), description: '', priority: 'Média',
+      id: nextId(), title: upper(cTitle.trim()), description: '', priority: 'Média',
       durationMin: cDur, clientId: cClient, responsibleId: user.id,
       startDate: '', dueDate: '', status: 'todo', waitingFor: '', checklist: [],
       timerRunning: false, timerStart: null, timerElapsed: 0,

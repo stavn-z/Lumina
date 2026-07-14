@@ -775,7 +775,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
   
   const filteredTasks = visibleTasks.filter(
     (t) =>
-      !t.agendaOnly && !t.generatesCards &&
+      !t.agendaOnly && !t.generatesCards && !t.templateId &&
       (filterClient === "all" || t.clientId === filterClient) &&
       (filterResp === "all" || t.responsibleId === filterResp) &&
       (filterPriority === "all" || t.priority === filterPriority) &&
@@ -1388,7 +1388,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
 
                    {todayCount > 0 && (
                      <button onClick={() => setActiveTab('today')} className="h-11 px-3 sm:px-4 flex items-center justify-center gap-2 rounded-xl text-[10px] sm:text-[11px] font-bold uppercase tracking-widest transition-all shrink-0 bg-red-500/15 text-red-300 border border-red-500/30 hover:bg-red-500/25 shadow-[0_0_15px_rgba(239,68,68,0.15)]" title="Ver no Meu Dia">
-                       <AlertTriangle size={15} /> <span className="whitespace-nowrap">{todayCount} pra hoje</span>
+                       <AlertTriangle size={15} /> <span className="whitespace-nowrap">{todayCount} a resolver</span>
                      </button>
                    )}
 
@@ -2940,7 +2940,7 @@ function TodayView({ tasks, clients, user, getElapsed, onOpen, onToggleTimer, on
         )}
 
         <FocusSection label="Atrasadas" count={overdue.length} dot="bg-red-500">
-          {overdue.map((t: any) => <FocusRow key={t.id} t={t} clientName={clientName(t.clientId)} onOpen={onOpen} onToggleTimer={onToggleTimer} onComplete={onComplete} accent="bg-red-500" meta={`Venceu em ${fmtBR(t.dueDate)}`} metaColor="text-red-400" />)}
+          {overdue.map((t: any) => <FocusRow key={t.id} t={t} clientName={clientName(t.clientId)} onOpen={onOpen} onToggleTimer={onToggleTimer} onComplete={onComplete} accent="bg-red-500" meta={(dueMs(t) !== null && (dueMs(t) as number) < todayMs) ? `Venceu em ${fmtBR(t.dueDate)}` : (t.startDate ? `Início era ${fmtBR(t.startDate)}` : 'Atrasada')} metaColor="text-red-400" />)}
         </FocusSection>
 
         <FocusSection label="Vence hoje" count={dueToday.length} dot="bg-orange-500">
@@ -2974,6 +2974,14 @@ function TodayView({ tasks, clients, user, getElapsed, onOpen, onToggleTimer, on
 
 function CalendarView({ tasks, setTasks, clients, handleRequestMove, user, onCreateCard }: any) {
   const ROW_H = 44; // pixels por hora
+  const gridScrollRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = gridScrollRef.current;
+    if (!el) return;
+    const nowH = new Date().getHours();
+    const t = setTimeout(() => { el.scrollTop = Math.max(0, (nowH - 1) * ROW_H); }, 60);
+    return () => clearTimeout(t);
+  }, []);
   const hours = Array.from({ length: 24 }, (_, i) => i);
 
   const [weekStart, setWeekStart] = useState(() => {
@@ -3221,7 +3229,7 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove, user, onCre
       </div>
 
       {/* Grade 24h */}
-      <div className="flex-1 overflow-auto kp-scroll border border-[#27272a] rounded-2xl bg-[#0d0d12] min-h-[240px]">
+      <div ref={gridScrollRef} className="flex-1 overflow-auto kp-scroll border border-[#27272a] rounded-2xl bg-[#0d0d12] min-h-[240px]">
         <div className={`flex ${weekdaysOnly ? 'w-full' : 'min-w-max'}`}>
           {/* Gutter de horas */}
           <div className="sticky left-0 z-20 bg-[#0d0d12] border-r border-white/5 shrink-0" style={{ width: 46 }}>

@@ -559,15 +559,19 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
       const pad2 = (n: number) => String(n).padStart(2, '0');
       const todayStr = `${today.getFullYear()}-${pad2(today.getMonth() + 1)}-${pad2(today.getDate())}`;
       const existingKeys = new Set(tasks.map((t: any) => t.occurrenceKey).filter(Boolean));
+      const templates = tasks.filter((t: any) => t.generatesCards);
+      if (templates.length > 0) console.log('[Lumina/recorrência] modelos encontrados:', templates.map((t: any) => ({ id: t.id, title: t.title, recurrence: t.recurrence, scheduledStart: t.scheduledStart, responsibleId: t.responsibleId })));
       const news: any[] = [];
       tasks.forEach((t: any) => {
         if (!t.generatesCards || !t.scheduledStart) return;
-        if (t.responsibleId !== user.id) return;
+        if (t.responsibleId !== user.id) { console.log('[Lumina/recorrência] pulado (responsável não bate):', t.title, t.responsibleId, '!=', user.id); return; }
         const s = new Date(t.scheduledStart);
         const occToday = t.recurrence === 'daily' || (t.recurrence === 'weekly' && s.getDay() === today.getDay());
+        console.log('[Lumina/recorrência] avaliando:', t.title, '| recurrence=', t.recurrence, '| diaDoEvento=', s.getDay(), '| diaDeHoje=', today.getDay(), '| occToday=', occToday);
         if (!occToday) return;
         const key = `${t.id}|${todayStr}`;
-        if (existingKeys.has(key)) return; // já existe instância de hoje para este modelo: não duplica
+        if (existingKeys.has(key)) { console.log('[Lumina/recorrência] já existe instância para hoje, não gera de novo:', key); return; }
+        console.log('[Lumina/recorrência] GERANDO card para:', t.title, key);
         news.push({
           id: `inst_${t.id}_${todayStr}`,
           title: t.title, description: t.description || '', priority: t.priority || 'Média',

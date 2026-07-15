@@ -2693,14 +2693,26 @@ function toGCalStamp(d: Date) {
   const p = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}T${p(d.getHours())}${p(d.getMinutes())}00`;
 }
-function buildGCalLink(task: any, clientName: string) {
+// Prefixos de rótulo aplicados ao título do evento no Google Agenda.
+// Observação: o Google só permite escolher o tipo nativo "Hora de concentração" via API completa
+// com OAuth (mesma trava do acesso à organização da Rubeus). Por link direto, simulamos a
+// distinção visual com um prefixo no título — funciona bem pra identificar o tipo de compromisso
+// sem precisar daquele acesso.
+const GCAL_LABELS: Record<string, string> = {
+  reuniao: '',
+  foco: '🎯 FOCO — ',
+  tarefa: '✅ TAREFA — ',
+};
+
+function buildGCalLink(task: any, clientName: string, label?: string) {
   if (!task.scheduledStart) return '#';
   const start = new Date(task.scheduledStart);
   if (isNaN(start.getTime())) return '#';
   const durMin = task.durationMin && task.durationMin > 0 ? task.durationMin : 60;
   const end = new Date(start.getTime() + durMin * 60000);
-  // Título no padrão "NOME DO CLIENTE | TÍTULO DA DEMANDA" (cliente em caixa alta)
-  const title = clientName ? `${clientName.toUpperCase()} | ${task.title || 'Demanda'}` : (task.title || 'Demanda');
+  // Título no padrão "PREFIXO NOME DO CLIENTE | TÍTULO DA DEMANDA" (cliente em caixa alta)
+  const prefix = GCAL_LABELS[label || 'reuniao'] || '';
+  const title = prefix + (clientName ? `${clientName.toUpperCase()} | ${task.title || 'Demanda'}` : (task.title || 'Demanda'));
   // Descrição: só o contexto (sem o cliente) + checklist, se houver
   let details = task.description || '';
   const checklist = Array.isArray(task.checklist) ? task.checklist : [];
@@ -3086,16 +3098,16 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove, user, onCre
     if (link !== '#') window.open(link, '_blank', 'noopener');
   };
 
-  const doMeeting = (task: any, day: Date, hour: number, minute: number) => {
+  const doMeeting = (task: any, day: Date, hour: number, minute: number, durationMin: number) => {
     const start = new Date(day); start.setHours(hour, minute, 0, 0);
-    setTasks((prev: any) => prev.map((t: any) => t.id === task.id ? { ...t, scheduledStart: toLocalInput(start), isMeeting: true } : t));
+    setTasks((prev: any) => prev.map((t: any) => t.id === task.id ? { ...t, scheduledStart: toLocalInput(start), durationMin, isMeeting: true } : t));
   };
 
-  const doExecute = (task: any, day: Date, hour: number, minute: number) => {
+  const doExecute = (task: any, day: Date, hour: number, minute: number, durationMin: number, label: string) => {
     const start = new Date(day); start.setHours(hour, minute, 0, 0);
     const value = toLocalInput(start);
-    setTasks((prev: any) => prev.map((t: any) => t.id === task.id ? { ...t, scheduledStart: value, status: 'inprogress', isMeeting: false } : t));
-    const link = buildGCalLink({ ...task, scheduledStart: value }, clientName(task.clientId));
+    setTasks((prev: any) => prev.map((t: any) => t.id === task.id ? { ...t, scheduledStart: value, durationMin, status: 'inprogress', isMeeting: false } : t));
+    const link = buildGCalLink({ ...task, scheduledStart: value, durationMin }, clientName(task.clientId), label);
     if (link !== '#') window.open(link, '_blank', 'noopener');
   };
 
@@ -3117,6 +3129,12 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove, user, onCre
   const [cShowBoard, setCShowBoard] = useState(false);
   const [cErr, setCErr] = useState('');
   const [scheduleChoice, setScheduleChoice] = useState<any>(null);
+  const [scDuration, setScDuration] = useState(60);
+  const [scLabel, setScLabel] = useState('reuniao');
+  const [editSchedule, setEditSchedule] = useState<any>(null);
+  const [esDate, setEsDate] = useState('');
+  const [esTime, setEsTime] = useState('');
+  const [esDur, setEsDur] = useState(60);
 
   const openCreateAt = (e: React.MouseEvent, day: Date) => {
     const rect = (e.currentTarget as Element).getBoundingClientRect();
@@ -3215,6 +3233,8 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove, user, onCre
     const day = days[drop.dayIndex];
     if (!day) return;
     if (d.mode === 'place') {
+      setScDuration(d.task.durationMin && d.task.durationMin > 0 ? d.task.durationMin : 60);
+      setScLabel('reuniao');
       setScheduleChoice({ task: d.task, day, hour: drop.hour, minute: drop.minute });
     } else {
       const start = new Date(day); start.setHours(drop.hour, drop.minute, 0, 0);
@@ -3325,6 +3345,7 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove, user, onCre
                           {cn && bh > ROW_H && <div className="text-[8px] text-teal-300/70 uppercase tracking-widest font-bold mt-1 truncate">{cn}</div>}
                         </div>
                         <div className="absolute top-1 right-1 flex gap-1">
+                          <button onPointerDown={(e) => e.stopPropagation()} onClick={() => { const d = new Date(t.scheduledStart); setEsDate(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`); setEsTime(`${pad(d.getHours())}:${pad(d.getMinutes())}`); setEsDur(durationOf(t)); setEditSchedule(t); }} className="p-1 rounded bg-black/40 text-neutral-400 hover:text-white hover:bg-black/60" title="Editar horário/duração"><Pencil size={11} /></button>
                           <button onPointerDown={(e) => e.stopPropagation()} onClick={() => cycleRecurrence(t.id)} className={`p-1 rounded hover:bg-black/60 ${t.recurrence && t.recurrence !== 'none' ? 'bg-teal-500/50 text-white' : 'bg-black/40 text-neutral-400 hover:text-teal-300'}`} title={t.recurrence === 'daily' ? 'Repete todo dia (clique: semana)' : t.recurrence === 'weekly' ? 'Repete toda semana (clique: parar)' : 'Repetir (clique: dia → semana)'}><RotateCcw size={11} /></button>
                           <a href={buildGCalLink(t, cn)} target="_blank" rel="noreferrer" onPointerDown={(e) => e.stopPropagation()} className="p-1 rounded bg-black/40 text-teal-300 hover:bg-black/60" title="Abrir no Google Agenda"><ExternalLink size={11} /></a>
                           <button onPointerDown={(e) => e.stopPropagation()} onClick={() => { if (t.agendaOnly) { onDeleteTask(t.id); } else { setSchedule(t.id, ''); } }} className="p-1 rounded bg-black/40 text-neutral-400 hover:text-red-400 hover:bg-black/60" title={t.agendaOnly ? 'Excluir evento' : 'Desagendar'}><X size={11} /></button>
@@ -3354,15 +3375,32 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove, user, onCre
               <h3 className="font-display font-bold text-lg text-white">Como agendar?</h3>
               <p className="text-[12px] text-neutral-400 mt-1 leading-snug truncate">{scheduleChoice.task.title} · {pad(scheduleChoice.hour)}:{pad(scheduleChoice.minute)}</p>
             </div>
-            <div className="p-5 flex flex-col gap-3 bg-[#09090b]">
-              <button onClick={() => { doMeeting(scheduleChoice.task, scheduleChoice.day, scheduleChoice.hour, scheduleChoice.minute); setScheduleChoice(null); }} className="flex items-start gap-3 text-left p-4 rounded-2xl border border-[#27272a] bg-[#12121a] hover:border-teal-500/40 transition-colors">
+            <div className="p-5 flex flex-col gap-4 bg-[#09090b]">
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">Duração</label>
+                <div className="flex gap-2">
+                  {[30, 60, 90, 120].map(m => (
+                    <button key={m} onClick={() => setScDuration(m)} className={`flex-1 py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-widest border transition-colors ${scDuration === m ? 'bg-teal-500/15 text-teal-300 border-teal-500/40' : 'bg-[#12121a] text-neutral-500 border-[#27272a] hover:text-neutral-300'}`}>{m < 60 ? `${m}min` : `${m / 60}h${m % 60 ? '30' : ''}`}</button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">Como aparece no Google Agenda</label>
+                <div className="flex gap-2">
+                  {[{ v: 'reuniao', l: 'Reunião' }, { v: 'foco', l: '🎯 Foco' }, { v: 'tarefa', l: '✅ Tarefa' }].map(o => (
+                    <button key={o.v} onClick={() => setScLabel(o.v)} className={`flex-1 py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-widest border transition-colors ${scLabel === o.v ? 'bg-indigo-500/15 text-indigo-300 border-indigo-500/40' : 'bg-[#12121a] text-neutral-500 border-[#27272a] hover:text-neutral-300'}`}>{o.l}</button>
+                  ))}
+                </div>
+                <p className="text-[10px] text-neutral-600 mt-2 ml-1 leading-relaxed">"Foco"/"Tarefa" só ajustam o título do evento — o Google não libera o bloco nativo de concentração por link direto (precisaria de acesso OAuth da organização).</p>
+              </div>
+              <button onClick={() => { doMeeting(scheduleChoice.task, scheduleChoice.day, scheduleChoice.hour, scheduleChoice.minute, scDuration); setScheduleChoice(null); }} className="flex items-start gap-3 text-left p-4 rounded-2xl border border-[#27272a] bg-[#12121a] hover:border-teal-500/40 transition-colors">
                 <div className="p-2 rounded-xl bg-teal-500/10 border border-teal-500/20 shrink-0"><CalendarDays size={16} className="text-teal-400" /></div>
                 <div>
                   <div className="text-sm font-bold text-white">Marcar reunião</div>
                   <div className="text-[11px] text-neutral-500 mt-0.5 leading-snug">Só marca o horário. Não muda a etapa e não abre o Google Agenda.</div>
                 </div>
               </button>
-              <button onClick={() => { doExecute(scheduleChoice.task, scheduleChoice.day, scheduleChoice.hour, scheduleChoice.minute); setScheduleChoice(null); }} className="flex items-start gap-3 text-left p-4 rounded-2xl border border-[#27272a] bg-[#12121a] hover:border-indigo-500/40 transition-colors">
+              <button onClick={() => { doExecute(scheduleChoice.task, scheduleChoice.day, scheduleChoice.hour, scheduleChoice.minute, scDuration, scLabel); setScheduleChoice(null); }} className="flex items-start gap-3 text-left p-4 rounded-2xl border border-[#27272a] bg-[#12121a] hover:border-indigo-500/40 transition-colors">
                 <div className="p-2 rounded-xl bg-indigo-500/10 border border-indigo-500/20 shrink-0"><Play size={16} className="text-indigo-400" /></div>
                 <div>
                   <div className="text-sm font-bold text-white">Vou executar</div>
@@ -3372,6 +3410,49 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove, user, onCre
             </div>
             <div className="px-6 py-4 border-t border-[#27272a] bg-[#0f0f13] flex justify-end">
               <button onClick={() => setScheduleChoice(null)} className="text-xs font-bold uppercase tracking-widest px-5 py-2.5 rounded-xl text-neutral-500 hover:text-white transition-colors">Cancelar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editSchedule && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center px-3 pt-3 pb-24 sm:p-4 z-[95] fade-in" onClick={() => setEditSchedule(null)}>
+          <div className="w-full max-w-sm rounded-3xl bg-[#12121a] border border-[#27272a] shadow-2xl overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
+            <div className="px-6 py-5 border-b border-[#27272a] flex items-center justify-between bg-[#0f0f13]">
+              <div>
+                <h3 className="font-display font-bold text-lg text-white">Editar horário</h3>
+                <p className="text-[12px] text-neutral-400 mt-1 leading-snug truncate">{editSchedule.title}</p>
+              </div>
+              <button onClick={() => setEditSchedule(null)} className="p-2 rounded-xl text-neutral-500 hover:text-white transition-colors"><X size={20} /></button>
+            </div>
+            <div className="p-6 flex flex-col gap-5 bg-[#09090b]">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">Data</label>
+                  <input type="date" value={esDate} onChange={e => setEsDate(e.target.value)} className="w-full bg-[#12121a] border border-[#27272a] rounded-xl px-4 py-3.5 text-sm text-white outline-none focus:border-teal-500 transition-colors" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">Hora</label>
+                  <input type="time" value={esTime} onChange={e => setEsTime(e.target.value)} className="w-full bg-[#12121a] border border-[#27272a] rounded-xl px-4 py-3.5 text-sm text-white outline-none focus:border-teal-500 transition-colors" />
+                </div>
+              </div>
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">Duração</label>
+                <div className="flex gap-2 flex-wrap">
+                  {[30, 60, 90, 120, 180].map(m => (
+                    <button key={m} onClick={() => setEsDur(m)} className={`flex-1 min-w-[64px] py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-widest border transition-colors ${esDur === m ? 'bg-teal-500/15 text-teal-300 border-teal-500/40' : 'bg-[#12121a] text-neutral-500 border-[#27272a] hover:text-neutral-300'}`}>{m < 60 ? `${m}min` : `${m / 60}h${m % 60 ? '30' : ''}`}</button>
+                  ))}
+                </div>
+                <p className="text-[10px] text-neutral-600 mt-2 ml-1">Funciona mesmo se a demanda já estiver "Em Andamento" — só ajusta o horário e a duração na Agenda.</p>
+              </div>
+            </div>
+            <div className="px-6 py-5 border-t border-[#27272a] bg-[#0f0f13] flex items-center justify-end gap-3">
+              <button onClick={() => setEditSchedule(null)} className="text-xs font-bold uppercase tracking-widest px-5 py-3.5 rounded-xl text-neutral-500 hover:text-white transition-colors">Cancelar</button>
+              <button onClick={() => {
+                if (!esDate || !esTime) return;
+                setTasks((prev: any) => prev.map((t: any) => t.id === editSchedule.id ? { ...t, scheduledStart: `${esDate}T${esTime}`, durationMin: esDur } : t));
+                setEditSchedule(null);
+              }} className="text-xs font-black uppercase tracking-widest px-8 py-3.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white transition-all shadow-[0_0_15px_rgba(20,184,166,0.3)]">Salvar</button>
             </div>
           </div>
         </div>

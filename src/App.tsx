@@ -1576,7 +1576,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                             } else if (dueMs === todayMs) {
                               alertBadge = <span className="flex items-center gap-1 text-[9px] uppercase tracking-wider px-2 py-1 rounded-md bg-orange-500/10 text-orange-400 border border-orange-500/20 font-bold"><Clock size={10}/> Entregar Hoje</span>;
                               alertAccent = 'orange';
-                            } else if (startMs === todayMs) {
+                            } else if (startMs === todayMs && ['backlog', 'todo'].includes(t.status)) {
                               alertBadge = <span className="flex items-center gap-1 text-[9px] uppercase tracking-wider px-2 py-1 rounded-md bg-blue-500/10 text-blue-400 border border-blue-500/20 font-bold"><Play size={10}/> Iniciar Hoje</span>;
                               alertAccent = 'blue';
                             }
@@ -2922,7 +2922,7 @@ function TodayView({ tasks, clients, user, getElapsed, onOpen, onToggleTimer, on
   // "Para hoje": agendada na Agenda (scheduledStart) OU com início previsto (startDate) para hoje.
   // Exclui as que já caem em Atrasadas/Vence hoje, pra não repetir.
   const scheduledToday = mine.filter((t: any) => isActive(t)
-      && (schedDay(t) === todayStr || startDay(t) === todayStr)
+      && (schedDay(t) === todayStr || (startDay(t) === todayStr && ['backlog', 'todo'].includes(t.status)))
       && (dueMs(t) === null || (dueMs(t) as number) > todayMs)
     ).sort((a: any, b: any) => {
       const aS = a.scheduledStart ? new Date(a.scheduledStart).getTime() : Infinity;

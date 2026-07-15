@@ -3076,14 +3076,16 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove, user, onCre
     const sameDay = s.getFullYear() === day.getFullYear() && s.getMonth() === day.getMonth() && s.getDate() === day.getDate();
 
     if (t.templateId) {
-      // Instância gerada: aparece só no dia em que ela de fato está marcada (mesmo se você já a moveu)
+      // Instância gerada: aparece só no dia em que ela de fato está marcada, mesmo já concluída (histórico)
       return sameDay;
     }
 
-    if (!isActionable(t)) return false;
+    if (sameDay) return true; // qualquer demanda agendada fica visível no seu dia, mesmo concluída/cancelada (histórico)
 
-    const matchesDay = sameDay || t.recurrence === 'daily' || (t.recurrence === 'weekly' && s.getDay() === day.getDay());
-    if (!matchesDay) return false;
+    // Repetição virtual do modelo em outros dias só faz sentido enquanto ele estiver ativo
+    if (!isActionable(t)) return false;
+    const matchesRepeat = t.recurrence === 'daily' || (t.recurrence === 'weekly' && s.getDay() === day.getDay());
+    if (!matchesRepeat) return false;
 
     if (t.generatesCards) {
       // Modelo: não mostra (nem no próprio dia original) se já existir uma instância própria gerada pra este dia —
@@ -3362,11 +3364,19 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove, user, onCre
                     const bh = Math.max(ROW_H * 0.6, (dur / 60) * ROW_H);
                     const cn = clientName(t.clientId);
                     const isDragging = dragRef.current && dragRef.current.task && dragRef.current.task.id === t.id && dragRef.current.mode === 'move';
+                    const isDone = t.status === 'done' || t.status === 'formalize';
+                    const isCancelled = t.status === 'cancelled';
+                    const isClosed = isDone || isCancelled;
+                    const blockColor = isDone ? 'bg-emerald-500/10 border-emerald-500/30' : isCancelled ? 'bg-neutral-500/10 border-neutral-500/30' : 'bg-teal-500/15 border-teal-500/40';
                     return (
-                      <div key={t.id} onClick={(e) => e.stopPropagation()} className={`absolute left-1 right-1 rounded-lg bg-teal-500/15 border border-teal-500/40 overflow-hidden group ${isDragging ? 'opacity-40' : ''}`} style={{ top, height: bh }}>
-                        <div onPointerDown={(e) => beginDrag(e, t, 'move')} style={{ touchAction: 'none' }} className="h-full p-1.5 cursor-grab active:cursor-grabbing select-none">
-                          <div className="text-[9px] font-mono font-bold text-teal-300 leading-none mb-1 flex items-center gap-1">{t.recurrence && t.recurrence !== 'none' && <span className="flex items-center gap-0.5 text-teal-400"><RotateCcw size={8} />{recurLabel(t.recurrence)}</span>}{pad(s.getHours())}:{pad(s.getMinutes())} · {dur}min</div>
-                          <div className="text-[10px] font-bold text-white leading-tight line-clamp-2">{t.title}</div>
+                      <div key={t.id} onClick={(e) => e.stopPropagation()} className={`absolute left-1 right-1 rounded-lg ${blockColor} overflow-hidden group ${isDragging ? 'opacity-40' : ''} ${isClosed ? 'opacity-70' : ''}`} style={{ top, height: bh }}>
+                        <div onPointerDown={(e) => !isClosed && beginDrag(e, t, 'move')} style={{ touchAction: 'none' }} className={`h-full p-1.5 select-none ${isClosed ? 'cursor-default' : 'cursor-grab active:cursor-grabbing'}`}>
+                          <div className={`text-[9px] font-mono font-bold leading-none mb-1 flex items-center gap-1 ${isDone ? 'text-emerald-300' : isCancelled ? 'text-neutral-400' : 'text-teal-300'}`}>
+                            {isDone && <CheckCircle2 size={9} />}
+                            {t.recurrence && t.recurrence !== 'none' && <span className="flex items-center gap-0.5"><RotateCcw size={8} />{recurLabel(t.recurrence)}</span>}
+                            {pad(s.getHours())}:{pad(s.getMinutes())} · {dur}min
+                          </div>
+                          <div className={`text-[10px] font-bold leading-tight line-clamp-2 ${isClosed ? 'text-neutral-300 line-through' : 'text-white'}`}>{t.title}</div>
                           {cn && bh > ROW_H && <div className="text-[8px] text-teal-300/70 uppercase tracking-widest font-bold mt-1 truncate">{cn}</div>}
                         </div>
                         <div className="absolute top-1 right-1 flex gap-1">
@@ -3379,7 +3389,7 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove, user, onCre
                           <a href={buildGCalLink(t, cn)} target="_blank" rel="noreferrer" onPointerDown={(e) => e.stopPropagation()} className="p-1 rounded bg-black/40 text-teal-300 hover:bg-black/60" title="Abrir no Google Agenda"><ExternalLink size={11} /></a>
                           <button onPointerDown={(e) => e.stopPropagation()} onClick={() => { if (t.agendaOnly) { onDeleteTask(t.id); } else { setSchedule(t.id, ''); } }} className="p-1 rounded bg-black/40 text-neutral-400 hover:text-red-400 hover:bg-black/60" title={t.agendaOnly ? 'Excluir evento' : 'Desagendar'}><X size={11} /></button>
                         </div>
-                        <div onPointerDown={(e) => { const rect = (e.currentTarget.parentElement as Element).getBoundingClientRect(); beginResize(e, t, rect.top); }} style={{ touchAction: 'none' }} className="absolute bottom-0 left-0 right-0 h-2.5 cursor-ns-resize bg-teal-500/40 opacity-0 group-hover:opacity-100 transition-opacity" title="Ajustar duração" />
+                        {!isClosed && <div onPointerDown={(e) => { const rect = (e.currentTarget.parentElement as Element).getBoundingClientRect(); beginResize(e, t, rect.top); }} style={{ touchAction: 'none' }} className="absolute bottom-0 left-0 right-0 h-2.5 cursor-ns-resize bg-teal-500/40 opacity-0 group-hover:opacity-100 transition-opacity" title="Ajustar duração" />}
                       </div>
                     );
                   })}

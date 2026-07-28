@@ -6,8 +6,10 @@ import {
   Play, Pause, Square, CheckCircle2, User, CheckSquare,
   HelpCircle, ChevronDown, LayoutDashboard, Mail, Check, Copy, ClipboardList, Cloud, Lock,
   Eye, EyeOff, Settings, MonitorPlay, CloudRain, Sun, Moon, CloudLightning, Snowflake, CloudFog, UserCog, Calendar, ChevronUp,
-  CalendarDays, ExternalLink, ChevronLeft, ChevronRight
+  CalendarDays, ExternalLink, ChevronLeft, ChevronRight,
+  StickyNote, Pin, Palette
 } from "lucide-react";
+import { ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Cell } from "recharts";
 
 // ==========================================
 // CONFIGURAÇÃO DO BANCO DE DADOS (SUPABASE)
@@ -19,6 +21,8 @@ const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 // --- Funções Auxiliares ---
 const nextId = () => Math.random().toString(36).substr(2, 9);
 const upper = (v: any) => (v == null ? '' : String(v)).toUpperCase();
+const lower = (v: any) => (v == null ? '' : String(v)).toLowerCase();
+const capitalize = (v: any) => { const s = lower(v); return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; };
 
 // Registro de eventos do histórico da demanda
 function histEntry(type: string, from?: string, to?: string) {
@@ -132,6 +136,19 @@ function normalizeTask(t: any) {
   return norm;
 }
 
+function normalizeNote(n: any) {
+  return {
+    ...n,
+    title: n.title || '',
+    content: n.content || '',
+    color: n.color || 'default',
+    ownerId: n.ownerId || '',
+    pinned: !!n.pinned,
+    createdAt: n.createdAt || getBrasiliaDate(),
+    updatedAt: n.updatedAt || n.createdAt || getBrasiliaDate(),
+  };
+}
+
 // --- Componente Inteligente de Avatar ---
 function UserAvatar({ url, name, className }: { url?: string, name?: string, className?: string }) {
   const [error, setError] = useState(false);
@@ -225,7 +242,7 @@ function friendlyAuthError(msg?: string) {
   return 'Não foi possível concluir. Tente novamente em instantes.';
 }
 
-function LoginScreen() {
+function LoginScreen({ authError, clearAuthError }: any) {
   const [mode, setMode] = useState<'login' | 'signup'>('login');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -233,6 +250,15 @@ function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'error' | 'success', text: string } | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // Erro vindo do fluxo de login/cadastro com Google (definido no componente App, após o redirect do OAuth)
+  useEffect(() => {
+    if (authError) {
+      setMode(authError.mode);
+      setFeedback({ type: 'error', text: authError.text });
+      clearAuthError?.();
+    }
+  }, [authError]);
 
   const handleSubmit = async () => {
     setFeedback(null);
@@ -278,6 +304,19 @@ function LoginScreen() {
       return;
     }
     setLoading(false);
+  };
+
+  const handleGoogleSignIn = async () => {
+    setFeedback(null);
+    const supa = (window as any).supabaseClient;
+    // Guarda se veio da aba "Entrar" ou "Criar Conta" — o Google não distingue login de cadastro,
+    // então usamos isso depois do redirect para decidir se criamos o perfil automaticamente ou não.
+    try { sessionStorage.setItem('lumina_auth_intent', mode); } catch {}
+    const { error } = await supa.auth.signInWithOAuth({ provider: 'google' });
+    if (error) {
+      console.error(error);
+      setFeedback({ type: 'error', text: friendlyAuthError(error?.message) });
+    }
   };
 
   return (
@@ -350,6 +389,27 @@ function LoginScreen() {
           >
             {loading ? <Cloud size={18} className="animate-pulse" /> : (mode === 'signup' ? 'Criar Conta' : 'Entrar no Sistema')}
           </button>
+
+          <div className="flex items-center gap-3 pt-1">
+            <div className="flex-1 h-px bg-[#27272a]" />
+            <span className="text-[10px] uppercase tracking-widest text-neutral-600 font-bold">ou</span>
+            <div className="flex-1 h-px bg-[#27272a]" />
+          </div>
+
+          <button
+            type="button"
+            disabled={loading}
+            onClick={handleGoogleSignIn}
+            className="w-full bg-white hover:bg-neutral-100 disabled:opacity-50 disabled:cursor-not-allowed text-neutral-700 rounded-xl px-4 py-3.5 font-bold tracking-wide transition-all shadow-sm flex justify-center items-center gap-3 border border-neutral-200"
+          >
+            <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
+              <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844a4.14 4.14 0 0 1-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.874 2.684-6.615z" />
+              <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.583-5.036-3.71H.957v2.332A8.997 8.997 0 0 0 9 18z" />
+              <path fill="#FBBC05" d="M3.964 10.707A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.707V4.961H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.039l3.007-2.332z" />
+              <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.961L3.964 7.293C4.672 5.167 6.656 3.58 9 3.58z" />
+            </svg>
+            {mode === 'signup' ? 'Criar conta com Google' : 'Continuar com Google'}
+          </button>
         </div>
       </div>
     </div>
@@ -381,6 +441,7 @@ export default function App() {
 
   const [user, setUser] = useState<any>(null);
   const [authChecked, setAuthChecked] = useState(false);
+  const [authError, setAuthError] = useState<{ mode: 'login' | 'signup', text: string } | null>(null);
 
   useEffect(() => {
     if (!supabaseReady) return;
@@ -403,6 +464,35 @@ export default function App() {
         setTimeout(() => loadProfile(authUser, attempt + 1), 600);
         return;
       }
+
+      // Sem perfil correspondente: hoje só acontece com login via Google (o cadastro por
+      // e-mail/senha já cria o perfil em 'responsibles' logo após o signUp).
+      let intent: string | null = null;
+      try { intent = sessionStorage.getItem('lumina_auth_intent'); sessionStorage.removeItem('lumina_auth_intent'); } catch {}
+
+      if (intent === 'signup') {
+        const meta = authUser.user_metadata || {};
+        const displayName = meta.full_name || meta.name || (authUser.email ? authUser.email.split('@')[0] : 'Novo usuário');
+        const { data: created, error: insertErr } = await supa
+          .from('responsibles')
+          .insert([{ id: 'r' + Date.now(), name: displayName, user_id: authUser.id, avatar: meta.avatar_url || meta.picture || '' }])
+          .select()
+          .maybeSingle();
+        if (insertErr || !created) {
+          console.error('Erro ao criar perfil via Google:', insertErr);
+          await supa.auth.signOut();
+          setAuthError({ mode: 'signup', text: 'Não foi possível criar sua conta com o Google. Tente novamente ou contate o administrador.' });
+          setUser(null);
+          setAuthChecked(true);
+          return;
+        }
+        setUser({ id: created.id, name: created.name, isAdmin: !!created.is_admin, avatar: created.avatar || '' });
+        setAuthChecked(true);
+        return;
+      }
+
+      await supa.auth.signOut();
+      setAuthError({ mode: 'login', text: 'Não encontramos uma conta para esse login do Google. Use "Criar Conta" para se cadastrar.' });
       setUser(null);
       setAuthChecked(true);
     }
@@ -441,7 +531,7 @@ export default function App() {
   }
 
   if (!user) {
-    return <LoginScreen />;
+    return <LoginScreen authError={authError} clearAuthError={() => setAuthError(null)} />;
   }
 
   return <KanbanMain user={user} setUser={setUser} onLogout={handleLogout} />;
@@ -466,12 +556,51 @@ const PRIORITY_STYLE: Record<string, any> = {
   Alta: { bg: "bg-red-500/10", text: "text-red-400", border: "border-red-500/20", dot: "bg-red-500" },
 };
 
+// Paleta dos gráficos do Analytics — mesma identidade visual do resto do app
+const CHART_COLORS = { indigo: '#6366f1', teal: '#14b8a6', purple: '#a855f7', amber: '#f59e0b' };
+const MONTH_ABBR = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+// Mesma paleta usada nos "dots" de status de cada coluna do Kanban (COLUMNS)
+const COLUMN_HEX: Record<string, string> = {
+  backlog: '#6366f1', todo: '#f59e0b', inprogress: '#3b82f6', paused: '#f97316',
+  waiting: '#ec4899', review: '#a855f7', done: '#10b981', formalize: '#14b8a6', cancelled: '#ef4444'
+};
+
+function ChartSection({ title, children, height = 260 }: any) {
+  return (
+    <div className="bg-[#12121a] border border-[#27272a] rounded-2xl p-5 sm:p-6 shadow-sm">
+      <h3 className="text-[10px] font-bold text-neutral-500 mb-4 uppercase tracking-[0.2em] ml-1">{title}</h3>
+      <div style={{ width: '100%', height }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function ChartEmpty({ label = "Sem dados suficientes para este período/filtro." }: any) {
+  return <div className="w-full h-full flex items-center justify-center text-xs text-neutral-600 text-center px-4">{label}</div>;
+}
+
+function ChartTooltip({ active, payload, label }: any) {
+  if (!active || !payload || !payload.length) return null;
+  return (
+    <div className="bg-[#1c1d26] border border-[#27272a] rounded-xl px-3 py-2 shadow-xl text-[11px]">
+      {label && <div className="text-neutral-500 font-bold uppercase tracking-widest text-[9px] mb-1">{label}</div>}
+      {payload.map((p: any, i: number) => (
+        <div key={i} className="flex items-center gap-2 font-bold" style={{ color: p.color || p.fill }}>
+          {p.name}: {typeof p.value === 'number' ? p.value.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) : p.value}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLogout: any }) {
   const [tasks, setTasks] = useState<any[]>([]);
   const [clients, setClients] = useState<any[]>([]);
   const [responsibles, setResponsibles] = useState<any[]>([]);
+  const [notes, setNotes] = useState<any[]>([]);
   const [globalLookerUrl, setGlobalLookerUrl] = useState<string>('');
-  
+
   const [isCloudSynced, setIsCloudSynced] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -480,6 +609,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
   // ignorar ecos dos próprios saves vindos do Realtime.
   const lastSyncedTasksRef = useRef<Record<string, string>>({});
   const lastSyncedClientsRef = useRef<Record<string, string>>({});
+  const lastSyncedNotesRef = useRef<Record<string, string>>({});
 
   // Monitora se está em Mobile
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
@@ -599,11 +729,12 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
   useEffect(() => {
     async function fetchCloudData() {
       try {
-        const [resTasks, resClients, resResp, resSettings] = await Promise.all([
+        const [resTasks, resClients, resResp, resSettings, resNotes] = await Promise.all([
           (window as any).supabaseClient.from('tasks').select('*'),
           (window as any).supabaseClient.from('clients').select('*'),
           (window as any).supabaseClient.from('responsibles').select('*'),
-          (window as any).supabaseClient.from('settings').select('*').eq('id', 'global').maybeSingle()
+          (window as any).supabaseClient.from('settings').select('*').eq('id', 'global').maybeSingle(),
+          (window as any).supabaseClient.from('notes').select('*')
         ]);
 
         if (resTasks.data) {
@@ -631,6 +762,10 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
         
         if (resSettings.data) {
             setGlobalLookerUrl(resSettings.data.looker_global_url || '');
+        }
+
+        if (resNotes.data) {
+          setNotes(resNotes.data.map(normalizeNote));
         }
 
       } catch (error) {
@@ -668,6 +803,17 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
     });
   }, [clients, isCloudSynced, user.isAdmin]);
 
+  // Sincroniza Notas — mesmo padrão incremental de tasks/clients (só o que mudou).
+  useEffect(() => {
+    if (!isCloudSynced) return;
+    const changed = notes.filter(n => lastSyncedNotesRef.current[n.id] !== stableStringify(n));
+    if (changed.length === 0) return;
+    changed.forEach(n => { lastSyncedNotesRef.current[n.id] = stableStringify(n); });
+    (window as any).supabaseClient.from('notes').upsert(changed).then(({ error }: any) => {
+      if (error) console.error("Erro ao sincronizar notas:", error);
+    });
+  }, [notes, isCloudSynced]);
+
   // Realtime: quando outro usuário (ex: o admin) altera uma tarefa sua,
   // o seu quadro atualiza sozinho, sem precisar recarregar a página.
   useEffect(() => {
@@ -704,7 +850,42 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
     return () => { supa.removeChannel(channel); };
   }, [isCloudSynced]);
 
-  const [activeTab, setActiveTab] = useState('board'); 
+  // Realtime das Notas — mesmo esquema do canal de tasks acima.
+  useEffect(() => {
+    if (!isCloudSynced) return;
+    const supa = (window as any).supabaseClient;
+    if (!supa?.channel) return;
+
+    const channel = supa
+      .channel('lumina-notes-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notes' }, (payload: any) => {
+        if (payload.eventType === 'DELETE') {
+          const oldId = payload.old?.id;
+          if (!oldId) return;
+          delete lastSyncedNotesRef.current[oldId];
+          setNotes(prev => prev.filter(n => n.id.toString() !== oldId.toString()));
+          return;
+        }
+        const row = payload.new;
+        if (!row?.id) return;
+        const normalized = normalizeNote(row);
+        const snap = stableStringify(normalized);
+        if (lastSyncedNotesRef.current[row.id] === snap) return; // eco do nosso próprio save
+        lastSyncedNotesRef.current[row.id] = snap;
+        setNotes(prev => {
+          const idx = prev.findIndex(n => n.id.toString() === row.id.toString());
+          if (idx === -1) return [...prev, normalized];
+          const copy = [...prev];
+          copy[idx] = normalized;
+          return copy;
+        });
+      })
+      .subscribe();
+
+    return () => { supa.removeChannel(channel); };
+  }, [isCloudSynced]);
+
+  const [activeTab, setActiveTab] = useState('board');
   const [isClosingModal, setIsClosingModal] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [activeTooltipCol, setActiveTooltipCol] = useState<string | null>(null);
@@ -780,6 +961,15 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
     return clients.filter(c => c.ownerId === user.id || tasks.some(t => t.clientId === c.id && t.responsibleId === user.id));
   }, [clients, tasks, user]);
 
+  // Exclui a nota de vez (estado local + Supabase)
+  const deleteNoteById = async (id: string) => {
+    delete lastSyncedNotesRef.current[id];
+    setNotes((prev: any) => prev.filter((n: any) => n.id !== id));
+    if ((window as any).supabaseClient) await (window as any).supabaseClient.from('notes').delete().eq('id', id.toString());
+  };
+
+  const visibleNotes = useMemo(() => notes.filter(n => n.ownerId === user.id), [notes, user]);
+
   const [dismissedLimits, setDismissedLimits] = useState(new Set());
 
   const clientsNearLimit = useMemo(() => {
@@ -808,17 +998,22 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
     }).length;
   }, [tasks, user]);
 
-  // Demandas que pedem atenção HOJE: atrasadas + vencem hoje + iniciam hoje
+  // Demandas que pedem atenção HOJE: atrasadas (por prazo ou início) + vencem hoje + iniciam hoje + agendadas hoje.
+  // Mesmo critério usado no badge do card (Atrasado/Entregar Hoje/Iniciar Hoje) e no TodayView (Meu Dia),
+  // para os três lugares sempre baterem entre si.
   const todayCount = useMemo(() => {
     const todayMs = new Date().setHours(0, 0, 0, 0);
-    const dayMs = (s: string) => { if (!s) return null; const [y, m, d] = s.slice(0, 10).split('-'); return new Date(+y, +m - 1, +d).setHours(0, 0, 0, 0); };
     return tasks.filter(t => {
       if (t.responsibleId !== user.id) return false;
       if (['done', 'cancelled', 'formalize'].includes(t.status) || t.agendaOnly || t.generatesCards) return false;
-      const due = dayMs(t.dueDate);
-      const start = dayMs(t.startDate);
-      const sched = dayMs(t.scheduledStart);
-      return (due !== null && due <= todayMs) || start === todayMs || sched === todayMs;
+      const due = parseDateLocal(t.dueDate);
+      const start = parseDateLocal(t.startDate);
+      const sched = parseDateLocal(t.scheduledStart);
+      const isBacklogOrTodo = ['backlog', 'todo'].includes(t.status);
+      if (due !== null && due <= todayMs) return true;
+      if (start !== null && start <= todayMs && isBacklogOrTodo) return true;
+      if (sched !== null && sched === todayMs) return true;
+      return false;
     }).length;
   }, [tasks, user]);
   
@@ -892,7 +1087,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
       const newTask = {
         id: nextId(),
         title: upper(f.title.trim()),
-        description: upper(f.description.trim()),
+        description: capitalize(f.description.trim()),
         priority: f.priority || 'Média',
         durationMin: parseInt(f.durationMin) || 0,
         clientId: f.clientId || '',
@@ -901,7 +1096,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
         dueDate: f.dueDate || '',
         status: finalStatus,
         waitingFor: upper(f.waitingFor || ''),
-        checklist: (f.checklist || []).filter((c: any) => c.text.trim()).map((c: any) => ({ ...c, text: upper(c.text) })),
+        checklist: (f.checklist || []).filter((c: any) => c.text.trim()).map((c: any) => ({ ...c, text: capitalize(c.text) })),
         timerRunning: false,
         timerStart: null,
         timerElapsed: 0,
@@ -927,29 +1122,43 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
           let timerElapsed = t.timerElapsed;
           let timerStart = t.timerStart;
 
-          if ((finalStatus === 'done' || finalStatus === 'cancelled' || finalStatus === 'formalize') && timerRunning) {
-            timerRunning = false;
+          // Congela o tempo decorrido até agora antes de qualquer ajuste (se o timer estava rodando)
+          if (timerRunning && timerStart) {
             timerElapsed += (Date.now() - timerStart) / 1000;
+            timerStart = Date.now();
+          }
+
+          // Sincronização bidirecional entre "Est. Minutos" e o timer: quem foi editado por último manda.
+          // Se o campo foi alterado manualmente, esse valor vence e é aplicado ao timer.
+          // Se o campo ficou intocado, reflete de volta o tempo real acumulado no timer.
+          const typedDurationMin = parseInt(f.durationMin) || 0;
+          const previousDurationMin = t.durationMin || 0;
+          let finalDurationMin = typedDurationMin;
+
+          if (typedDurationMin !== previousDurationMin) {
+            timerElapsed = typedDurationMin * 60;
+          } else {
+            finalDurationMin = Math.round(timerElapsed / 60);
+          }
+
+          if (finalStatus === 'done' || finalStatus === 'cancelled' || finalStatus === 'formalize') {
+            timerRunning = false;
             timerStart = null;
           }
 
-          if (!timerRunning && (finalStatus === 'done' || finalStatus === 'formalize' || finalStatus === 'cancelled')) {
-            timerElapsed = (parseInt(f.durationMin) || 0) * 60;
-          }
-
-          return { 
+          return {
             id: t.id,
-            title: upper(f.title.trim()), 
-            description: upper(f.description.trim()), 
+            title: upper(f.title.trim()),
+            description: capitalize(f.description.trim()),
             priority: f.priority || 'Média',
-            durationMin: parseInt(f.durationMin) || 0,
+            durationMin: finalDurationMin,
             clientId: f.clientId || '',
             responsibleId: f.responsibleId || '',
             startDate: f.startDate || '',
             dueDate: f.dueDate || '',
             status: finalStatus,
             waitingFor: upper(f.waitingFor || ''),
-            checklist: (f.checklist || []).filter((c: any) => c.text.trim()).map((c: any) => ({ ...c, text: upper(c.text) })),
+            checklist: (f.checklist || []).filter((c: any) => c.text.trim()).map((c: any) => ({ ...c, text: capitalize(c.text) })),
             recurrence: f.recurrence || 'none',
             agendaOnly: !!f.agendaOnly,
             scheduledStart: f.scheduledStart || '',
@@ -1327,7 +1536,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
           <div className="flex flex-col items-center gap-3 w-full px-3">
              <SidebarBtn icon={<LayoutDashboard size={20} />} active={activeTab === 'board' && !isClosingModal} onClick={() => {if(activeTab !== 'board') handleCloseTab()}} tooltip="Pipeline" />
              <SidebarBtn icon={<Sun size={20} />} active={activeTab === 'today' && !isClosingModal} onClick={() => setActiveTab('today')} tooltip="Meu Dia" count={todayCount} />
-             <SidebarBtn icon={<Clock size={20} />} active={activeTab === 'timer' && !isClosingModal} onClick={() => setActiveTab('timer')} tooltip="Timer" />
+             <SidebarBtn icon={<StickyNote size={20} />} active={activeTab === 'notes' && !isClosingModal} onClick={() => setActiveTab('notes')} tooltip="Notas" />
              <SidebarBtn icon={<CalendarDays size={20} />} active={activeTab === 'agenda' && !isClosingModal} onClick={() => setActiveTab('agenda')} tooltip="Agenda" />
              <SidebarBtn icon={<Users size={20} />} active={activeTab === 'responsibles' && !isClosingModal} onClick={() => setActiveTab('responsibles')} tooltip="Equipe" />
              <SidebarBtn icon={<Building2 size={20} />} active={activeTab === 'clients' && !isClosingModal} onClick={() => setActiveTab('clients')} tooltip="Clientes" alert={clientsNearLimit.length > 0} />
@@ -1400,7 +1609,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
 
         {/* MODAIS Overlay */}
         {activeTab === 'today' && <OverlayModal title="Meu Dia" icon={<Sun size={20} className="text-amber-400"/>} isClosing={isClosingModal} onClose={handleCloseTab}><TodayView tasks={tasks} clients={clients} user={user} getElapsed={getElapsed} onOpen={openEditModal} onToggleTimer={toggleTimer} onComplete={(t) => handleRequestMove(t.id, null, 'done')} onOpenAgenda={() => setActiveTab('agenda')} /></OverlayModal>}
-        {activeTab === 'timer' && <OverlayModal title="Cronómetro" icon={<Clock size={20} className="text-amber-500"/>} isClosing={isClosingModal} onClose={handleCloseTab}><TimerPanelContent tasks={filteredTasks} getElapsed={getElapsed} onToggleTimer={toggleTimer} user={user} /></OverlayModal>}
+        {activeTab === 'notes' && <OverlayModal title="Notas" icon={<StickyNote size={20} className="text-amber-400"/>} isClosing={isClosingModal} onClose={handleCloseTab}><NotesPanelContent notes={visibleNotes} setNotes={setNotes} user={user} onDeleteNote={deleteNoteById} /></OverlayModal>}
         {activeTab === 'responsibles' && <OverlayModal title="Equipe (Contas)" icon={<Users size={20} className="text-indigo-400"/>} isClosing={isClosingModal} onClose={handleCloseTab}><ResponsiblesPanelContent responsibles={responsibles} tasks={tasks} user={user} /></OverlayModal>}
         {activeTab === 'clients' && <OverlayModal title="Gestão de Clientes" icon={<Building2 size={20} className="text-purple-400"/>} isClosing={isClosingModal} onClose={handleCloseTab}><ClientsPanelContent clients={visibleClients} setClients={setClients} tasks={tasks} setTasks={setTasks} user={user} getElapsed={getElapsed} /></OverlayModal>}
         {activeTab === 'reports' && <AnalyticsModal isClosing={isClosingModal} onClose={handleCloseTab} tasks={filteredTasks} clients={visibleClients} responsibles={responsibles} getElapsed={getElapsed} globalLookerUrl={globalLookerUrl} setGlobalLookerUrl={setGlobalLookerUrl} user={user} />}
@@ -1674,6 +1883,12 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                                       </div>
                                     )}
 
+                                    {!t.timerRunning && !(t.timerElapsed > 0) && t.durationMin > 0 && !isDoneOrCancelled && (
+                                      <div className="flex items-center gap-1 text-[10px] font-mono font-bold bg-black/30 border border-white/5 px-2 py-1 rounded-md text-neutral-400">
+                                        <Clock size={10} className="text-neutral-500" /> {formatTime(t.durationMin * 60)}
+                                      </div>
+                                    )}
+
                                     {isDoneOrCancelled && (t.timerElapsed > 0 || t.durationMin > 0) && (
                                        <div className="flex items-center gap-1.5 text-[10px] font-mono font-bold text-emerald-500 bg-emerald-500/10 px-2 py-1 rounded-md border border-emerald-500/20">
                                          <CheckCircle2 size={10} /> {formatTime(t.timerElapsed || (t.durationMin * 60))}
@@ -1692,10 +1907,10 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                                       <button onClick={() => handleRequestMove(t.id, null, 'cancelled')} className="p-1.5 bg-red-500/5 hover:bg-red-500/10 text-red-500/50 hover:text-red-400 rounded-lg transition-colors" title="Cancelar"><X size={12}/></button>
                                     )}
                                     {isEditable && t.status === "cancelled" && (
-                                      <>
-                                        <button onClick={() => handleRequestMove(t.id, null, 'backlog')} className="p-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded-lg transition-colors" title="Restaurar"><RotateCcw size={12}/></button>
-                                        <button onClick={() => setConfirmDelete(t.id)} className="p-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg transition-colors" title="Apagar Definitivamente"><Trash2 size={12}/></button>
-                                      </>
+                                      <button onClick={() => handleRequestMove(t.id, null, 'backlog')} className="p-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded-lg transition-colors" title="Restaurar"><RotateCcw size={12}/></button>
+                                    )}
+                                    {isEditable && (
+                                      <button onClick={() => setConfirmDelete(t.id)} className="p-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg transition-colors" title="Apagar Definitivamente"><Trash2 size={12}/></button>
                                     )}
                                  </div>
                               </div>
@@ -1733,7 +1948,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
       <div className="md:hidden fixed bottom-0 left-0 right-0 flex items-center justify-around pt-2.5 px-2 pb-[max(env(safe-area-inset-bottom),0.75rem)] bg-[#12121a]/95 backdrop-blur-md border-t border-[#27272a] z-[100] shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
          <MobileNavBtn icon={<LayoutDashboard size={20} />} label="Board" active={activeTab === 'board' && !isClosingModal} onClick={() => {if(activeTab !== 'board') handleCloseTab()}} />
          <MobileNavBtn icon={<Sun size={20} />} label="Hoje" active={activeTab === 'today' && !isClosingModal} onClick={() => setActiveTab('today')} count={todayCount} />
-         <MobileNavBtn icon={<Clock size={20} />} label="Timer" active={activeTab === 'timer' && !isClosingModal} onClick={() => setActiveTab('timer')} />
+         <MobileNavBtn icon={<StickyNote size={20} />} label="Notas" active={activeTab === 'notes' && !isClosingModal} onClick={() => setActiveTab('notes')} />
          <MobileNavBtn icon={<CalendarDays size={20} />} label="Agenda" active={activeTab === 'agenda' && !isClosingModal} onClick={() => setActiveTab('agenda')} />
          <MobileNavBtn icon={<Users size={20} />} label="Equipe" active={activeTab === 'responsibles' && !isClosingModal} onClick={() => setActiveTab('responsibles')} />
          <MobileNavBtn icon={<Building2 size={20} />} label="Clientes" active={activeTab === 'clients' && !isClosingModal} onClick={() => setActiveTab('clients')} alert={clientsNearLimit.length > 0} />
@@ -1879,7 +2094,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
       {searchOpen && <SearchModal tasks={visibleTasks} clients={clients} onOpen={openEditModal} onClose={() => setSearchOpen(false)} />}
 
       {/* Modais de Popups Principais */}
-      {closureModal && <ClosureModal tasks={tasksForClosure} clients={clients} responsibles={responsibles} onClose={() => setClosureModal(false)} onFormalize={(clientId: string | null) => { if (clientId) { setTasks((prev: any) => prev.map((t: any) => (t.status === 'done' && t.clientId === clientId) ? { ...t, status: 'formalize' } : t)); } else { setTasks((prev: any) => prev.map((t: any) => t.status === 'done' ? { ...t, status: 'formalize' } : t)); setClosureModal(false); } }} />}
+      {closureModal && <ClosureModal tasks={tasksForClosure} clients={clients} responsibles={responsibles} getElapsed={getElapsed} onClose={() => setClosureModal(false)} onFormalize={(clientId: string | null) => { if (clientId) { setTasks((prev: any) => prev.map((t: any) => (t.status === 'done' && t.clientId === clientId) ? { ...t, status: 'formalize' } : t)); } else { setTasks((prev: any) => prev.map((t: any) => t.status === 'done' ? { ...t, status: 'formalize' } : t)); setClosureModal(false); } }} />}
       {modal && <TaskModal modal={modal} setModal={setModal} clients={visibleClients} responsibles={responsibles} closeModal={closeModal} saveModal={saveModal} validationError={validationError} setValidationError={setValidationError} user={user} />}
     </div>
   );
@@ -2058,42 +2273,151 @@ function LiveElapsed({ task, getElapsed }: any) {
   return <>{formatTime(getElapsed(task))}</>;
 }
 
-function TimerPanelContent({ tasks, getElapsed, onToggleTimer, user }: any) {
-  const activeTasks = tasks.filter((t: any) => (t.timerRunning || t.timerElapsed > 0) && t.responsibleId === user.id).sort((a: any, b: any) => b.timerRunning - a.timerRunning);
+const NOTE_COLORS = [
+  { id: 'default', bg: 'bg-[#1c1d26]', border: 'border-[#27272a]', swatch: 'bg-neutral-500' },
+  { id: 'red', bg: 'bg-red-500/10', border: 'border-red-500/30', swatch: 'bg-red-500' },
+  { id: 'orange', bg: 'bg-orange-500/10', border: 'border-orange-500/30', swatch: 'bg-orange-500' },
+  { id: 'yellow', bg: 'bg-amber-500/10', border: 'border-amber-500/30', swatch: 'bg-amber-500' },
+  { id: 'green', bg: 'bg-emerald-500/10', border: 'border-emerald-500/30', swatch: 'bg-emerald-500' },
+  { id: 'teal', bg: 'bg-teal-500/10', border: 'border-teal-500/30', swatch: 'bg-teal-500' },
+  { id: 'blue', bg: 'bg-blue-500/10', border: 'border-blue-500/30', swatch: 'bg-blue-500' },
+  { id: 'purple', bg: 'bg-purple-500/10', border: 'border-purple-500/30', swatch: 'bg-purple-500' },
+  { id: 'pink', bg: 'bg-pink-500/10', border: 'border-pink-500/30', swatch: 'bg-pink-500' },
+];
+
+function NoteCard({ note, onUpdate, onDelete }: any) {
+  const [editing, setEditing] = useState(false);
+  const [title, setTitle] = useState(note.title);
+  const [content, setContent] = useState(note.content);
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  useEffect(() => {
+    if (!editing) { setTitle(note.title); setContent(note.content); }
+  }, [note.title, note.content, editing]);
+
+  const commit = () => {
+    setEditing(false);
+    if (title !== note.title || content !== note.content) {
+      onUpdate({ title, content });
+    }
+  };
+
+  const style = NOTE_COLORS.find(c => c.id === note.color) || NOTE_COLORS[0];
+
+  return (
+    <div className={`rounded-2xl border p-4 flex flex-col gap-2 relative group transition-colors shadow-sm ${style.bg} ${style.border}`}>
+      {editing ? (
+        <>
+          <input autoFocus value={title} onChange={e => setTitle(e.target.value)} placeholder="Título" className="w-full bg-transparent outline-none font-bold text-sm text-white placeholder-neutral-600" />
+          <textarea value={content} onChange={e => setContent(e.target.value)} placeholder="Nota..." rows={5} className="w-full bg-transparent outline-none text-sm text-neutral-200 placeholder-neutral-600 resize-none" />
+          <div className="flex justify-end">
+            <button onClick={commit} className="text-[10px] font-black uppercase tracking-widest text-teal-400 hover:text-teal-300 px-3 py-1.5 transition-colors">Concluído</button>
+          </div>
+        </>
+      ) : (
+        <div onClick={() => setEditing(true)} className="cursor-text flex flex-col gap-2 min-h-[60px]">
+          {note.pinned && <Pin size={12} className="absolute top-3 right-3 text-amber-400 fill-amber-400" />}
+          {note.title && <h4 className="font-bold text-sm text-white break-words pr-4">{note.title}</h4>}
+          {note.content ? (
+            <p className="text-sm text-neutral-300 whitespace-pre-wrap break-words line-clamp-6">{note.content}</p>
+          ) : (
+            <p className="text-sm text-neutral-600 italic">Nota vazia</p>
+          )}
+        </div>
+      )}
+
+      <div className="flex items-center justify-between mt-1 pt-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+        <div className="relative">
+          <button onClick={() => setPickerOpen(v => !v)} title="Cor" className="p-1.5 rounded-lg hover:bg-black/20 text-neutral-400 hover:text-white transition-colors"><Palette size={13} /></button>
+          {pickerOpen && (
+            <div className="absolute bottom-full left-0 mb-1 flex gap-1.5 bg-[#1c1d26] border border-[#27272a] rounded-xl p-2 shadow-xl z-10">
+              {NOTE_COLORS.map(c => (
+                <button key={c.id} onClick={() => { onUpdate({ color: c.id }); setPickerOpen(false); }} className={`w-5 h-5 rounded-full ${c.swatch} ${note.color === c.id ? 'ring-2 ring-offset-2 ring-offset-[#1c1d26] ring-white' : ''}`} title={c.id} />
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-1">
+          <button onClick={() => onUpdate({ pinned: !note.pinned })} title={note.pinned ? 'Desafixar' : 'Fixar'} className={`p-1.5 rounded-lg hover:bg-black/20 transition-colors ${note.pinned ? 'text-amber-400' : 'text-neutral-400 hover:text-white'}`}><Pin size={13} /></button>
+          <button onClick={onDelete} title="Excluir" className="p-1.5 rounded-lg hover:bg-red-500/10 text-neutral-400 hover:text-red-400 transition-colors"><Trash2 size={13} /></button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NotesPanelContent({ notes, setNotes, user, onDeleteNote }: any) {
+  const [quickOpen, setQuickOpen] = useState(false);
+  const [quickTitle, setQuickTitle] = useState('');
+  const [quickContent, setQuickContent] = useState('');
+
+  const sorted = useMemo(() => [...notes].sort((a: any, b: any) => {
+    if (!!b.pinned !== !!a.pinned) return (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0);
+    return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+  }), [notes]);
+
+  const pinned = sorted.filter((n: any) => n.pinned);
+  const others = sorted.filter((n: any) => !n.pinned);
+
+  const updateNote = (id: string, patch: any) => {
+    setNotes((prev: any) => prev.map((n: any) => n.id === id ? { ...n, ...patch, updatedAt: new Date().toISOString() } : n));
+  };
+
+  const createQuickNote = () => {
+    if (!quickTitle.trim() && !quickContent.trim()) { setQuickOpen(false); return; }
+    const now = new Date().toISOString();
+    setNotes((prev: any) => [{ id: nextId(), title: quickTitle.trim(), content: quickContent.trim(), color: 'default', ownerId: user.id, pinned: false, createdAt: now, updatedAt: now }, ...prev]);
+    setQuickTitle(''); setQuickContent(''); setQuickOpen(false);
+  };
+
   return (
     <div className="flex flex-col h-full fade-in">
-      <p className="text-sm text-neutral-400 mb-8 text-center max-w-lg mx-auto">Inicie o cronômetro diretamente num card do painel principal para acompanhar o tempo de execução aqui.</p>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-        {activeTasks.length === 0 && (
-          <div className="col-span-full py-12 text-center text-sm text-neutral-600 border border-dashed border-[#27272a] rounded-3xl">
-            Nenhuma tarefa ativa neste momento.
-          </div>
-        )}
-        {activeTasks.map((t: any) => {
-          const isDoneOrCancelled = t.status === "done" || t.status === "cancelled" || t.status === "formalize";
-          return (
-            <div key={t.id} className="bg-[#12121a] border border-[#27272a] rounded-3xl p-6 flex flex-col items-center text-center relative overflow-hidden group hover:border-[#3f3f46] transition-colors shadow-sm">
-              {t.timerRunning && <div className="absolute top-0 left-0 w-full h-1 bg-amber-500 animate-pulse shadow-[0_0_10px_rgba(245,158,11,0.5)]" />}
-              <div className="text-[10px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-neutral-400 mb-4 truncate w-full">
-                {COLUMNS.find(c=>c.id === t.status)?.name}
-              </div>
-              <h3 className={`font-bold text-base mb-5 truncate w-full ${isDoneOrCancelled ? 'text-neutral-500 line-through' : 'text-white'}`} title={t.title}>{t.title}</h3>
-              <div className={`text-5xl font-mono font-light mb-8 tracking-wider ${t.timerRunning ? 'text-amber-400 drop-shadow-md' : 'text-white'}`}>
-                <LiveElapsed task={t} getElapsed={getElapsed} />
-              </div>
-              {!isDoneOrCancelled ? (
-                <button onClick={() => onToggleTimer(t.id)} className={`w-full flex items-center justify-center gap-2 py-4 rounded-xl font-bold uppercase tracking-widest text-[11px] transition-all ${t.timerRunning ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20 hover:bg-amber-500/20 shadow-[0_0_15px_rgba(245,158,11,0.2)]' : 'bg-white/5 text-neutral-300 hover:bg-white/10 border border-white/10'}`}>
-                  {t.timerRunning ? <><Pause size={14}/> Pausar Tempo</> : <><Play size={14}/> Iniciar Tempo</>}
-                </button>
-              ) : (
-                <div className="w-full flex items-center justify-center py-4 rounded-xl font-bold uppercase tracking-widest text-[11px] bg-black/40 border border-white/5 text-neutral-600">
-                  Card Fechado
-                </div>
-              )}
+      <div className="max-w-xl mx-auto w-full mb-8">
+        <div className="bg-[#12121a] border border-[#27272a] rounded-2xl p-4 shadow-sm">
+          {quickOpen && (
+            <input autoFocus value={quickTitle} onChange={e => setQuickTitle(e.target.value)} placeholder="Título" className="w-full bg-transparent outline-none font-bold text-sm text-white placeholder-neutral-600 mb-2" />
+          )}
+          <textarea
+            value={quickContent}
+            onChange={e => setQuickContent(e.target.value)}
+            onFocus={() => setQuickOpen(true)}
+            placeholder="Criar nota..."
+            rows={quickOpen ? 3 : 1}
+            className="w-full bg-transparent outline-none text-sm text-neutral-200 placeholder-neutral-500 resize-none"
+          />
+          {quickOpen && (
+            <div className="flex justify-end gap-2 mt-2">
+              <button onClick={() => { setQuickTitle(''); setQuickContent(''); setQuickOpen(false); }} className="text-[11px] font-bold uppercase tracking-widest text-neutral-500 hover:text-white px-4 py-2 rounded-lg transition-colors">Cancelar</button>
+              <button onClick={createQuickNote} className="text-[11px] font-black uppercase tracking-widest text-white bg-indigo-600 hover:bg-indigo-500 px-5 py-2 rounded-lg transition-colors">Criar</button>
             </div>
-          )
-        })}
+          )}
+        </div>
       </div>
+
+      {sorted.length === 0 ? (
+        <div className="py-16 text-center text-sm text-neutral-600 border border-dashed border-[#27272a] rounded-3xl max-w-xl mx-auto w-full">
+          Nenhuma nota ainda. Crie a primeira acima.
+        </div>
+      ) : (
+        <div className="flex flex-col gap-6">
+          {pinned.length > 0 && (
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-3 ml-1">Fixadas</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {pinned.map((n: any) => <NoteCard key={n.id} note={n} onUpdate={(patch: any) => updateNote(n.id, patch)} onDelete={() => onDeleteNote(n.id)} />)}
+              </div>
+            </div>
+          )}
+          {others.length > 0 && (
+            <div>
+              {pinned.length > 0 && <p className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-3 ml-1">Outras</p>}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {others.map((n: any) => <NoteCard key={n.id} note={n} onUpdate={(patch: any) => updateNote(n.id, patch)} onDelete={() => onDeleteNote(n.id)} />)}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -2481,6 +2805,128 @@ function AnalyticsModal({ onClose, tasks, clients, responsibles, getElapsed, isC
       filterByPeriod(t.completedAt, filterCompletedStart, filterCompletedEnd)
   );
 
+  // Relatório 1 — Tendência de Conclusões: qtde de demandas concluídas por mês (completedAt)
+  const completionTrend = useMemo(() => {
+    const buckets: Record<string, number> = {};
+    filteredTasks.forEach((t: any) => {
+      if ((t.status !== 'done' && t.status !== 'formalize') || !t.completedAt) return;
+      const key = t.completedAt.slice(0, 7); // YYYY-MM
+      buckets[key] = (buckets[key] || 0) + 1;
+    });
+    return Object.keys(buckets).sort().map(key => {
+      const [y, m] = key.split('-');
+      return { key, label: `${MONTH_ABBR[parseInt(m, 10) - 1]}/${y.slice(2)}`, count: buckets[key] };
+    });
+  }, [filteredTasks]);
+
+  // Relatório 2 — Horas por Cliente: soma de getElapsed() por cliente, maior para o menor
+  const hoursByClient = useMemo(() => {
+    return clients
+      .map((c: any) => {
+        const hours = filteredTasks
+          .filter((t: any) => t.clientId === c.id)
+          .reduce((acc: number, t: any) => acc + getElapsed(t) / 3600, 0);
+        return { name: c.name, hours: Math.round(hours * 10) / 10 };
+      })
+      .filter((c: any) => c.hours > 0)
+      .sort((a: any, b: any) => b.hours - a.hours);
+  }, [filteredTasks, clients]);
+
+  // Relatório 3 — Tempo médio (criação → conclusão) por prioridade, em horas
+  const avgTimeByPriority = useMemo(() => {
+    const priorities = ['Baixa', 'Média', 'Alta'];
+    return priorities.map(p => {
+      const doneTasks = filteredTasks.filter((t: any) =>
+        t.priority === p && (t.status === 'done' || t.status === 'formalize') && t.createdAt && t.completedAt
+      );
+      if (doneTasks.length === 0) return { priority: p, avgHours: 0, count: 0 };
+      const totalHours = doneTasks.reduce((acc: number, t: any) => {
+        const start = parseDateLocal(t.createdAt);
+        const end = parseDateLocal(t.completedAt);
+        if (start === null || end === null) return acc;
+        return acc + Math.max(0, (end - start) / (1000 * 60 * 60));
+      }, 0);
+      return { priority: p, avgHours: Math.round((totalHours / doneTasks.length) * 10) / 10, count: doneTasks.length };
+    });
+  }, [filteredTasks]);
+
+  // Relatório 4 — Ranking de Produtividade: demandas concluídas x horas trabalhadas por responsável
+  const productivityRanking = useMemo(() => {
+    return responsibles
+      .map((r: any) => {
+        const rTasks = filteredTasks.filter((t: any) => t.responsibleId === r.id);
+        const done = rTasks.filter((t: any) => t.status === 'done' || t.status === 'formalize').length;
+        const hours = rTasks.reduce((acc: number, t: any) => acc + getElapsed(t) / 3600, 0);
+        return { name: r.name, done, hours: Math.round(hours * 10) / 10 };
+      })
+      .filter((r: any) => r.done > 0 || r.hours > 0)
+      .sort((a: any, b: any) => b.done - a.done);
+  }, [filteredTasks, responsibles]);
+
+  // Relatório 5 — Histórico de Atrasos: qtde de demandas em atraso ao fim de cada mês (snapshot histórico)
+  const overdueHistory = useMemo(() => {
+    const tasksWithDue = filteredTasks.filter((t: any) => t.dueDate);
+    if (tasksWithDue.length === 0) return [];
+
+    const allDates = tasksWithDue.map((t: any) => t.dueDate).concat(tasksWithDue.map((t: any) => t.createdAt).filter(Boolean)).sort();
+    const [minY, minM] = allDates[0].split('-').map((n: string) => parseInt(n, 10));
+    const now = new Date();
+    const maxY = now.getFullYear();
+    const maxM = now.getMonth() + 1;
+
+    const months: { y: number, m: number }[] = [];
+    let y = minY, m = minM;
+    while (y < maxY || (y === maxY && m <= maxM)) {
+      months.push({ y, m });
+      m++;
+      if (m > 12) { m = 1; y++; }
+    }
+
+    return months.slice(-12).map(({ y, m }) => {
+      const monthEnd = new Date(y, m, 0).setHours(23, 59, 59, 999);
+      const count = tasksWithDue.filter((t: any) => {
+        const due = parseDateLocal(t.dueDate);
+        if (due === null || due >= monthEnd) return false;
+        if (t.status === 'cancelled') return false;
+        if (t.status === 'done' || t.status === 'formalize') {
+          const completed = parseDateLocal(t.completedAt);
+          if (completed !== null && completed <= monthEnd) return false;
+        }
+        return true;
+      }).length;
+      return { key: `${y}-${String(m).padStart(2, '0')}`, label: `${MONTH_ABBR[m - 1]}/${String(y).slice(2)}`, count };
+    });
+  }, [filteredTasks]);
+
+  // "Por Fase do Fluxo" — mesmo cálculo da lista original, agora para o gráfico
+  const statusChartData = useMemo(() => {
+    return COLUMNS.map(col => ({ id: col.id, name: col.name, count: filteredTasks.filter((t: any) => t.status === col.id).length }));
+  }, [filteredTasks]);
+
+  // "Por Responsável" — mesmo cálculo da lista original, agora para o gráfico
+  const responsibleChartData = useMemo(() => {
+    return responsibles
+      .map((r: any) => {
+        const rTasks = filteredTasks.filter((t: any) => t.responsibleId === r.id);
+        if (rTasks.length === 0) return null;
+        const hours = rTasks.reduce((acc: number, t: any) => acc + getElapsed(t) / 3600, 0);
+        return { name: r.name, count: rTasks.length, hours: Math.round(hours * 10) / 10 };
+      })
+      .filter(Boolean);
+  }, [filteredTasks, responsibles]);
+
+  // "Por Cliente" — mesmo cálculo da lista original, agora para o gráfico
+  const clientChartData = useMemo(() => {
+    return clients
+      .map((c: any) => {
+        const cTasks = filteredTasks.filter((t: any) => t.clientId === c.id);
+        if (cTasks.length === 0) return null;
+        const hours = cTasks.reduce((acc: number, t: any) => acc + getElapsed(t) / 3600, 0);
+        return { name: c.name, count: cTasks.length, hours: Math.round(hours * 10) / 10 };
+      })
+      .filter(Boolean);
+  }, [filteredTasks, clients]);
+
   const exportTasksCSV = () => {
     const headers = ["ID", "Título", "Status", "Prioridade", "Cliente", "Responsável", "Estimado (min)", "Gasto (h)"];
     const rows = filteredTasks.map((t: any) => {
@@ -2509,13 +2955,19 @@ function AnalyticsModal({ onClose, tasks, clients, responsibles, getElapsed, isC
         {activeView === 'internal' && (
            <div className="flex flex-col gap-6 fade-in">
              
-             {/* Filtro Button */}
-             <div className="flex justify-start">
-               <button 
-                 onClick={(e) => { e.stopPropagation(); setShowFilters(!showFilters); }} 
+             {/* Filtro e Exportar CSV */}
+             <div className="flex flex-wrap items-center gap-3">
+               <button
+                 onClick={(e) => { e.stopPropagation(); setShowFilters(!showFilters); }}
                  className={`h-11 w-full sm:w-auto px-4 flex items-center justify-center gap-2 rounded-xl transition-all shadow-sm shrink-0 border font-bold uppercase tracking-widest text-[10px] ${showFilters ? 'bg-indigo-600 text-white border-indigo-500 shadow-[0_0_15px_rgba(79,70,229,0.3)]' : 'glass-panel text-neutral-400 border-white/5 hover:text-white'}`}
                >
                  <Filter size={16} /> Filtros
+               </button>
+               <button
+                 onClick={exportTasksCSV}
+                 className="h-11 w-full sm:w-auto px-4 flex items-center justify-center gap-2 rounded-xl transition-all shadow-sm shrink-0 border font-bold uppercase tracking-widest text-[10px] glass-panel text-neutral-400 border-white/5 hover:text-white"
+               >
+                 <Download size={16} /> Baixar CSV
                </button>
              </div>
 
@@ -2577,68 +3029,124 @@ function AnalyticsModal({ onClose, tasks, clients, responsibles, getElapsed, isC
                  </div>
                )}
 
+             <ChartSection title="Tendência de Conclusões">
+                {completionTrend.length === 0 ? <ChartEmpty /> : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={completionTrend} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
+                      <XAxis dataKey="label" tick={{ fill: '#737373', fontSize: 11 }} axisLine={{ stroke: '#27272a' }} tickLine={false} />
+                      <YAxis allowDecimals={false} tick={{ fill: '#737373', fontSize: 11 }} axisLine={{ stroke: '#27272a' }} tickLine={false} />
+                      <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
+                      <Bar dataKey="count" name="Concluídas" fill={CHART_COLORS.indigo} radius={[6, 6, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+             </ChartSection>
+
+             <ChartSection title="Horas por Cliente" height={Math.max(180, hoursByClient.length * 38)}>
+                {hoursByClient.length === 0 ? <ChartEmpty /> : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={hoursByClient} layout="vertical" margin={{ top: 5, right: 20, left: 10, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#27272a" horizontal={false} />
+                      <XAxis type="number" tick={{ fill: '#737373', fontSize: 11 }} axisLine={{ stroke: '#27272a' }} tickLine={false} />
+                      <YAxis type="category" dataKey="name" width={110} tick={{ fill: '#a3a3a3', fontSize: 11 }} axisLine={{ stroke: '#27272a' }} tickLine={false} />
+                      <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
+                      <Bar dataKey="hours" name="Horas" fill={CHART_COLORS.teal} radius={[0, 6, 6, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+             </ChartSection>
+
+             <ChartSection title="Tempo Médio (Criação → Conclusão) por Prioridade">
+                {avgTimeByPriority.every((p: any) => p.count === 0) ? <ChartEmpty /> : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={avgTimeByPriority} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
+                      <XAxis dataKey="priority" tick={{ fill: '#737373', fontSize: 11 }} axisLine={{ stroke: '#27272a' }} tickLine={false} />
+                      <YAxis allowDecimals={false} tick={{ fill: '#737373', fontSize: 11 }} axisLine={{ stroke: '#27272a' }} tickLine={false} />
+                      <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
+                      <Bar dataKey="avgHours" name="Horas médias" fill={CHART_COLORS.purple} radius={[6, 6, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+             </ChartSection>
+
+             <ChartSection title="Ranking de Produtividade">
+                {productivityRanking.length === 0 ? <ChartEmpty /> : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={productivityRanking} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
+                      <XAxis dataKey="name" tick={{ fill: '#737373', fontSize: 11 }} axisLine={{ stroke: '#27272a' }} tickLine={false} />
+                      <YAxis allowDecimals={false} tick={{ fill: '#737373', fontSize: 11 }} axisLine={{ stroke: '#27272a' }} tickLine={false} />
+                      <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
+                      <Legend wrapperStyle={{ fontSize: 11, color: '#a3a3a3' }} />
+                      <Bar dataKey="done" name="Demandas Concluídas" fill={CHART_COLORS.indigo} radius={[6, 6, 0, 0]} />
+                      <Bar dataKey="hours" name="Horas Trabalhadas" fill={CHART_COLORS.amber} radius={[6, 6, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+             </ChartSection>
+
+             <ChartSection title="Histórico de Atrasos">
+                {overdueHistory.length === 0 ? <ChartEmpty /> : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={overdueHistory} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
+                      <XAxis dataKey="label" tick={{ fill: '#737373', fontSize: 11 }} axisLine={{ stroke: '#27272a' }} tickLine={false} />
+                      <YAxis allowDecimals={false} tick={{ fill: '#737373', fontSize: 11 }} axisLine={{ stroke: '#27272a' }} tickLine={false} />
+                      <Tooltip content={<ChartTooltip />} cursor={{ stroke: '#27272a' }} />
+                      <Line type="monotone" dataKey="count" name="Em Atraso" stroke={CHART_COLORS.amber} strokeWidth={2} dot={{ fill: CHART_COLORS.amber, r: 3 }} activeDot={{ r: 5 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                )}
+             </ChartSection>
+
              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div>
-                   <h3 className="text-[10px] font-bold text-neutral-500 mb-4 uppercase tracking-[0.2em] ml-1">Por Fase do Fluxo</h3>
-                   <div className="flex flex-col gap-3">
-                      {COLUMNS.map(col => { 
-                          const count = filteredTasks.filter((t: any) => t.status === col.id).length; 
-                          return (
-                              <div key={col.id} className="flex justify-between items-center bg-[#12121a] border border-[#27272a] p-5 rounded-2xl shadow-sm">
-                                  <div className="flex items-center gap-4">
-                                      <span className={`w-3 h-3 rounded-full ${col.dot} shadow-[0_0_8px_currentColor]`} />
-                                      <span className="text-xs text-neutral-300 font-bold uppercase">{col.name}</span>
-                                  </div>
-                                  <span className="text-lg font-black text-white">{count}</span>
-                              </div>
-                          )
-                      })}
-                   </div>
-                </div>
-                <div>
-                   <h3 className="text-[10px] font-bold text-neutral-500 mb-4 uppercase tracking-[0.2em] ml-1">Por Responsável</h3>
-                   <div className="flex flex-col gap-3">
-                      {responsibles.map((r: any) => { 
-                          const rTasks = filteredTasks.filter((t: any) => t.responsibleId === r.id); 
-                          if (rTasks.length === 0) return null;
-                          const hours = rTasks.reduce((acc: number, t: any) => acc + (getElapsed(t) / 3600), 0); 
-                          return (
-                              <div key={r.id} className="bg-[#12121a] border border-[#27272a] p-5 rounded-2xl shadow-sm">
-                                  <div className="text-base text-neutral-100 font-bold mb-2">{r.name}</div>
-                                  <div className="flex items-center gap-4 text-[10px] text-neutral-500 font-bold uppercase tracking-widest">
-                                      <span className="bg-white/5 px-2.5 py-1 rounded-md border border-white/5">{rTasks.length} Demandas</span>
-                                      <span className="bg-white/5 px-2.5 py-1 rounded-md border border-white/5">{hours.toFixed(1)}h Totais</span>
-                                  </div>
-                              </div>
-                          )
-                      })}
-                   </div>
-                </div>
-                <div>
-                   <h3 className="text-[10px] font-bold text-neutral-500 mb-4 uppercase tracking-[0.2em] ml-1">Por Cliente</h3>
-                   <div className="flex flex-col gap-3">
-                      {clients.map((c: any) => { 
-                          const cTasks = filteredTasks.filter((t: any) => t.clientId === c.id); 
-                          if (cTasks.length === 0) return null; 
-                          const hours = cTasks.reduce((acc: number, t: any) => acc + (getElapsed(t) / 3600), 0); 
-                          return (
-                              <div key={c.id} className="bg-[#12121a] border border-[#27272a] p-5 rounded-2xl shadow-sm">
-                                  <div className="text-base text-neutral-100 font-bold mb-2">{c.name}</div>
-                                  <div className="flex items-center gap-4 text-[10px] text-neutral-500 font-bold uppercase tracking-widest">
-                                      <span className="bg-white/5 px-2.5 py-1 rounded-md border border-white/5">{cTasks.length} Demandas</span>
-                                      <span className="bg-white/5 px-2.5 py-1 rounded-md border border-white/5">{hours.toFixed(1)}h Totais</span>
-                                  </div>
-                              </div>
-                          )
-                      })}
-                   </div>
-                </div>
-             </div>
-             
-             <div className="flex justify-center mt-6">
-                <button onClick={exportTasksCSV} className="w-full md:w-auto flex items-center justify-center gap-2 px-10 py-4 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 rounded-2xl text-xs font-bold uppercase tracking-widest transition-all shadow-sm">
-                   <Download size={18}/> Baixar Dados (CSV)
-                </button>
+                <ChartSection title="Por Fase do Fluxo" height={Math.max(200, statusChartData.length * 34)}>
+                   <ResponsiveContainer width="100%" height="100%">
+                     <BarChart data={statusChartData} layout="vertical" margin={{ top: 5, right: 20, left: 10, bottom: 0 }}>
+                       <CartesianGrid strokeDasharray="3 3" stroke="#27272a" horizontal={false} />
+                       <XAxis type="number" allowDecimals={false} tick={{ fill: '#737373', fontSize: 11 }} axisLine={{ stroke: '#27272a' }} tickLine={false} />
+                       <YAxis type="category" dataKey="name" width={95} tick={{ fill: '#a3a3a3', fontSize: 11 }} axisLine={{ stroke: '#27272a' }} tickLine={false} />
+                       <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
+                       <Bar dataKey="count" name="Demandas" radius={[0, 6, 6, 0]}>
+                         {statusChartData.map((entry: any) => <Cell key={entry.id} fill={COLUMN_HEX[entry.id]} />)}
+                       </Bar>
+                     </BarChart>
+                   </ResponsiveContainer>
+                </ChartSection>
+
+                <ChartSection title="Por Responsável" height={Math.max(200, responsibleChartData.length * 44)}>
+                   {responsibleChartData.length === 0 ? <ChartEmpty /> : (
+                     <ResponsiveContainer width="100%" height="100%">
+                       <BarChart data={responsibleChartData} layout="vertical" margin={{ top: 5, right: 20, left: 10, bottom: 0 }}>
+                         <CartesianGrid strokeDasharray="3 3" stroke="#27272a" horizontal={false} />
+                         <XAxis type="number" allowDecimals={false} tick={{ fill: '#737373', fontSize: 11 }} axisLine={{ stroke: '#27272a' }} tickLine={false} />
+                         <YAxis type="category" dataKey="name" width={95} tick={{ fill: '#a3a3a3', fontSize: 11 }} axisLine={{ stroke: '#27272a' }} tickLine={false} />
+                         <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
+                         <Legend wrapperStyle={{ fontSize: 11, color: '#a3a3a3' }} />
+                         <Bar dataKey="count" name="Demandas" fill={CHART_COLORS.indigo} radius={[0, 6, 6, 0]} />
+                         <Bar dataKey="hours" name="Horas" fill={CHART_COLORS.amber} radius={[0, 6, 6, 0]} />
+                       </BarChart>
+                     </ResponsiveContainer>
+                   )}
+                </ChartSection>
+
+                <ChartSection title="Por Cliente" height={Math.max(200, clientChartData.length * 44)}>
+                   {clientChartData.length === 0 ? <ChartEmpty /> : (
+                     <ResponsiveContainer width="100%" height="100%">
+                       <BarChart data={clientChartData} layout="vertical" margin={{ top: 5, right: 20, left: 10, bottom: 0 }}>
+                         <CartesianGrid strokeDasharray="3 3" stroke="#27272a" horizontal={false} />
+                         <XAxis type="number" allowDecimals={false} tick={{ fill: '#737373', fontSize: 11 }} axisLine={{ stroke: '#27272a' }} tickLine={false} />
+                         <YAxis type="category" dataKey="name" width={95} tick={{ fill: '#a3a3a3', fontSize: 11 }} axisLine={{ stroke: '#27272a' }} tickLine={false} />
+                         <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
+                         <Legend wrapperStyle={{ fontSize: 11, color: '#a3a3a3' }} />
+                         <Bar dataKey="count" name="Demandas" fill={CHART_COLORS.teal} radius={[0, 6, 6, 0]} />
+                         <Bar dataKey="hours" name="Horas" fill={CHART_COLORS.purple} radius={[0, 6, 6, 0]} />
+                       </BarChart>
+                     </ResponsiveContainer>
+                   )}
+                </ChartSection>
              </div>
            </div>
         )}
@@ -3260,7 +3768,7 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove, user, onCre
     const day = days[drop.dayIndex];
     if (!day) return;
     if (d.mode === 'place') {
-      setScDuration(d.task.scheduledDurationMin && d.task.scheduledDurationMin > 0 ? d.task.scheduledDurationMin : (d.task.durationMin && d.task.durationMin > 0 ? d.task.durationMin : 60));
+      setScDuration(d.task.scheduledDurationMin && d.task.scheduledDurationMin > 0 ? d.task.scheduledDurationMin : 60);
       setScLabel('reuniao');
       setScheduleChoice({ task: d.task, day, hour: drop.hour, minute: drop.minute });
     } else {
@@ -3459,12 +3967,14 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove, user, onCre
         </div>
       )}
 
-      {editSchedule && (
+      {editSchedule && (() => {
+        const isPastSchedule = editSchedule.scheduledStart && new Date(editSchedule.scheduledStart) < new Date();
+        return (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center px-3 pt-3 pb-24 sm:p-4 z-[95] fade-in" onClick={() => setEditSchedule(null)}>
           <div className="w-full max-w-sm rounded-3xl bg-[#12121a] border border-[#27272a] shadow-2xl overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
             <div className="px-6 py-5 border-b border-[#27272a] flex items-center justify-between bg-[#0f0f13]">
               <div>
-                <h3 className="font-display font-bold text-lg text-white">Editar horário</h3>
+                <h3 className="font-display font-bold text-lg text-white">{isPastSchedule ? 'Reagendar' : 'Editar horário'}</h3>
                 <p className="text-[12px] text-neutral-400 mt-1 leading-snug truncate">{editSchedule.title}</p>
               </div>
               <button onClick={() => setEditSchedule(null)} className="p-2 rounded-xl text-neutral-500 hover:text-white transition-colors"><X size={20} /></button>
@@ -3494,17 +4004,21 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove, user, onCre
                 <p className="text-[10px] text-neutral-600 mt-2 ml-1">Funciona mesmo se a demanda já estiver "Em Andamento" — ajusta só o horário e a duração na Agenda, sem tocar no "Est. Minutos" da demanda.</p>
               </div>
             </div>
-            <div className="px-6 py-5 border-t border-[#27272a] bg-[#0f0f13] flex items-center justify-end gap-3">
-              <button onClick={() => setEditSchedule(null)} className="text-xs font-bold uppercase tracking-widest px-5 py-3.5 rounded-xl text-neutral-500 hover:text-white transition-colors">Cancelar</button>
-              <button onClick={() => {
-                if (!esDate || !esTime) return;
-                setTasks((prev: any) => prev.map((t: any) => t.id === editSchedule.id ? { ...t, scheduledStart: `${esDate}T${esTime}`, startDate: (t.agendaOnly || t.generatesCards) ? t.startDate : esDate, scheduledDurationMin: esDur } : t));
-                setEditSchedule(null);
-              }} className="text-xs font-black uppercase tracking-widest px-8 py-3.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white transition-all shadow-[0_0_15px_rgba(20,184,166,0.3)]">Salvar</button>
+            <div className="px-6 pt-4 pb-5 border-t border-[#27272a] bg-[#0f0f13] flex flex-col gap-3">
+              {isPastSchedule && <p className="text-[11px] text-amber-400/90 leading-snug">O horário original já passou — escolha uma nova data/hora acima para reagendar.</p>}
+              <div className="flex items-center justify-end gap-3">
+                <button onClick={() => setEditSchedule(null)} className="text-xs font-bold uppercase tracking-widest px-5 py-3.5 rounded-xl text-neutral-500 hover:text-white transition-colors">Cancelar</button>
+                <button onClick={() => {
+                  if (!esDate || !esTime) return;
+                  setTasks((prev: any) => prev.map((t: any) => t.id === editSchedule.id ? { ...t, scheduledStart: `${esDate}T${esTime}`, startDate: (t.agendaOnly || t.generatesCards) ? t.startDate : esDate, scheduledDurationMin: esDur } : t));
+                  setEditSchedule(null);
+                }} className="text-xs font-black uppercase tracking-widest px-8 py-3.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white transition-all shadow-[0_0_15px_rgba(20,184,166,0.3)]">Salvar</button>
+              </div>
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {createSlot && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center px-3 pt-3 pb-24 sm:p-4 z-[95] fade-in" onClick={() => setCreateSlot(null)}>
@@ -3588,13 +4102,23 @@ function generateLimitEmailLink(clientData: any, consumedHours: number) {
   
   const body = `Prezados(as),\n\nInformamos que o banco de horas contratado (${clientData.contractedHours}h) está prestes a ser atingido. No momento, restam apenas ${remaining.toFixed(1)}h disponíveis.\n\nGostaríamos de saber se autorizam a continuidade das demandas (cientes de que as horas excedentes poderão ser cobradas) ou se devemos pausar as atividades até à renovação do banco.\n\nCom os melhores cumprimentos,`;
   
-  return `https://mail.google.com/mail/?view=cm&fs=1&to=${emailTo}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  return `https://mail.google.com/mail/?view=cm&fs=1&to=${emailTo}&bcc=analistasrubeus@rubeus.com.br&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
 
-function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize }: any) {
+function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getElapsed }: any) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [copiedNotionId, setCopiedNotionId] = useState<string | null>(null);
   const [meetingData, setMeetingData] = useState<any>({});
+  const [emailPopup, setEmailPopup] = useState<any>(null);
+
+  const formatWorkedTime = (seconds: number) => {
+    const totalMin = Math.round((seconds || 0) / 60);
+    const h = Math.floor(totalMin / 60);
+    const m = totalMin % 60;
+    if (h > 0 && m > 0) return `${h}h${m}min`;
+    if (h > 0) return `${h}h`;
+    return `${m}min`;
+  };
 
   const tasksByClient = useMemo(() => {
     return tasks.reduce((acc: any, task: any) => {
@@ -3609,9 +4133,9 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize }: an
     }, {});
   }, [tasks]);
 
-  const generateEmailText = (clientTasks: any, mData: any) => {
+  const generateEmailText = (clientTasks: any, mData: any, includeTime?: boolean) => {
     let body = `Prezados(as),\n\nEspero que se encontrem bem.\n\n`;
-    
+
     let dateStr = "";
     if (mData?.date) {
       const [y, m, d] = mData.date.split('-');
@@ -3622,44 +4146,43 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize }: an
       body += `Segue o resumo da reunião de overview`;
       if (dateStr) body += ` realizada a ${dateStr}`;
       body += `, com os principais pontos discutidos e o estado das demandas:\n\n`;
-      if (mData?.link) body += `Link da gravação: ${mData.link}\n\n`;
+      if (mData?.link) body += `Acesse a gravação da reunião: ${mData.link}\n\n`;
     } else {
       body += `Segue o resumo semanal com os principais pontos e o estado das demandas:\n\n`;
     }
 
+    const appendTask = (t: any) => {
+      body += `- ${t.title}\n`;
+      if (t.description) body += `  ${t.description}\n`;
+      if (includeTime) body += `  Tempo dedicado: ${formatWorkedTime(getElapsed(t))}\n`;
+      body += `\n`;
+    };
+
     if (clientTasks.done.length > 0) {
       body += `Demandas Finalizadas:\n`;
-      clientTasks.done.forEach((t: any) => {
-        body += `- ${t.title}\n`;
-        if (t.description) body += `  ${t.description}\n`;
-        body += `\n`;
-      });
+      clientTasks.done.forEach(appendTask);
     }
 
     if (clientTasks.inProgress.length > 0) {
       body += `Demandas em Andamento:\n`;
-      clientTasks.inProgress.forEach((t: any) => {
-        body += `- ${t.title}\n`;
-        if (t.description) body += `  ${t.description}\n`;
-        body += `\n`;
-      });
+      clientTasks.inProgress.forEach(appendTask);
     }
 
     body += `Em caso de dúvidas, continuo à disposição.\n\nCom os melhores cumprimentos,`;
     return body;
   };
 
-  const generateEmailLink = (clientTasks: any, clientData: any, mData: any) => {
+  const generateEmailLink = (clientTasks: any, clientData: any, mData: any, includeTime?: boolean) => {
     const emails = Array.isArray(clientData?.emails) ? clientData.emails : [];
     const emailTo = emails.join(',');
     const subject = `Atualização Semanal de Demandas - ${clientData ? clientData.name : 'Cliente'}`;
-    const body = generateEmailText(clientTasks, mData);
-    
-    return `https://mail.google.com/mail/?view=cm&fs=1&to=${emailTo}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    const body = generateEmailText(clientTasks, mData, includeTime);
+
+    return `https://mail.google.com/mail/?view=cm&fs=1&to=${emailTo}&bcc=analistasrubeus@rubeus.com.br&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   };
 
-  const handleCopyText = (clientTasks: any, clientId: string, mData: any) => {
-    const text = generateEmailText(clientTasks, mData);
+  const handleCopyText = (clientTasks: any, clientId: string, mData: any, includeTime?: boolean) => {
+    const text = generateEmailText(clientTasks, mData, includeTime);
     navigator.clipboard.writeText(text);
     setCopiedId(clientId);
     setTimeout(() => setCopiedId(null), 2000);
@@ -3730,28 +4253,6 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize }: an
                     {totalTasksCount} Demandas
                   </span>
                 </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-8">
-                   <div className="w-full">
-                      <label className="text-[10px] text-neutral-500 uppercase font-bold tracking-widest mb-2 block ml-1">Data da Reunião (Opcional)</label>
-                      <input 
-                         type="date" 
-                         value={mData.date || ''} 
-                         onChange={e => setMeetingData({...meetingData, [clientId]: {...mData, date: e.target.value}})} 
-                         className="w-full bg-[#09090b] border border-[#27272a] rounded-xl px-4 py-3.5 text-sm text-white outline-none focus:border-indigo-500 [color-scheme:dark]" 
-                      />
-                   </div>
-                   <div className="w-full">
-                      <label className="text-[10px] text-neutral-500 uppercase font-bold tracking-widest mb-2 block ml-1">Link da Gravação (Opcional)</label>
-                      <input 
-                         type="text" 
-                         value={mData.link || ''} 
-                         onChange={e => setMeetingData({...meetingData, [clientId]: {...mData, link: e.target.value}})} 
-                         className="w-full bg-[#09090b] border border-[#27272a] rounded-xl px-4 py-3.5 text-sm text-white outline-none focus:border-indigo-500" 
-                         placeholder="Ex: meet.google.com/..." 
-                      />
-                   </div>
-                </div>
 
                 <div className="text-[13px] text-neutral-400 mb-8 max-h-48 overflow-y-auto pr-2 kp-scroll font-mono border border-[#27272a] p-4 rounded-2xl bg-[#09090b]">
                   {clientTasks.done.length > 0 && (
@@ -3780,29 +4281,11 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize }: an
                 
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-t border-[#27272a] pt-6">
                   <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
-                    <a 
-                      href={generateEmailLink(clientTasks, clientData, mData)}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                    <button
+                      onClick={() => setEmailPopup({ clientId, date: mData.date || '', link: mData.link || '', includeTime: false })}
                       className="flex-1 sm:flex-none justify-center inline-flex items-center gap-2 px-5 py-3.5 sm:py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold uppercase tracking-widest transition-all shadow-[0_0_15px_rgba(79,70,229,0.3)]"
                     >
-                      <Mail size={16} /> Abrir E-mail
-                    </a>
-                    
-                    <button 
-                      onClick={() => handleCopyText(clientTasks, clientId, mData)}
-                      className="flex-1 sm:flex-none justify-center inline-flex items-center gap-2 px-5 py-3.5 sm:py-3 bg-white/5 text-neutral-300 border border-white/10 hover:bg-white/10 rounded-xl text-xs font-bold uppercase tracking-widest transition-colors"
-                    >
-                      {copiedId === clientId ? <Check size={16} className="text-emerald-400" /> : <Copy size={16} />} 
-                      {copiedId === clientId ? "Copiado!" : "Copiar Texto"}
-                    </button>
-
-                    <button 
-                      onClick={() => handleCopyNotion(clientTasks, clientId)}
-                      className="flex-1 sm:flex-none justify-center inline-flex items-center gap-2 px-5 py-3.5 sm:py-3 bg-white/5 text-neutral-300 border border-white/10 hover:bg-white/10 rounded-xl text-xs font-bold uppercase tracking-widest transition-colors"
-                    >
-                      {copiedNotionId === clientId ? <Check size={16} className="text-emerald-400" /> : <ClipboardList size={16} />} 
-                      {copiedNotionId === clientId ? "Copiado!" : "Copiar (Notion)"}
+                      <Mail size={16} /> Preparar E-mail
                     </button>
                   </div>
 
@@ -3830,6 +4313,100 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize }: an
           </button>
         </div>
       </div>
+
+      {emailPopup && (() => {
+        const clientData = clients.find((c: any) => c.id === emailPopup.clientId);
+        const clientName = clientData ? clientData.name : 'Sem Cliente Atribuído';
+        const clientTasks = tasksByClient[emailPopup.clientId] || { done: [], inProgress: [] };
+        const mData = { date: emailPopup.date, link: emailPopup.link };
+
+        const updateField = (patch: any) => {
+          setEmailPopup((prev: any) => ({ ...prev, ...patch }));
+          if (patch.date !== undefined || patch.link !== undefined) {
+            setMeetingData((prev: any) => ({ ...prev, [emailPopup.clientId]: { ...(prev[emailPopup.clientId] || {}), ...patch } }));
+          }
+        };
+
+        return (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center px-3 pt-3 pb-24 sm:p-4 z-[95] fade-in" onClick={() => setEmailPopup(null)}>
+            <div className="w-full max-w-lg rounded-3xl sm:rounded-[32px] bg-[#12121a] border border-[#27272a] shadow-2xl overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
+              <div className="px-6 py-5 border-b border-[#27272a] flex items-center justify-between bg-[#0f0f13]">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-indigo-500/10 rounded-xl border border-indigo-500/20"><Mail size={18} className="text-indigo-400" /></div>
+                  <div>
+                    <h3 className="font-display font-bold text-lg text-white tracking-tight">Preparar E-mail</h3>
+                    <p className="text-[12px] text-neutral-400 mt-0.5">{clientName}</p>
+                  </div>
+                </div>
+                <button onClick={() => setEmailPopup(null)} className="p-2 rounded-xl text-neutral-500 hover:text-white transition-colors"><X size={20} /></button>
+              </div>
+
+              <div className="p-6 flex flex-col gap-5 bg-[#09090b]">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-[10px] text-neutral-500 uppercase font-bold tracking-widest mb-2 block ml-1">Data da Reunião (Opcional)</label>
+                    <input
+                      type="date"
+                      value={emailPopup.date || ''}
+                      onChange={e => updateField({ date: e.target.value })}
+                      className="w-full bg-[#12121a] border border-[#27272a] rounded-xl px-4 py-3.5 text-sm text-white outline-none focus:border-indigo-500 [color-scheme:dark]"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-neutral-500 uppercase font-bold tracking-widest mb-2 block ml-1">Link da Gravação (Opcional)</label>
+                    <input
+                      type="text"
+                      value={emailPopup.link || ''}
+                      onChange={e => updateField({ link: e.target.value })}
+                      className="w-full bg-[#12121a] border border-[#27272a] rounded-xl px-4 py-3.5 text-sm text-white outline-none focus:border-indigo-500"
+                      placeholder="Ex: meet.google.com/..."
+                    />
+                  </div>
+                </div>
+
+                <label className="flex items-center justify-between gap-3 bg-[#12121a] border border-[#27272a] rounded-xl px-4 py-3.5 cursor-pointer">
+                  <span className="text-xs font-bold text-neutral-300">Incluir horas trabalhadas de cada demanda</span>
+                  <button
+                    type="button"
+                    onClick={() => setEmailPopup({ ...emailPopup, includeTime: !emailPopup.includeTime })}
+                    className={`w-11 h-6 rounded-full relative transition-colors shrink-0 ${emailPopup.includeTime ? 'bg-indigo-600' : 'bg-white/10'}`}
+                  >
+                    <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${emailPopup.includeTime ? 'translate-x-5' : ''}`} />
+                  </button>
+                </label>
+              </div>
+
+              <div className="px-6 py-5 border-t border-[#27272a] bg-[#0f0f13] flex flex-wrap items-center gap-3">
+                <a
+                  href={generateEmailLink(clientTasks, clientData, mData, emailPopup.includeTime)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => setEmailPopup(null)}
+                  className="flex-1 justify-center inline-flex items-center gap-2 px-5 py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold uppercase tracking-widest transition-all shadow-[0_0_15px_rgba(79,70,229,0.3)]"
+                >
+                  <Mail size={16} /> Abrir E-mail
+                </a>
+
+                <button
+                  onClick={() => handleCopyText(clientTasks, emailPopup.clientId, mData, emailPopup.includeTime)}
+                  className="flex-1 justify-center inline-flex items-center gap-2 px-5 py-3.5 bg-white/5 text-neutral-300 border border-white/10 hover:bg-white/10 rounded-xl text-xs font-bold uppercase tracking-widest transition-colors"
+                >
+                  {copiedId === emailPopup.clientId ? <Check size={16} className="text-emerald-400" /> : <Copy size={16} />}
+                  {copiedId === emailPopup.clientId ? "Copiado!" : "Copiar Texto"}
+                </button>
+
+                <button
+                  onClick={() => handleCopyNotion(clientTasks, emailPopup.clientId)}
+                  className="flex-1 justify-center inline-flex items-center gap-2 px-5 py-3.5 bg-white/5 text-neutral-300 border border-white/10 hover:bg-white/10 rounded-xl text-xs font-bold uppercase tracking-widest transition-colors"
+                >
+                  {copiedNotionId === emailPopup.clientId ? <Check size={16} className="text-emerald-400" /> : <ClipboardList size={16} />}
+                  {copiedNotionId === emailPopup.clientId ? "Copiado!" : "Copiar (Notion)"}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

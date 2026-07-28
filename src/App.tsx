@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
+import { createPortal } from "react-dom";
 import { 
   Plus, Pencil, Timer as TimerIcon, Trash2, X, Clock, 
   Users, Building2, BarChart3, LogOut, RotateCcw, 
@@ -50,6 +51,16 @@ function parseDateLocal(dateStr: string) {
   if (!dateStr) return null;
   const [y, m, d] = dateStr.split('-');
   return new Date(parseInt(y), parseInt(m) - 1, parseInt(d)).setHours(0,0,0,0);
+}
+
+// Mesma prioridade de duração usada em durationOf() (CalendarView): scheduledDurationMin > durationMin > 60min.
+// Usado para saber se o horário agendado (scheduledStart + duração) já terminou, sem nunca apagar/alterar scheduledStart.
+function isScheduleWindowOver(t: any) {
+  if (!t.scheduledStart) return false;
+  const start = new Date(t.scheduledStart);
+  if (isNaN(start.getTime())) return false;
+  const dur = t.scheduledDurationMin > 0 ? t.scheduledDurationMin : (t.durationMin > 0 ? t.durationMin : 60);
+  return Date.now() > start.getTime() + dur * 60000;
 }
 
 // Verifica se a data do item está dentro do período (início e fim)
@@ -214,15 +225,15 @@ function TopWidgets() {
 
   return (
     <div className="flex flex-col sm:flex-row items-end sm:items-center gap-1.5 sm:gap-3">
-       <div className="flex items-center gap-1.5 sm:gap-2 bg-[#12121a] border border-[#27272a] px-3 sm:px-3.5 py-1.5 rounded-full text-[10px] sm:text-xs font-medium text-neutral-400 shadow-sm transition-all cursor-default">
+       <div className="flex items-center gap-1.5 sm:gap-2 border px-3 sm:px-3.5 py-1.5 rounded-full text-[10px] sm:text-xs font-medium shadow-sm transition-all cursor-default" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-primary)', color: 'var(--text-secondary)' }}>
           <weather.Icon size={14} className={weather.color} />
           <span>{weather.temp}°C <span className="hidden sm:inline">{weather.desc}</span></span>
        </div>
-       <div className="flex items-center gap-1.5 sm:gap-2 bg-[#12121a] border border-[#27272a] px-3 sm:px-3.5 py-1.5 rounded-full text-[10px] sm:text-xs font-medium text-neutral-400 shadow-sm cursor-default">
+       <div className="flex items-center gap-1.5 sm:gap-2 border px-3 sm:px-3.5 py-1.5 rounded-full text-[10px] sm:text-xs font-medium shadow-sm cursor-default" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-primary)', color: 'var(--text-secondary)' }}>
           <Calendar size={14} className="text-indigo-400 hidden sm:block" />
           <span className="capitalize">{dateStr}</span>
           <span className="opacity-30">|</span>
-          <span className="text-white font-bold">{timeStr}</span>
+          <span className="font-bold" style={{ color: 'var(--text-primary)' }}>{timeStr}</span>
        </div>
     </div>
   )
@@ -567,8 +578,8 @@ const COLUMN_HEX: Record<string, string> = {
 
 function ChartSection({ title, children, height = 260 }: any) {
   return (
-    <div className="bg-[#12121a] border border-[#27272a] rounded-2xl p-5 sm:p-6 shadow-sm">
-      <h3 className="text-[10px] font-bold text-neutral-500 mb-4 uppercase tracking-[0.2em] ml-1">{title}</h3>
+    <div className="bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-2xl p-5 sm:p-6 shadow-sm">
+      <h3 className="text-[10px] font-bold text-[var(--text-muted)] mb-4 uppercase tracking-[0.2em] ml-1">{title}</h3>
       <div style={{ width: '100%', height }}>
         {children}
       </div>
@@ -577,14 +588,14 @@ function ChartSection({ title, children, height = 260 }: any) {
 }
 
 function ChartEmpty({ label = "Sem dados suficientes para este período/filtro." }: any) {
-  return <div className="w-full h-full flex items-center justify-center text-xs text-neutral-600 text-center px-4">{label}</div>;
+  return <div className="w-full h-full flex items-center justify-center text-xs text-[var(--text-muted)] text-center px-4">{label}</div>;
 }
 
 function ChartTooltip({ active, payload, label }: any) {
   if (!active || !payload || !payload.length) return null;
   return (
-    <div className="bg-[#1c1d26] border border-[#27272a] rounded-xl px-3 py-2 shadow-xl text-[11px]">
-      {label && <div className="text-neutral-500 font-bold uppercase tracking-widest text-[9px] mb-1">{label}</div>}
+    <div className="bg-[var(--bg-tertiary)] border border-[var(--border-primary)] rounded-xl px-3 py-2 shadow-xl text-[11px]">
+      {label && <div className="text-[var(--text-muted)] font-bold uppercase tracking-widest text-[9px] mb-1">{label}</div>}
       {payload.map((p: any, i: number) => (
         <div key={i} className="flex items-center gap-2 font-bold" style={{ color: p.color || p.fill }}>
           {p.name}: {typeof p.value === 'number' ? p.value.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) : p.value}
@@ -889,6 +900,16 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
   const [isClosingModal, setIsClosingModal] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [activeTooltipCol, setActiveTooltipCol] = useState<string | null>(null);
+
+  // Tema claro/escuro — infraestrutura em teste isolado (só sidebar + header por enquanto)
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    try { return (localStorage.getItem('lumina_theme') as 'dark' | 'light') || 'dark'; } catch { return 'dark'; }
+  });
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    try { localStorage.setItem('lumina_theme', theme); } catch {}
+  }, [theme]);
+  const toggleTheme = () => setTheme(t => t === 'dark' ? 'light' : 'dark');
   
   // Controle de Filtros Principais (persistidos entre sessões)
   const savedFilters = useMemo(() => {
@@ -1009,10 +1030,9 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
       const due = parseDateLocal(t.dueDate);
       const start = parseDateLocal(t.startDate);
       const sched = parseDateLocal(t.scheduledStart);
-      const isBacklogOrTodo = ['backlog', 'todo'].includes(t.status);
       if (due !== null && due <= todayMs) return true;
-      if (start !== null && start <= todayMs && isBacklogOrTodo) return true;
-      if (sched !== null && sched === todayMs) return true;
+      if (start !== null && start <= todayMs) return true;
+      if (sched !== null && sched === todayMs && !isScheduleWindowOver(t)) return true;
       return false;
     }).length;
   }, [tasks, user]);
@@ -1473,8 +1493,8 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
 
   if (isLoading) {
     return (
-      <div className="fixed inset-0 bg-[#09090b] flex flex-col items-center justify-center p-4 text-center">
-        <div className="w-20 h-20 rounded-[18px] bg-black border border-white/5 flex items-center justify-center overflow-hidden mb-6 shadow-[0_0_30px_rgba(79,70,229,0.1)] animate-modal-pop">
+      <div className="fixed inset-0 flex flex-col items-center justify-center p-4 text-center" style={{ background: 'var(--bg-primary)' }}>
+        <div className="w-20 h-20 rounded-[18px] bg-black border border-[var(--border-overlay)] flex items-center justify-center overflow-hidden mb-6 shadow-[0_0_30px_rgba(79,70,229,0.1)] animate-modal-pop">
           <img src="/apple-icon.png" alt="Lumina" className="w-full h-full object-cover" />
         </div>
         <div className="text-indigo-400 font-bold uppercase tracking-widest animate-pulse text-xs">Sincronizando Lumina...</div>
@@ -1483,9 +1503,85 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
   }
 
   return (
-    <div className="fixed inset-0 w-full bg-[#09090b] text-neutral-100 flex flex-col md:flex-row overflow-hidden font-sans" onClick={() => { setActiveTooltipCol(null); setShowProfileMenu(false); }}>
+    <div className="fixed inset-0 w-full text-[var(--text-primary)] flex flex-col md:flex-row overflow-hidden font-sans" style={{ background: 'var(--bg-primary)' }} onClick={() => { setActiveTooltipCol(null); setShowProfileMenu(false); }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap');
+
+        /* Design tokens de tema (claro/escuro) */
+        *, *::before, *::after {
+          transition-property: background-color, border-color, color;
+          transition-duration: 0.22s;
+          transition-timing-function: ease;
+        }
+        :root {
+          --bg-primary: #09090b;
+          --bg-secondary: #12121a;
+          --bg-tertiary: #1c1d26;
+          --text-primary: #ffffff;
+          --text-secondary: #a3a3a3;
+          --text-muted: #71717a;
+          --border-primary: #27272a;
+          --border-secondary: #2d3142;
+          --border-hover: #3f3f46;
+          --bg-overlay: rgba(255, 255, 255, 0.05);
+          --bg-overlay-strong: rgba(255, 255, 255, 0.1);
+          --border-overlay: rgba(255, 255, 255, 0.05);
+          --bg-scrim: rgba(0, 0, 0, 0.35);
+          --glass-bg: rgba(24, 24, 27, 0.6);
+          --glass-border: rgba(255, 255, 255, 0.05);
+          --scrollbar-thumb: #27272a;
+          --scrollbar-thumb-hover: #3f3f46;
+          --gradient-from: #09090b;
+          --gradient-to: #0d0e15;
+          --accent-strong-teal: #5eead4;
+          --accent-strong-emerald: #6ee7b7;
+        }
+        :root[data-theme="dark"] {
+          --bg-primary: #09090b;
+          --bg-secondary: #12121a;
+          --bg-tertiary: #1c1d26;
+          --text-primary: #ffffff;
+          --text-secondary: #a3a3a3;
+          --text-muted: #71717a;
+          --border-primary: #27272a;
+          --border-secondary: #2d3142;
+          --border-hover: #3f3f46;
+          --bg-overlay: rgba(255, 255, 255, 0.05);
+          --bg-overlay-strong: rgba(255, 255, 255, 0.1);
+          --border-overlay: rgba(255, 255, 255, 0.05);
+          --bg-scrim: rgba(0, 0, 0, 0.35);
+          --glass-bg: rgba(24, 24, 27, 0.6);
+          --glass-border: rgba(255, 255, 255, 0.05);
+          --scrollbar-thumb: #27272a;
+          --scrollbar-thumb-hover: #3f3f46;
+          --gradient-from: #09090b;
+          --gradient-to: #0d0e15;
+          --accent-strong-teal: #5eead4;
+          --accent-strong-emerald: #6ee7b7;
+        }
+        :root[data-theme="light"] {
+          --bg-primary: #f4f4f5;
+          --bg-secondary: #ffffff;
+          --bg-tertiary: #e4e4e7;
+          --text-primary: #18181b;
+          --text-secondary: #52525b;
+          --text-muted: #a1a1aa;
+          --border-primary: #d4d4d8;
+          --border-secondary: #e4e4e7;
+          --border-hover: #c9c9d0;
+          --bg-overlay: rgba(0, 0, 0, 0.04);
+          --bg-overlay-strong: rgba(0, 0, 0, 0.07);
+          --border-overlay: rgba(0, 0, 0, 0.08);
+          --bg-scrim: rgba(0, 0, 0, 0.05);
+          --glass-bg: rgba(255, 255, 255, 0.75);
+          --glass-border: rgba(0, 0, 0, 0.06);
+          --scrollbar-thumb: #d4d4d8;
+          --scrollbar-thumb-hover: #a1a1aa;
+          --gradient-from: #f4f4f5;
+          --gradient-to: #e9e9ec;
+          --accent-strong-teal: #0f766e;
+          --accent-strong-emerald: #047857;
+        }
 
         :root, body, button, input, select, textarea, [class] {
           font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -1494,8 +1590,8 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
         .font-mono, .font-mono * { font-family: ui-monospace, 'JetBrains Mono', SFMono-Regular, Menlo, monospace !important; }
 
         .kp-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
-        .kp-scroll::-webkit-scrollbar-thumb { background: #27272a; border-radius: 6px; }
-        .kp-scroll::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
+        .kp-scroll::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 6px; }
+        .kp-scroll::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
         .kp-scroll::-webkit-scrollbar-track { background: transparent; }
         
         .kp-scroll { -webkit-overflow-scrolling: touch; }
@@ -1523,13 +1619,13 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
         input[type="date"]::-webkit-date-and-time-value { text-align: left; margin: 0; }
         input[type="date"]::-webkit-datetime-edit { padding: 0; line-height: 1; }
 
-        .glass-panel { background: rgba(24, 24, 27, 0.6); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.05); }
+        .glass-panel { background: var(--glass-bg); backdrop-filter: blur(12px); border: 1px solid var(--glass-border); }
       `}</style>
 
       {/* LEFT SIDEBAR (Desktop) */}
-      <div className="hidden md:flex flex-col w-[88px] bg-[#0f0f13] border-r border-[#1f1f26] shrink-0 py-6 items-center z-30 justify-between">
+      <div className="hidden md:flex flex-col w-[88px] shrink-0 py-6 items-center z-30 justify-between" style={{ background: 'var(--bg-secondary)', borderRight: '1px solid var(--border-primary)' }}>
         <div className="flex flex-col items-center gap-8 w-full">
-          <div className="w-12 h-12 rounded-[14px] bg-black flex items-center justify-center shrink-0 overflow-hidden border border-white/10 shadow-[0_0_20px_rgba(79,70,229,0.15)] relative group cursor-default">
+          <div className="w-12 h-12 rounded-[14px] bg-black flex items-center justify-center shrink-0 overflow-hidden border border-[var(--border-overlay)] shadow-[0_0_20px_rgba(79,70,229,0.15)] relative group cursor-default">
             <img src="/apple-icon.png" alt="L" className="w-full h-full object-cover" />
           </div>
           
@@ -1545,14 +1641,18 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
         </div>
         
         <div className="flex flex-col items-center gap-4 relative">
-           <button onClick={(e) => { e.stopPropagation(); setShowProfileMenu(!showProfileMenu); }} className="w-10 h-10 rounded-full bg-[#181a24] border border-[#2d3142] flex items-center justify-center text-indigo-400 font-bold uppercase shadow-sm overflow-hidden hover:border-indigo-500 transition-colors" title="Meu Perfil">
+           <button onClick={toggleTheme} className="w-10 h-10 rounded-full flex items-center justify-center transition-colors hover:opacity-80" style={{ color: 'var(--text-secondary)' }} title={theme === 'dark' ? 'Tema claro' : 'Tema escuro'}>
+             {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+           </button>
+
+           <button onClick={(e) => { e.stopPropagation(); setShowProfileMenu(!showProfileMenu); }} className="w-10 h-10 rounded-full flex items-center justify-center text-indigo-400 font-bold uppercase shadow-sm overflow-hidden hover:border-indigo-500 transition-colors" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-primary)' }} title="Meu Perfil">
              <UserAvatar url={activeAvatar} name={user.name} />
            </button>
-           
+
            {showProfileMenu && (
-             <div className="absolute bottom-16 left-0 w-48 bg-[#12121a] border border-[#27272a] rounded-2xl shadow-xl z-50 py-2 flex flex-col animate-modal-pop" onClick={e => e.stopPropagation()}>
-                <button onClick={() => { setProfileModal(true); setShowProfileMenu(false); }} className="w-full text-left px-5 py-3 text-sm text-neutral-300 hover:bg-white/5 flex items-center gap-3 font-medium"><UserCog size={16}/> Editar Perfil</button>
-                <div className="h-px w-full bg-[#27272a] my-1"></div>
+             <div className="absolute bottom-16 left-0 w-48 rounded-2xl shadow-xl z-50 py-2 flex flex-col animate-modal-pop" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }} onClick={e => e.stopPropagation()}>
+                <button onClick={() => { setProfileModal(true); setShowProfileMenu(false); }} className="w-full text-left px-5 py-3 text-sm hover:bg-[var(--bg-overlay)] flex items-center gap-3 font-medium" style={{ color: 'var(--text-secondary)' }}><UserCog size={16}/> Editar Perfil</button>
+                <div className="h-px w-full my-1" style={{ background: 'var(--border-primary)' }}></div>
                 <button onClick={onLogout} className="w-full text-left px-5 py-3 text-sm text-red-400 hover:bg-red-500/10 flex items-center gap-3 font-medium"><LogOut size={16}/> Sair do Lumina</button>
              </div>
            )}
@@ -1560,46 +1660,49 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
       </div>
 
       {/* ÁREA PRINCIPAL */}
-      <div className={`flex-1 flex flex-col min-w-0 bg-gradient-to-br from-[#09090b] to-[#0d0e15] relative pb-[72px] md:pb-0`}>
+      <div className={`flex-1 flex flex-col min-w-0 relative pb-[72px] md:pb-0`} style={{ background: 'linear-gradient(to bottom right, var(--gradient-from), var(--gradient-to))' }}>
         
         {/* HEADER TOP (Desktop & Mobile) */}
-        <div className="shrink-0 flex items-center justify-between p-4 md:px-8 md:py-6 relative z-20 gap-4">
-          
+        <div className="shrink-0 flex items-center justify-between p-4 md:px-8 md:py-6 relative z-20 gap-4" style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-primary)' }}>
+
           {/* Mobile Title & Profile */}
           <div className="md:hidden flex items-center justify-between w-full">
              <div className="flex items-center gap-3 relative min-w-0">
-                <button onClick={(e) => { e.stopPropagation(); setShowProfileMenu(!showProfileMenu); }} className="w-10 h-10 shrink-0 rounded-full bg-[#181a24] border border-[#2d3142] flex items-center justify-center text-indigo-400 font-bold uppercase shadow-sm overflow-hidden hover:border-indigo-500 transition-colors">
+                <button onClick={(e) => { e.stopPropagation(); setShowProfileMenu(!showProfileMenu); }} className="w-10 h-10 shrink-0 rounded-full flex items-center justify-center text-indigo-400 font-bold uppercase shadow-sm overflow-hidden hover:border-indigo-500 transition-colors" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-primary)' }}>
                   <UserAvatar url={activeAvatar} name={user.name} />
                 </button>
-                <h1 className="font-bold text-lg text-white tracking-tight truncate">
+                <h1 className="font-bold text-lg tracking-tight truncate" style={{ color: 'var(--text-primary)' }}>
                   Olá, {user.name.split(' ')[0]}
                 </h1>
-                
+
                 {showProfileMenu && (
-                   <div className="absolute top-12 left-0 mt-2 w-48 bg-[#12121a] border border-[#27272a] rounded-2xl shadow-xl z-50 py-2 flex flex-col animate-modal-pop" onClick={e => e.stopPropagation()}>
-                      <button onClick={() => { setProfileModal(true); setShowProfileMenu(false); }} className="w-full text-left px-5 py-3 text-sm text-neutral-300 hover:bg-white/5 flex items-center gap-3 font-medium"><UserCog size={16}/> Editar Perfil</button>
-                      <div className="h-px w-full bg-[#27272a] my-1"></div>
+                   <div className="absolute top-12 left-0 mt-2 w-48 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-2xl shadow-xl z-50 py-2 flex flex-col animate-modal-pop" onClick={e => e.stopPropagation()}>
+                      <button onClick={() => { setProfileModal(true); setShowProfileMenu(false); }} className="w-full text-left px-5 py-3 text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-overlay)] flex items-center gap-3 font-medium"><UserCog size={16}/> Editar Perfil</button>
+                      <div className="h-px w-full bg-[var(--border-primary)] my-1"></div>
                       <button onClick={onLogout} className="w-full text-left px-5 py-3 text-sm text-red-400 hover:bg-red-500/10 flex items-center gap-3 font-medium"><LogOut size={16}/> Sair</button>
                    </div>
                 )}
              </div>
-             
-             <div className="flex shrink-0">
+
+             <div className="flex items-center gap-2 shrink-0">
+                <button onClick={toggleTheme} className="w-9 h-9 rounded-full flex items-center justify-center transition-colors hover:opacity-80" style={{ color: 'var(--text-secondary)' }} title={theme === 'dark' ? 'Tema claro' : 'Tema escuro'}>
+                  {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
+                </button>
                 <TopWidgets />
              </div>
           </div>
-          
+
           {/* Desktop Title */}
           <div className="hidden md:flex flex-col">
             <div className="flex items-center gap-3">
-              <h1 className="font-display font-bold text-2xl text-white tracking-tight">Kanban & Analytics</h1>
+              <h1 className="font-display font-bold text-2xl tracking-tight" style={{ color: 'var(--text-primary)' }}>Kanban & Analytics</h1>
               {isCloudSynced && (
                 <span className="text-[9px] text-emerald-400 font-bold uppercase tracking-widest bg-emerald-500/10 border border-emerald-500/20 px-2 py-1 rounded-md flex items-center gap-1">
                   <Cloud size={10} /> Sincronizado
                 </span>
               )}
             </div>
-            <span className="text-xs text-neutral-500 mt-1">Bem-vindo(a) de volta, {user.name}</span>
+            <span className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Bem-vindo(a) de volta, {user.name}</span>
           </div>
 
           <div className="hidden md:block">
@@ -1612,20 +1715,20 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
         {activeTab === 'notes' && <OverlayModal title="Notas" icon={<StickyNote size={20} className="text-amber-400"/>} isClosing={isClosingModal} onClose={handleCloseTab}><NotesPanelContent notes={visibleNotes} setNotes={setNotes} user={user} onDeleteNote={deleteNoteById} /></OverlayModal>}
         {activeTab === 'responsibles' && <OverlayModal title="Equipe (Contas)" icon={<Users size={20} className="text-indigo-400"/>} isClosing={isClosingModal} onClose={handleCloseTab}><ResponsiblesPanelContent responsibles={responsibles} tasks={tasks} user={user} /></OverlayModal>}
         {activeTab === 'clients' && <OverlayModal title="Gestão de Clientes" icon={<Building2 size={20} className="text-purple-400"/>} isClosing={isClosingModal} onClose={handleCloseTab}><ClientsPanelContent clients={visibleClients} setClients={setClients} tasks={tasks} setTasks={setTasks} user={user} getElapsed={getElapsed} /></OverlayModal>}
-        {activeTab === 'reports' && <AnalyticsModal isClosing={isClosingModal} onClose={handleCloseTab} tasks={filteredTasks} clients={visibleClients} responsibles={responsibles} getElapsed={getElapsed} globalLookerUrl={globalLookerUrl} setGlobalLookerUrl={setGlobalLookerUrl} user={user} />}
+        {activeTab === 'reports' && <AnalyticsModal isClosing={isClosingModal} onClose={handleCloseTab} tasks={filteredTasks} clients={visibleClients} responsibles={responsibles} getElapsed={getElapsed} globalLookerUrl={globalLookerUrl} setGlobalLookerUrl={setGlobalLookerUrl} user={user} theme={theme} />}
         {activeTab === 'agenda' && <OverlayModal title="Agenda" icon={<CalendarDays size={20} className="text-teal-400"/>} isClosing={isClosingModal} onClose={handleCloseTab} fullWidth><CalendarView tasks={visibleTasks} setTasks={setTasks} clients={clients} handleRequestMove={handleRequestMove} user={user} onCreateCard={(prefill: any) => setModal({ mode: 'add', form: { ...emptyForm, ...prefill } })} onDeleteTask={deleteTaskById} /></OverlayModal>}
 
         {/* BOARD VIEW */}
         <div className={`flex-1 flex flex-col min-h-0 ${activeTab !== 'board' ? 'hidden md:flex opacity-30 pointer-events-none transition-opacity duration-300' : 'fade-in'}`}>
           
-          <div className="shrink-0 px-4 md:px-8 pb-3 flex flex-col gap-3">
+          <div className="shrink-0 px-4 md:px-8 pt-4 md:pt-6 pb-3 flex flex-col gap-3">
              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 w-full">
                 
                 {/* Linha Principal (Filtro Button, Progresso e Fechar Semana) */}
                 <div className="flex flex-wrap sm:flex-nowrap items-center gap-3 w-full">
                    <button 
                      onClick={(e) => { e.stopPropagation(); setShowFilters(!showFilters); }} 
-                     className={`h-11 w-11 lg:w-auto px-0 lg:px-4 flex items-center justify-center gap-2 rounded-xl transition-all shadow-sm shrink-0 border font-bold uppercase tracking-widest text-[10px] ${showFilters ? 'bg-indigo-600 text-white border-indigo-500 shadow-[0_0_15px_rgba(79,70,229,0.3)]' : 'glass-panel text-neutral-400 border-white/5 hover:text-white'}`}
+                     className={`h-11 w-11 lg:w-auto px-0 lg:px-4 flex items-center justify-center gap-2 rounded-xl transition-all shadow-sm shrink-0 border font-bold uppercase tracking-widest text-[10px] ${showFilters ? 'bg-indigo-600 text-white border-indigo-500 shadow-[0_0_15px_rgba(79,70,229,0.3)]' : 'glass-panel text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
                    >
                      <Filter size={16} /> <span className="hidden lg:inline">Filtros</span>
                    </button>
@@ -1633,17 +1736,17 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                    <button
                      onClick={() => setSearchOpen(true)}
                      title="Buscar (Ctrl/Cmd + K)"
-                     className="h-11 flex-1 lg:flex-none lg:w-auto px-3 lg:px-4 flex items-center justify-center gap-2 rounded-xl transition-all shadow-sm border font-bold uppercase tracking-widest text-[10px] glass-panel text-neutral-400 border-white/5 hover:text-white"
+                     className="h-11 flex-1 lg:flex-none lg:w-auto px-3 lg:px-4 flex items-center justify-center gap-2 rounded-xl transition-all shadow-sm border font-bold uppercase tracking-widest text-[10px] glass-panel text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                    >
                      <Search size={16} /> <span>Buscar</span>
                    </button>
 
                    <div className="glass-panel h-11 w-full order-last sm:w-auto sm:flex-1 sm:order-none flex items-center px-4 rounded-xl gap-3 shadow-sm min-w-0">
-                     <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-500">Progresso</span>
-                     <div className="flex-1 h-1.5 rounded-full bg-black/50 overflow-hidden border border-white/5">
+                     <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)]">Progresso</span>
+                     <div className="flex-1 h-1.5 rounded-full overflow-hidden border" style={{ background: 'var(--bg-scrim)', borderColor: 'var(--border-overlay)' }}>
                         <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${overallProgress}%` }} />
                      </div>
-                     <span className="text-xs font-bold text-white shrink-0">{overallProgress}%</span>
+                     <span className="text-xs font-bold shrink-0" style={{ color: 'var(--text-primary)' }}>{overallProgress}%</span>
                    </div>
 
                    {todayCount > 0 && (
@@ -1669,41 +1772,41 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                     <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-5">
                        <FilterSelect value={filterClient} onChange={setFilterClient} options={visibleClients} defaultLabel="Todos Clientes" />
                        {user.isAdmin && <>
-                         <div className="hidden sm:block w-px h-4 bg-white/10"></div>
+                         <div className="hidden sm:block w-px h-4" style={{ background: 'var(--border-overlay)' }}></div>
                          <FilterSelect value={filterResp} onChange={setFilterResp} options={responsibles} defaultLabel="Todos Responsáveis" />
                        </>}
-                       <div className="hidden sm:block w-px h-4 bg-white/10"></div>
+                       <div className="hidden sm:block w-px h-4" style={{ background: 'var(--border-overlay)' }}></div>
                        <FilterSelect value={filterPriority} onChange={setFilterPriority} options={[{id: 'Baixa', name: 'Baixa'}, {id: 'Média', name: 'Média'}, {id: 'Alta', name: 'Alta'}]} defaultLabel="Prioridades" />
                     </div>
 
-                    <div className="h-px w-full bg-white/5"></div>
+                    <div className="h-px w-full" style={{ background: 'var(--border-overlay)' }}></div>
 
                     {/* Intervalos de data */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                       <div className="rounded-xl border border-white/5 bg-black/20 p-3.5 flex flex-col gap-2.5">
+                       <div className="rounded-xl border p-3.5 flex flex-col gap-2.5" style={{ borderColor: 'var(--border-overlay)', background: 'var(--bg-scrim)' }}>
                           <span className="text-[10px] uppercase font-bold tracking-widest text-indigo-300 flex items-center gap-1.5"><Clock size={12}/> Criado entre</span>
                           <div className="grid grid-cols-2 gap-2">
                              <div className="flex flex-col gap-1">
-                                <label className="text-[9px] uppercase font-bold text-neutral-500 ml-0.5">De</label>
-                                <input type="date" value={filterCreatedStart} onChange={e => setFilterCreatedStart(e.target.value)} className="w-full bg-[#12121a] border border-[#27272a] rounded-lg px-3 h-10 text-xs text-white outline-none focus:border-indigo-500 [color-scheme:dark]" />
+                                <label className="text-[9px] uppercase font-bold ml-0.5" style={{ color: 'var(--text-muted)' }}>De</label>
+                                <input type="date" value={filterCreatedStart} onChange={e => setFilterCreatedStart(e.target.value)} className="w-full rounded-lg px-3 h-10 text-xs outline-none focus:border-indigo-500" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)', color: 'var(--text-primary)', colorScheme: theme }} />
                              </div>
                              <div className="flex flex-col gap-1">
-                                <label className="text-[9px] uppercase font-bold text-neutral-500 ml-0.5">Até</label>
-                                <input type="date" value={filterCreatedEnd} onChange={e => setFilterCreatedEnd(e.target.value)} className="w-full bg-[#12121a] border border-[#27272a] rounded-lg px-3 h-10 text-xs text-white outline-none focus:border-indigo-500 [color-scheme:dark]" />
+                                <label className="text-[9px] uppercase font-bold ml-0.5" style={{ color: 'var(--text-muted)' }}>Até</label>
+                                <input type="date" value={filterCreatedEnd} onChange={e => setFilterCreatedEnd(e.target.value)} className="w-full rounded-lg px-3 h-10 text-xs outline-none focus:border-indigo-500" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)', color: 'var(--text-primary)', colorScheme: theme }} />
                              </div>
                           </div>
                        </div>
 
-                       <div className="rounded-xl border border-white/5 bg-black/20 p-3.5 flex flex-col gap-2.5">
+                       <div className="rounded-xl border p-3.5 flex flex-col gap-2.5" style={{ borderColor: 'var(--border-overlay)', background: 'var(--bg-scrim)' }}>
                           <span className="text-[10px] uppercase font-bold tracking-widest text-emerald-300 flex items-center gap-1.5"><CheckCircle2 size={12}/> Concluído entre</span>
                           <div className="grid grid-cols-2 gap-2">
                              <div className="flex flex-col gap-1">
-                                <label className="text-[9px] uppercase font-bold text-neutral-500 ml-0.5">De</label>
-                                <input type="date" value={filterCompletedStart} onChange={e => setFilterCompletedStart(e.target.value)} className="w-full bg-[#12121a] border border-[#27272a] rounded-lg px-3 h-10 text-xs text-white outline-none focus:border-emerald-500 [color-scheme:dark]" />
+                                <label className="text-[9px] uppercase font-bold ml-0.5" style={{ color: 'var(--text-muted)' }}>De</label>
+                                <input type="date" value={filterCompletedStart} onChange={e => setFilterCompletedStart(e.target.value)} className="w-full rounded-lg px-3 h-10 text-xs outline-none focus:border-emerald-500" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)', color: 'var(--text-primary)', colorScheme: theme }} />
                              </div>
                              <div className="flex flex-col gap-1">
-                                <label className="text-[9px] uppercase font-bold text-neutral-500 ml-0.5">Até</label>
-                                <input type="date" value={filterCompletedEnd} onChange={e => setFilterCompletedEnd(e.target.value)} className="w-full bg-[#12121a] border border-[#27272a] rounded-lg px-3 h-10 text-xs text-white outline-none focus:border-emerald-500 [color-scheme:dark]" />
+                                <label className="text-[9px] uppercase font-bold ml-0.5" style={{ color: 'var(--text-muted)' }}>Até</label>
+                                <input type="date" value={filterCompletedEnd} onChange={e => setFilterCompletedEnd(e.target.value)} className="w-full rounded-lg px-3 h-10 text-xs outline-none focus:border-emerald-500" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)', color: 'var(--text-primary)', colorScheme: theme }} />
                              </div>
                           </div>
                        </div>
@@ -1734,20 +1837,20 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                     <div key={col.id} data-column-id={col.id} className="w-[88vw] max-w-[340px] sm:w-[340px] shrink-0 glass-panel rounded-2xl flex flex-col h-full shadow-sm relative">
                       
                       {/* Header da Coluna */}
-                      <div className="px-5 pt-5 pb-4 flex items-center justify-between border-b border-white/5 shrink-0">
-                        <div 
+                      <div className="px-5 pt-5 pb-4 flex items-center justify-between border-b shrink-0" style={{ borderColor: 'var(--border-overlay)' }}>
+                        <div
                           className="flex items-center gap-2 relative group cursor-pointer"
                           onClick={(e) => { e.stopPropagation(); setActiveTooltipCol(activeTooltipCol === col.id ? null : col.id); }}
                         >
                           <span className={`w-2.5 h-2.5 shrink-0 rounded-full ${col.dot} shadow-[0_0_8px_currentColor]`} />
-                          <h2 className="text-xs font-bold uppercase tracking-widest text-white">{col.name}</h2>
-                          <HelpCircle size={14} className="text-neutral-500 hover:text-neutral-300 transition-colors ml-0.5" />
-                          
-                          <div className={`absolute left-0 top-full mt-2 w-56 sm:w-64 p-4 bg-[#1c1d26] border border-[#27272a] rounded-xl shadow-2xl transition-all z-[60] normal-case tracking-normal cursor-default ${activeTooltipCol === col.id ? 'opacity-100 visible' : 'opacity-0 invisible lg:group-hover:opacity-100 lg:group-hover:visible'}`} onClick={e => e.stopPropagation()}>
-                            <div className="text-[11px] text-neutral-300 leading-relaxed font-normal">{col.help}</div>
+                          <h2 className="text-xs font-bold uppercase tracking-widest" style={{ color: 'var(--text-primary)' }}>{col.name}</h2>
+                          <HelpCircle size={14} className="transition-colors ml-0.5" style={{ color: 'var(--text-muted)' }} />
+
+                          <div className={`absolute left-0 top-full mt-2 w-56 sm:w-64 p-4 rounded-xl shadow-2xl transition-all z-[60] normal-case tracking-normal cursor-default ${activeTooltipCol === col.id ? 'opacity-100 visible' : 'opacity-0 invisible lg:group-hover:opacity-100 lg:group-hover:visible'}`} style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-primary)' }} onClick={e => e.stopPropagation()}>
+                            <div className="text-[11px] leading-relaxed font-normal" style={{ color: 'var(--text-secondary)' }}>{col.help}</div>
                           </div>
                         </div>
-                        <span className="text-[10px] px-2.5 py-1 rounded-lg bg-black/40 text-neutral-400 font-bold border border-white/5">{colTasks.length}</span>
+                        <span className="text-[10px] px-2.5 py-1 rounded-lg font-bold border" style={{ background: 'var(--bg-scrim)', color: 'var(--text-secondary)', borderColor: 'var(--border-overlay)' }}>{colTasks.length}</span>
                       </div>
                       
                       {/* Botão de Adicionar */}
@@ -1760,7 +1863,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                       {/* Área de Cartões */}     
                       <div className="px-3 pb-3 flex-1 overflow-y-auto overflow-x-hidden kp-scroll flex flex-col gap-3 mt-3 min-h-0">
                         {colTasks.length === 0 && (
-                          <div className="text-center text-[10px] font-medium uppercase tracking-widest text-neutral-600 py-10 border border-dashed border-white/5 rounded-xl mx-2">
+                          <div className="text-center text-[10px] font-medium uppercase tracking-widest py-10 border border-dashed rounded-xl mx-2" style={{ color: 'var(--text-muted)', borderColor: 'var(--border-overlay)' }}>
                             Solte itens aqui
                           </div>
                         )}
@@ -1782,13 +1885,13 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                           let alertBadge = null;
                           let alertAccent: string | null = null;
                           if (!isDoneOrCancelled) {
-                            if ((dueMs !== null && dueMs < todayMs) || (startMs !== null && startMs < todayMs && ['backlog', 'todo'].includes(t.status))) {
+                            if ((dueMs !== null && dueMs < todayMs) || (startMs !== null && startMs < todayMs)) {
                               alertBadge = <span className="flex items-center gap-1 text-[9px] uppercase tracking-wider px-2 py-1 rounded-md bg-red-500/10 text-red-400 border border-red-500/20 font-bold"><AlertTriangle size={10}/> Atrasado</span>;
                               alertAccent = 'red';
                             } else if (dueMs === todayMs) {
                               alertBadge = <span className="flex items-center gap-1 text-[9px] uppercase tracking-wider px-2 py-1 rounded-md bg-orange-500/10 text-orange-400 border border-orange-500/20 font-bold"><Clock size={10}/> Entregar Hoje</span>;
                               alertAccent = 'orange';
-                            } else if (startMs === todayMs && ['backlog', 'todo'].includes(t.status)) {
+                            } else if (startMs === todayMs) {
                               alertBadge = <span className="flex items-center gap-1 text-[9px] uppercase tracking-wider px-2 py-1 rounded-md bg-blue-500/10 text-blue-400 border border-blue-500/20 font-bold"><Play size={10}/> Iniciar Hoje</span>;
                               alertAccent = 'blue';
                             }
@@ -1803,14 +1906,14 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                               key={t.id}
                               data-task-id={t.id}
                               style={{ touchAction: 'pan-y' }}
-                              className={`rounded-2xl bg-[#1c1d26] border p-4 transition-all group relative ${isDoneOrCancelled ? 'opacity-60' : ''} ${!isEditable ? 'opacity-70 cursor-not-allowed' : 'hover:border-[#3f3f46] shadow-md'} ${dragOverId === t.id ? 'border-indigo-500 shadow-[0_-2px_15px_rgba(99,102,241,0.3)]' : 'border-[#2d3142]'} ${dragState?.id === t.id ? 'opacity-40' : ''} ${alertRing}`}
+                              className={`rounded-2xl bg-[var(--bg-tertiary)] border p-4 transition-all group relative ${isDoneOrCancelled ? 'opacity-60' : ''} ${!isEditable ? 'opacity-70 cursor-not-allowed' : 'hover:border-[var(--border-hover)] shadow-md'} ${dragOverId === t.id ? 'border-indigo-500 shadow-[0_-2px_15px_rgba(99,102,241,0.3)]' : 'border-[var(--border-secondary)]'} ${dragState?.id === t.id ? 'opacity-40' : ''} ${alertRing}`}
                             >
                               {alertBar && <span className={`absolute left-0 top-3 bottom-3 w-1 rounded-r-full ${alertBar}`} />}
                               
                               {/* Badges do Cartão */}
                               <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
                                 <div className="flex items-center gap-2 flex-wrap">
-                                  {client && <span className="flex items-center gap-1 text-[9px] uppercase tracking-wider px-2 py-1 rounded-md bg-white/5 text-neutral-300 font-bold max-w-[140px] truncate border border-white/5"><Building2 size={10} /> {client.name}</span>}
+                                  {client && <span className="flex items-center gap-1 text-[9px] uppercase tracking-wider px-2 py-1 rounded-md bg-[var(--bg-overlay)] text-[var(--text-secondary)] font-bold max-w-[140px] truncate border border-[var(--border-overlay)]"><Building2 size={10} /> {client.name}</span>}
                                   <span className={`flex items-center gap-1 text-[9px] uppercase tracking-wider px-2 py-1 rounded-md border font-bold ${prStyle.bg} ${prStyle.text} ${prStyle.border}`}>
                                     <span className={`w-1 h-1 rounded-full ${prStyle.dot}`} /> {t.priority}
                                   </span>
@@ -1823,26 +1926,27 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                                   <div className="flex items-center gap-1">
                                     {isMobile && (
                                        <div className="flex flex-col gap-1 mr-1">
-                                          <button onClick={(e) => { e.stopPropagation(); moveTaskVertical(t.id, 'up'); }} className="p-1 bg-white/5 rounded text-neutral-400 active:bg-white/10 active:text-white"><ChevronUp size={12}/></button>
-                                          <button onClick={(e) => { e.stopPropagation(); moveTaskVertical(t.id, 'down'); }} className="p-1 bg-white/5 rounded text-neutral-400 active:bg-white/10 active:text-white"><ChevronDown size={12}/></button>
+                                          <button onClick={(e) => { e.stopPropagation(); moveTaskVertical(t.id, 'up'); }} className="p-1 bg-[var(--bg-overlay)] rounded text-[var(--text-secondary)] active:bg-[var(--bg-overlay-strong)] active:text-[var(--text-primary)]"><ChevronUp size={12}/></button>
+                                          <button onClick={(e) => { e.stopPropagation(); moveTaskVertical(t.id, 'down'); }} className="p-1 bg-[var(--bg-overlay)] rounded text-[var(--text-secondary)] active:bg-[var(--bg-overlay-strong)] active:text-[var(--text-primary)]"><ChevronDown size={12}/></button>
                                        </div>
                                     )}
                                     <div
                                       onPointerDown={(e) => handleHandlePointerDown(e, t.id, t.title, isEditable)}
-                                      className="shrink-0 flex items-center justify-center text-neutral-500 cursor-grab active:cursor-grabbing touch-none rounded-lg p-2.5 -m-2 md:p-1 md:-m-1 active:bg-white/10 active:text-white"
+                                      className="shrink-0 flex items-center justify-center cursor-grab active:cursor-grabbing touch-none rounded-lg p-2.5 -m-2 md:p-1 md:-m-1 active:bg-[var(--bg-overlay-strong)] active:text-[var(--text-primary)]"
+                                      style={{ color: 'var(--text-muted)' }}
                                       title="Arrastar"
                                     >
                                       <GripVertical size={18} className="pointer-events-none" />
                                     </div>
                                   </div>
                                 ) : (
-                                  <Lock size={12} className="text-neutral-600 shrink-0 block" />
+                                  <Lock size={12} className="shrink-0 block" style={{ color: 'var(--text-muted)' }} />
                                 )}
                               </div>
 
                               <div className="mb-3">
-                                <h3 className={`font-display text-[13px] font-bold leading-relaxed mb-1.5 ${isDoneOrCancelled ? 'text-neutral-500 line-through' : 'text-white'}`}>{t.title}</h3>
-                                {t.description && <div className="text-[11px] text-neutral-400 line-clamp-2 leading-relaxed">{t.description}</div>}
+                                <h3 className={`font-display text-[13px] font-bold leading-relaxed mb-1.5 ${isDoneOrCancelled ? 'line-through' : ''}`} style={{ color: isDoneOrCancelled ? 'var(--text-muted)' : 'var(--text-primary)' }}>{t.title}</h3>
+                                {t.description && <div className="text-[11px] line-clamp-2 leading-relaxed" style={{ color: 'var(--text-secondary)' }}>{t.description}</div>}
                               </div>
 
                               {t.status === 'waiting' && t.waitingFor && (
@@ -1852,16 +1956,16 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                               {/* Checklist Detalhado Visível no Cartão */}
                               {total > 0 && (
                                 <div className="mb-3">
-                                  <div className="h-1 rounded-full bg-black/40 overflow-hidden mb-2 border border-white/5">
+                                  <div className="h-1 rounded-full overflow-hidden mb-2 border" style={{ background: 'var(--bg-scrim)', borderColor: 'var(--border-overlay)' }}>
                                     <div className={`h-full rounded-full transition-all ${pct === 100 ? 'bg-emerald-500 shadow-[0_0_5px_rgba(16,185,129,0.3)]' : 'bg-indigo-500'}`} style={{ width: `${pct}%` }} />
                                   </div>
                                   <div className="flex flex-col gap-1.5">
                                     {tChecklist.map((c: any) => (
-                                      <div key={c.id} className="flex items-start gap-2 text-[11px] text-neutral-400">
-                                        <button onClick={(e) => { e.stopPropagation(); toggleChecklistItem(t.id, c.id); }} disabled={!isEditable} className={`mt-0.5 w-3.5 h-3.5 rounded flex items-center justify-center shrink-0 border ${c.done ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-400' : 'bg-black/30 border-white/10 hover:border-white/20 text-transparent'} transition-colors`}>
+                                      <div key={c.id} className="flex items-start gap-2 text-[11px]" style={{ color: 'var(--text-secondary)' }}>
+                                        <button onClick={(e) => { e.stopPropagation(); toggleChecklistItem(t.id, c.id); }} disabled={!isEditable} className={`mt-0.5 w-3.5 h-3.5 rounded flex items-center justify-center shrink-0 border transition-colors ${c.done ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-400' : 'bg-[var(--bg-scrim)] border-[var(--border-overlay)] hover:border-[var(--border-hover)] text-transparent'}`}>
                                            <Check size={10} strokeWidth={3} className={c.done ? 'opacity-100' : 'opacity-0'} />
                                         </button>
-                                        <span className={`leading-snug ${c.done ? "line-through text-neutral-500" : "text-neutral-300"}`}>{c.text || ''}</span>
+                                        <span className="leading-snug" style={{ color: c.done ? 'var(--text-muted)' : 'var(--text-secondary)', textDecoration: c.done ? 'line-through' : 'none' }}>{c.text || ''}</span>
                                       </div>
                                     ))}
                                   </div>
@@ -1869,23 +1973,23 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                               )}
 
                               {/* Info de Rodapé do Cartão com Botões Integrados */}
-                              <div className="flex items-center justify-between mt-4 pt-3 border-t border-white/5">
+                              <div className="flex items-center justify-between mt-4 pt-3 border-t" style={{ borderColor: 'var(--border-overlay)' }}>
                                  <div className="flex items-center gap-2">
                                     {resp && (
-                                       <div className="w-6 h-6 rounded-full bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-[10px] font-bold text-indigo-300 uppercase overflow-hidden" title={`Responsável: ${resp.name}`}>
+                                       <div className="w-6 h-6 rounded-full bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-[10px] font-bold text-indigo-500 uppercase overflow-hidden" title={`Responsável: ${resp.name}`}>
                                           <UserAvatar url={resp.avatar} name={resp.name} />
                                        </div>
                                     )}
-                                    
+
                                     {(t.timerRunning || t.timerElapsed > 0) && !isDoneOrCancelled && (
-                                      <div className="flex items-center gap-1 text-[10px] font-mono font-bold bg-black/30 border border-white/5 px-2 py-1 rounded-md text-neutral-400">
-                                        <Clock size={10} className={t.timerRunning ? "text-amber-500 animate-pulse" : "text-neutral-500"} /> <LiveElapsed task={t} getElapsed={getElapsed} />
+                                      <div className="flex items-center gap-1 text-[10px] font-mono font-bold px-2 py-1 rounded-md border" style={{ background: 'var(--bg-scrim)', borderColor: 'var(--border-overlay)', color: 'var(--text-secondary)' }}>
+                                        <Clock size={10} className={t.timerRunning ? "text-amber-500 animate-pulse" : ""} style={t.timerRunning ? undefined : { color: 'var(--text-muted)' }} /> <LiveElapsed task={t} getElapsed={getElapsed} />
                                       </div>
                                     )}
 
                                     {!t.timerRunning && !(t.timerElapsed > 0) && t.durationMin > 0 && !isDoneOrCancelled && (
-                                      <div className="flex items-center gap-1 text-[10px] font-mono font-bold bg-black/30 border border-white/5 px-2 py-1 rounded-md text-neutral-400">
-                                        <Clock size={10} className="text-neutral-500" /> {formatTime(t.durationMin * 60)}
+                                      <div className="flex items-center gap-1 text-[10px] font-mono font-bold px-2 py-1 rounded-md border" style={{ background: 'var(--bg-scrim)', borderColor: 'var(--border-overlay)', color: 'var(--text-secondary)' }}>
+                                        <Clock size={10} style={{ color: 'var(--text-muted)' }} /> {formatTime(t.durationMin * 60)}
                                       </div>
                                     )}
 
@@ -1899,8 +2003,8 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                                  <div className="flex items-center gap-1">
                                     {isEditable && (
                                       <>
-                                        <button onClick={() => openEditModal(t)} className="p-1.5 bg-white/5 hover:bg-white/10 text-neutral-400 hover:text-white rounded-lg transition-colors border border-transparent hover:border-white/10" title="Editar"><Pencil size={12}/></button>
-                                        {!isDoneOrCancelled && <button onClick={() => toggleTimer(t.id)} className={`p-1.5 rounded-lg transition-colors border ${t.timerRunning ? 'text-amber-400 bg-amber-400/10 border-amber-400/20' : 'text-neutral-400 bg-white/5 hover:text-white hover:bg-white/10 border-transparent hover:border-white/10'}`} title={t.timerRunning ? "Pausar" : "Iniciar Timer"}>{t.timerRunning ? <Pause size={12}/> : <Play size={12}/>}</button>}
+                                        <button onClick={() => openEditModal(t)} className="p-1.5 bg-[var(--bg-overlay)] hover:bg-[var(--bg-overlay-strong)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded-lg transition-colors border border-transparent hover:border-[var(--border-overlay)]" title="Editar"><Pencil size={12}/></button>
+                                        {!isDoneOrCancelled && <button onClick={() => toggleTimer(t.id)} className={`p-1.5 rounded-lg transition-colors border ${t.timerRunning ? 'text-amber-400 bg-amber-400/10 border-amber-400/20' : 'text-[var(--text-secondary)] bg-[var(--bg-overlay)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-overlay-strong)] border-transparent hover:border-[var(--border-overlay)]'}`} title={t.timerRunning ? "Pausar" : "Iniciar Timer"}>{t.timerRunning ? <Pause size={12}/> : <Play size={12}/>}</button>}
                                       </>
                                     )}
                                     {isEditable && t.status !== "cancelled" && isDoneOrCancelled && (
@@ -1914,9 +2018,9 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                                     )}
                                  </div>
                               </div>
-                              
+
                               {/* Datas Discretas */}
-                              <div className="mt-3 flex flex-col gap-0.5 text-[9px] text-neutral-600 font-mono uppercase tracking-widest text-center">
+                              <div className="mt-3 flex flex-col gap-0.5 text-[9px] font-mono uppercase tracking-widest text-center" style={{ color: 'var(--text-muted)' }}>
                                 {t.createdAt && <div>Criado em: {t.createdAt.split('-').reverse().join('/')}</div>}
                                 {t.completedAt && <div className="text-emerald-500/60">Concluído em: {t.completedAt.split('-').reverse().join('/')}</div>}
                               </div>
@@ -1937,15 +2041,15 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
       {/* Fantasma do card durante o arrasto (mouse ou toque) */}
       {dragState && (
         <div
-          className="fixed z-[200] pointer-events-none px-4 py-3 rounded-xl bg-[#1c1d26] border border-indigo-500 shadow-2xl text-xs font-bold text-white max-w-[260px] truncate"
-          style={{ left: dragState.x + 12, top: dragState.y + 12 }}
+          className="fixed z-[200] pointer-events-none px-4 py-3 rounded-xl bg-[var(--bg-tertiary)] border border-indigo-500 shadow-2xl text-xs font-bold max-w-[260px] truncate"
+          style={{ left: dragState.x + 12, top: dragState.y + 12, color: 'var(--text-primary)' }}
         >
           {dragState.title}
         </div>
       )}
 
       {/* MOBILE BOTTOM NAV */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 flex items-center justify-around pt-2.5 px-2 pb-[max(env(safe-area-inset-bottom),0.75rem)] bg-[#12121a]/95 backdrop-blur-md border-t border-[#27272a] z-[100] shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
+      <div className="md:hidden fixed bottom-0 left-0 right-0 flex items-center justify-around pt-2.5 px-2 pb-[max(env(safe-area-inset-bottom),0.75rem)] backdrop-blur-md border-t z-[100] shadow-[0_-10px_40px_rgba(0,0,0,0.5)]" style={{ background: 'color-mix(in srgb, var(--bg-secondary) 95%, transparent)', borderColor: 'var(--border-primary)' }}>
          <MobileNavBtn icon={<LayoutDashboard size={20} />} label="Board" active={activeTab === 'board' && !isClosingModal} onClick={() => {if(activeTab !== 'board') handleCloseTab()}} />
          <MobileNavBtn icon={<Sun size={20} />} label="Hoje" active={activeTab === 'today' && !isClosingModal} onClick={() => setActiveTab('today')} count={todayCount} />
          <MobileNavBtn icon={<StickyNote size={20} />} label="Notas" active={activeTab === 'notes' && !isClosingModal} onClick={() => setActiveTab('notes')} />
@@ -1961,15 +2065,15 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
       {/* Pop-up: Aguardando Retorno */}
       {waitingPrompt && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center px-4 pt-4 pb-24 sm:p-4 z-[70] fade-in" onClick={() => setWaitingPrompt(null)}>
-          <div className="w-full max-w-sm rounded-[32px] bg-[#12121a] border border-[#27272a] p-8 shadow-2xl relative animate-modal-pop" onClick={e => e.stopPropagation()}>
-            <button onClick={() => setWaitingPrompt(null)} className="absolute top-6 right-6 text-neutral-500 hover:text-white transition-colors"><X size={20} /></button>
+          <div className="w-full max-w-sm rounded-[32px] bg-[var(--bg-secondary)] border border-[var(--border-primary)] p-8 shadow-2xl relative animate-modal-pop" onClick={e => e.stopPropagation()}>
+            <button onClick={() => setWaitingPrompt(null)} className="absolute top-6 right-6 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"><X size={20} /></button>
             <div className="flex items-center gap-3 mb-6 text-pink-500">
               <div className="p-3 bg-pink-500/10 rounded-2xl shadow-inner"><HelpCircle size={24} /></div>
               <h3 className="font-bold text-lg">Pendente de quem?</h3>
             </div>
-            <p className="text-sm text-neutral-400 mb-8 leading-relaxed">O card foi movido para Aguardando. Selecione o bloqueador da tarefa:</p>
+            <p className="text-sm text-[var(--text-secondary)] mb-8 leading-relaxed">O card foi movido para Aguardando. Selecione o bloqueador da tarefa:</p>
             <div className="flex flex-col gap-3">
-              <button onClick={() => { setTasks((prev: any) => prev.map((t: any) => t.id === waitingPrompt ? { ...t, waitingFor: 'Cliente' } : t)); setWaitingPrompt(null); }} className="w-full py-4 rounded-2xl border border-[#2a2d3d] hover:border-[#3f4359] hover:bg-white/5 text-white font-bold transition-all text-sm">Responsabilidade do Cliente</button>
+              <button onClick={() => { setTasks((prev: any) => prev.map((t: any) => t.id === waitingPrompt ? { ...t, waitingFor: 'Cliente' } : t)); setWaitingPrompt(null); }} className="w-full py-4 rounded-2xl border border-[var(--border-primary)] hover:border-[var(--border-hover)] hover:bg-[var(--bg-overlay)] text-[var(--text-primary)] font-bold transition-all text-sm">Responsabilidade do Cliente</button>
               <button onClick={() => { setTasks((prev: any) => prev.map((t: any) => t.id === waitingPrompt ? { ...t, waitingFor: 'Time Interno' } : t)); setWaitingPrompt(null); }} className="w-full py-4 rounded-2xl bg-pink-600 hover:bg-pink-500 text-white font-bold transition-all text-sm shadow-lg shadow-pink-600/10">Nossa Responsabilidade</button>
             </div>
           </div>
@@ -1979,24 +2083,24 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
       {/* Pop-up: Conclusão de Demanda */}
       {donePrompt && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center px-4 pt-4 pb-24 sm:p-4 z-[90] fade-in" onClick={() => { setDonePrompt(null); setValidationError(null); }}>
-          <div className="w-full max-w-sm rounded-[32px] bg-[#12121a] border border-[#27272a] shadow-2xl relative overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
-            <div className="px-5 sm:px-8 py-5 sm:py-6 border-b border-[#27272a] flex items-center gap-3 text-emerald-500">
+          <div className="w-full max-w-sm rounded-[32px] bg-[var(--bg-secondary)] border border-[var(--border-primary)] shadow-2xl relative overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
+            <div className="px-5 sm:px-8 py-5 sm:py-6 border-b border-[var(--border-primary)] flex items-center gap-3 text-emerald-500">
               <CheckCircle2 size={24} />
-              <h3 className="font-display font-bold text-xl text-white tracking-tight">Finalizar Demanda</h3>
+              <h3 className="font-display font-bold text-xl text-[var(--text-primary)] tracking-tight">Finalizar Demanda</h3>
             </div>
             <div className="p-5 sm:p-8 flex flex-col gap-5">
               {validationError && <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs px-4 py-3 rounded-xl flex items-center gap-2 animate-pulse"><AlertTriangle size={14} className="shrink-0" /> {Array.isArray(validationError) ? validationError.join(", ") : String(validationError)}</div>}
               <div>
-                <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">Data Real de Entrega *</label>
-                <input type="date" value={donePrompt.date || ''} onChange={e => { setDonePrompt({...donePrompt, date: e.target.value}); setValidationError(null); }} className="w-full bg-[#09090b] border border-[#27272a] rounded-xl px-4 py-4 text-sm text-white outline-none focus:border-emerald-500 [color-scheme:dark]" />
+                <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Data Real de Entrega *</label>
+                <input type="date" value={donePrompt.date || ''} onChange={e => { setDonePrompt({...donePrompt, date: e.target.value}); setValidationError(null); }} className="w-full bg-[var(--bg-primary)] border border-[var(--border-primary)] rounded-xl px-4 py-4 text-sm text-[var(--text-primary)] outline-none focus:border-emerald-500 [color-scheme:dark]" />
               </div>
               <div>
-                <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">Tempo Total Gasto (Minutos) *</label>
-                <input type="number" value={donePrompt.durationMin ?? ''} onChange={e => { setDonePrompt({...donePrompt, durationMin: e.target.value}); setValidationError(null); }} className="w-full bg-[#09090b] border border-[#27272a] rounded-xl px-4 py-4 text-sm text-white outline-none focus:border-emerald-500" placeholder="Ex: 45" />
+                <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Tempo Total Gasto (Minutos) *</label>
+                <input type="number" value={donePrompt.durationMin ?? ''} onChange={e => { setDonePrompt({...donePrompt, durationMin: e.target.value}); setValidationError(null); }} className="w-full bg-[var(--bg-primary)] border border-[var(--border-primary)] rounded-xl px-4 py-4 text-sm text-[var(--text-primary)] outline-none focus:border-emerald-500" placeholder="Ex: 45" />
               </div>
             </div>
-            <div className="px-5 sm:px-8 py-5 border-t border-[#27272a] bg-black/20 flex items-center justify-end gap-3">
-              <button onClick={() => { setDonePrompt(null); setValidationError(null); }} className="text-sm px-5 py-3 rounded-xl text-neutral-500 hover:text-white transition-colors font-bold">Cancelar</button>
+            <div className="px-5 sm:px-8 py-5 border-t border-[var(--border-primary)] bg-[var(--bg-scrim)] flex items-center justify-end gap-3">
+              <button onClick={() => { setDonePrompt(null); setValidationError(null); }} className="text-sm px-5 py-3 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors font-bold">Cancelar</button>
               <button onClick={confirmDoneMove} className="text-sm px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition-all shadow-lg shadow-emerald-600/20">Confirmar</button>
             </div>
           </div>
@@ -2006,29 +2110,29 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
       {/* Alerta de Banco de Horas */}
       {pendingLimitAlerts.length > 0 && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center px-4 pt-4 pb-24 sm:p-4 z-[100] fade-in" onClick={() => setDismissedLimits(new Set([...dismissedLimits, ...pendingLimitAlerts.map(c => c.id)]))}>
-          <div className="w-full max-w-md rounded-[32px] bg-[#12121a] border border-red-500/30 flex flex-col shadow-2xl overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
-            <div className="px-5 sm:px-8 py-5 sm:py-6 border-b border-[#27272a] flex items-center gap-3">
+          <div className="w-full max-w-md rounded-[32px] bg-[var(--bg-secondary)] border border-red-500/30 flex flex-col shadow-2xl overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
+            <div className="px-5 sm:px-8 py-5 sm:py-6 border-b border-[var(--border-primary)] flex items-center gap-3">
               <div className="p-3 bg-red-500/10 rounded-2xl shadow-inner text-red-500"><AlertTriangle size={24} /></div>
-              <h3 className="font-display font-bold text-xl text-white tracking-tight">Alerta de Limite</h3>
+              <h3 className="font-display font-bold text-xl text-[var(--text-primary)] tracking-tight">Alerta de Limite</h3>
             </div>
             <div className="p-5 sm:p-8 flex flex-col gap-4">
-              <p className="text-sm text-neutral-400">Os seguintes clientes esgotaram as horas mensais ou estão próximos do fim:</p>
+              <p className="text-sm text-[var(--text-secondary)]">Os seguintes clientes esgotaram as horas mensais ou estão próximos do fim:</p>
               <div className="flex flex-col gap-3 max-h-40 overflow-y-auto kp-scroll pr-2">
                 {pendingLimitAlerts.map(c => {
                   const cTasks = tasks.filter((t: any) => t.clientId === c.id);
                   const hours = cTasks.reduce((acc: number, t: any) => acc + (getElapsed(t) / 3600), 0);
                   const remaining = (c.contractedHours || 0) - hours;
                   return (
-                    <div key={c.id} className="flex justify-between items-center bg-[#09090b] border border-[#27272a] p-4 rounded-xl">
-                      <span className="text-sm font-bold text-white">{c.name}</span>
+                    <div key={c.id} className="flex justify-between items-center bg-[var(--bg-primary)] border border-[var(--border-primary)] p-4 rounded-xl">
+                      <span className="text-sm font-bold text-[var(--text-primary)]">{c.name}</span>
                       <span className={`text-xs font-black px-2.5 py-1 rounded-md ${remaining < 0 ? 'bg-red-500/10 text-red-500' : 'bg-amber-500/10 text-amber-500'}`}>{remaining.toFixed(1)}h Restam</span>
                     </div>
                   );
                 })}
               </div>
-              <p className="text-[11px] text-neutral-500 italic">Formalize o aviso na aba Clientes para continuar.</p>
+              <p className="text-[11px] text-[var(--text-muted)] italic">Formalize o aviso na aba Clientes para continuar.</p>
             </div>
-            <div className="px-5 sm:px-8 py-5 border-t border-[#27272a] bg-black/20 flex justify-end">
+            <div className="px-5 sm:px-8 py-5 border-t border-[var(--border-primary)] bg-[var(--bg-scrim)] flex justify-end">
               <button onClick={() => setDismissedLimits((prev: any) => new Set([...prev, ...pendingLimitAlerts.map(c => c.id)]))} className="w-full sm:w-auto text-sm px-8 py-3.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold transition-all shadow-lg shadow-red-600/20">Ciente do Aviso</button>
             </div>
           </div>
@@ -2038,16 +2142,16 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
       {/* Confirmar Exclusão de Cartão */}
       {confirmDelete !== null && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center px-4 pt-4 pb-24 sm:p-4 z-[110] fade-in" onClick={() => setConfirmDelete(null)}>
-          <div className="w-full max-w-sm rounded-[32px] bg-[#12121a] border border-[#27272a] p-5 sm:p-8 shadow-2xl relative animate-modal-pop" onClick={e => e.stopPropagation()}>
+          <div className="w-full max-w-sm rounded-[32px] bg-[var(--bg-secondary)] border border-[var(--border-primary)] p-5 sm:p-8 shadow-2xl relative animate-modal-pop" onClick={e => e.stopPropagation()}>
             <div className="flex items-center gap-3 mb-4 text-red-500">
               <div className="p-3 bg-red-500/10 rounded-2xl shadow-inner"><Trash2 size={24} /></div>
               <h3 className="font-bold text-xl tracking-tight">Apagar Card</h3>
             </div>
-            <p className="text-sm text-neutral-400 mb-8 leading-relaxed">
+            <p className="text-sm text-[var(--text-secondary)] mb-8 leading-relaxed">
               Deseja remover esta demanda definitivamente do sistema? A ação não pode ser desfeita.
             </p>
             <div className="flex flex-col sm:flex-row items-center gap-3">
-              <button onClick={() => setConfirmDelete(null)} className="w-full sm:flex-1 py-3.5 sm:py-3 rounded-2xl border border-[#27272a] hover:bg-white/5 text-white font-bold transition-all text-sm">Cancelar</button>
+              <button onClick={() => setConfirmDelete(null)} className="w-full sm:flex-1 py-3.5 sm:py-3 rounded-2xl border border-[var(--border-primary)] hover:bg-[var(--bg-overlay)] text-[var(--text-primary)] font-bold transition-all text-sm">Cancelar</button>
               <button onClick={async () => {
                   const idToDelete = confirmDelete;
                   setConfirmDelete(null);
@@ -2064,24 +2168,24 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
 
       {/* Alerta "hora de começar" */}
       {dueAlert && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[96] w-[92%] max-w-md rounded-2xl bg-[#12121a] border border-teal-500/30 shadow-2xl overflow-hidden animate-modal-pop">
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[96] w-[92%] max-w-md rounded-2xl bg-[var(--bg-secondary)] border border-teal-500/30 shadow-2xl overflow-hidden animate-modal-pop">
           <div className="p-4 flex items-start gap-3">
             <div className="p-2 rounded-xl bg-teal-500/10 border border-teal-500/20 shrink-0"><Clock size={18} className="text-teal-400" /></div>
             <div className="min-w-0 flex-1">
               <div className="text-[10px] font-bold uppercase tracking-widest text-teal-400 mb-0.5">Hora de começar</div>
-              <div className="text-sm font-bold text-white leading-snug font-display">{dueAlert.title}</div>
-              <div className="text-[11px] text-neutral-500 mt-0.5 truncate">
+              <div className="text-sm font-bold text-[var(--text-primary)] leading-snug font-display">{dueAlert.title}</div>
+              <div className="text-[11px] text-[var(--text-muted)] mt-0.5 truncate">
                 {(clients.find((c: any) => c.id === dueAlert.clientId)?.name || '')}{clients.find((c: any) => c.id === dueAlert.clientId)?.name ? ' · ' : ''}{(() => { const s = new Date(dueAlert.scheduledStart); return `${String(s.getHours()).padStart(2, '0')}:${String(s.getMinutes()).padStart(2, '0')}`; })()}
               </div>
             </div>
-            <button onClick={() => setDueAlert(null)} className="p-1.5 rounded-lg text-neutral-500 hover:text-white transition-colors shrink-0"><X size={16} /></button>
+            <button onClick={() => setDueAlert(null)} className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors shrink-0"><X size={16} /></button>
           </div>
           <div className="px-4 pb-4 flex items-center gap-2">
             <button onClick={() => { handleRequestMove(dueAlert.id, null, 'inprogress'); if (!dueAlert.timerRunning) toggleTimer(dueAlert.id); setDueAlert(null); }} className="flex-1 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold uppercase tracking-widest transition-colors flex items-center justify-center gap-2"><Play size={14} /> Iniciar agora</button>
-            <button onClick={() => { openEditModal(dueAlert); setDueAlert(null); }} className="px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-neutral-300 hover:text-white text-xs font-bold uppercase tracking-widest transition-colors">Abrir</button>
+            <button onClick={() => { openEditModal(dueAlert); setDueAlert(null); }} className="px-4 py-2.5 rounded-xl bg-[var(--bg-overlay)] border border-[var(--border-overlay)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] text-xs font-bold uppercase tracking-widest transition-colors">Abrir</button>
           </div>
           {typeof Notification !== 'undefined' && Notification.permission === 'default' && (
-            <button onClick={() => { try { Notification.requestPermission(); } catch {} }} className="w-full py-2.5 bg-white/[0.03] border-t border-white/5 text-[10px] font-bold uppercase tracking-widest text-neutral-500 hover:text-teal-400 transition-colors">🔔 Ativar avisos no navegador</button>
+            <button onClick={() => { try { Notification.requestPermission(); } catch {} }} className="w-full py-2.5 bg-white/[0.03] border-t border-[var(--border-overlay)] text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] hover:text-teal-400 transition-colors">🔔 Ativar avisos no navegador</button>
           )}
         </div>
       )}
@@ -2145,21 +2249,21 @@ function ProfileModal({ user, responsibles, onClose, onUpdate }: any) {
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center px-4 pt-4 pb-24 sm:p-4 z-[90] fade-in" onClick={onClose}>
-      <div className="w-full max-w-sm rounded-[32px] bg-[#12121a] border border-[#27272a] shadow-2xl relative overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
-        <div className="px-5 sm:px-8 py-5 sm:py-6 border-b border-[#27272a] bg-[#0f0f13] flex items-center justify-between">
+      <div className="w-full max-w-sm rounded-[32px] shadow-2xl relative overflow-hidden animate-modal-pop" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }} onClick={e => e.stopPropagation()}>
+        <div className="px-5 sm:px-8 py-5 sm:py-6 border-b flex items-center justify-between" style={{ borderColor: 'var(--border-primary)', background: 'var(--bg-tertiary)' }}>
           <div className="flex items-center gap-3">
              <UserCog size={20} className="text-indigo-400" />
-             <h3 className="font-display font-bold text-xl text-white tracking-tight">Meu Perfil</h3>
+             <h3 className="font-display font-bold text-xl tracking-tight" style={{ color: 'var(--text-primary)' }}>Meu Perfil</h3>
           </div>
-          <button onClick={onClose} className="p-2 rounded-xl text-neutral-500 hover:text-white transition-colors"><X size={20}/></button>
+          <button onClick={onClose} className="p-2 rounded-xl transition-colors hover:text-[var(--text-primary)]" style={{ color: 'var(--text-muted)' }}><X size={20}/></button>
         </div>
-        
+
         <div className="p-5 sm:p-8 flex flex-col gap-6">
           <div className="flex flex-col items-center gap-4 mb-2">
-             <div className="w-24 h-24 rounded-[20px] bg-black border border-[#27272a] flex items-center justify-center text-3xl font-bold text-indigo-400 shadow-xl overflow-hidden relative group">
+             <div className="w-24 h-24 rounded-[20px] flex items-center justify-center text-3xl font-bold text-indigo-400 shadow-xl overflow-hidden relative group" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-primary)' }}>
                 <UserAvatar url={avatarInput} name={user.name} />
              </div>
-             <p className="text-sm font-bold text-white">{user.name}</p>
+             <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{user.name}</p>
           </div>
 
           {feedback && (
@@ -2169,18 +2273,18 @@ function ProfileModal({ user, responsibles, onClose, onUpdate }: any) {
           )}
 
           <div>
-            <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">URL da Fotografia de Perfil</label>
-            <input value={avatarInput} onChange={e => setAvatarInput(e.target.value)} className="w-full bg-[#09090b] border border-[#27272a] rounded-xl px-4 py-3.5 text-sm text-white outline-none focus:border-indigo-500 transition-colors" placeholder="https://site.com/sua-foto.jpg" />
-            <p className="text-[10px] text-neutral-600 mt-1.5 ml-1 leading-relaxed">Cole o link (URL) direto de uma imagem online. Ele será guardado no banco de dados para acesso em qualquer dispositivo.</p>
+            <label className="text-[10px] font-bold uppercase tracking-widest mb-2 block ml-1" style={{ color: 'var(--text-muted)' }}>URL da Fotografia de Perfil</label>
+            <input value={avatarInput} onChange={e => setAvatarInput(e.target.value)} className="w-full rounded-xl px-4 py-3.5 text-sm outline-none focus:border-indigo-500 transition-colors" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-primary)', color: 'var(--text-primary)' }} placeholder="https://site.com/sua-foto.jpg" />
+            <p className="text-[10px] mt-1.5 ml-1 leading-relaxed" style={{ color: 'var(--text-muted)' }}>Cole o link (URL) direto de uma imagem online. Ele será guardado no banco de dados para acesso em qualquer dispositivo.</p>
           </div>
 
           <div>
-            <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">Nova Senha</label>
-            <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="w-full bg-[#09090b] border border-[#27272a] rounded-xl px-4 py-3.5 text-sm text-white outline-none focus:border-indigo-500 transition-colors" placeholder="Deixe em branco para manter a atual" />
+            <label className="text-[10px] font-bold uppercase tracking-widest mb-2 block ml-1" style={{ color: 'var(--text-muted)' }}>Nova Senha</label>
+            <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="w-full rounded-xl px-4 py-3.5 text-sm outline-none focus:border-indigo-500 transition-colors" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-primary)', color: 'var(--text-primary)' }} placeholder="Deixe em branco para manter a atual" />
           </div>
         </div>
-        
-        <div className="px-5 sm:px-8 py-5 border-t border-[#27272a] bg-[#0f0f13] flex items-center justify-end">
+
+        <div className="px-5 sm:px-8 py-5 border-t flex items-center justify-end" style={{ borderColor: 'var(--border-primary)', background: 'var(--bg-tertiary)' }}>
           <button onClick={handleSave} disabled={isLoading} className="w-full sm:w-auto text-xs font-bold uppercase tracking-widest px-8 py-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition-all shadow-[0_0_15px_rgba(79,70,229,0.3)]">
             {isLoading ? "A Salvar..." : "Salvar Alterações"}
           </button>
@@ -2192,12 +2296,12 @@ function ProfileModal({ user, responsibles, onClose, onUpdate }: any) {
 
 function SidebarBtn({ icon, active, onClick, tooltip, alert, count }: any) {
   return (
-    <button onClick={onClick} className={`w-12 h-12 rounded-[14px] flex items-center justify-center transition-all relative group ${active ? 'bg-indigo-600 text-white shadow-[0_0_15px_rgba(79,70,229,0.3)]' : 'bg-transparent text-neutral-500 hover:bg-white/5 hover:text-white'}`}>
+    <button onClick={onClick} className={`w-12 h-12 rounded-[14px] flex items-center justify-center transition-all relative group ${active ? 'bg-indigo-600 text-white shadow-[0_0_15px_rgba(79,70,229,0.3)]' : 'bg-transparent text-[var(--text-muted)] hover:bg-[var(--bg-overlay)] hover:text-[var(--text-primary)]'}`}>
       {icon}
       {count > 0 ? (
-        <span className="absolute top-1 right-1 min-w-[17px] h-[17px] px-1 rounded-full bg-red-500 text-white text-[9px] font-black flex items-center justify-center shadow-[0_0_8px_rgba(239,68,68,0.8)] border border-[#0a0a0f]">{count}</span>
+        <span className="absolute top-1 right-1 min-w-[17px] h-[17px] px-1 rounded-full bg-red-500 text-white text-[9px] font-black flex items-center justify-center shadow-[0_0_8px_rgba(239,68,68,0.8)] border border-[var(--bg-secondary)]">{count}</span>
       ) : alert && <span className="absolute top-2.5 right-2.5 w-2 h-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]" />}
-      <span className="absolute left-16 bg-black text-white text-[10px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-md opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all pointer-events-none z-50 border border-white/10 whitespace-nowrap shadow-xl">
+      <span className="absolute left-16 bg-black text-white text-[10px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-md opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all pointer-events-none z-50 border border-[var(--border-overlay)] whitespace-nowrap shadow-xl">
         {tooltip}
       </span>
     </button>
@@ -2206,7 +2310,7 @@ function SidebarBtn({ icon, active, onClick, tooltip, alert, count }: any) {
 
 function MobileNavBtn({ icon, label, active, onClick, alert, count }: any) {
   return (
-    <button onClick={onClick} className={`flex-1 py-2 px-1 rounded-xl flex flex-col items-center justify-center transition-all relative gap-1.5 ${active ? 'text-indigo-400' : 'text-neutral-500 hover:text-neutral-300'}`}>
+    <button onClick={onClick} className={`flex-1 py-2 px-1 rounded-xl flex flex-col items-center justify-center transition-all relative gap-1.5 ${active ? 'text-indigo-400' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>
       {icon}
       <span className="text-[8px] sm:text-[9px] font-bold uppercase tracking-widest truncate max-w-full">{label}</span>
       {count > 0 ? (
@@ -2219,15 +2323,15 @@ function MobileNavBtn({ icon, label, active, onClick, alert, count }: any) {
 function OverlayModal({ title, icon, onClose, children, fullWidth, isClosing }: any) {
   return (
     <div className={`fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center px-3 pt-3 pb-24 sm:p-4 z-[60] ${isClosing ? 'fade-out' : 'fade-in'}`} onClick={onClose}>
-      <div className={`bg-[#12121a] border border-[#27272a] rounded-3xl sm:rounded-[32px] shadow-2xl flex flex-col overflow-hidden w-full ${isClosing ? 'animate-modal-out' : 'animate-modal-pop'} ${fullWidth ? 'max-w-7xl h-[80dvh] sm:h-[88dvh]' : 'max-w-4xl max-h-[80dvh] sm:max-h-[85dvh]'}`} onClick={(e) => e.stopPropagation()}>
-        <div className="px-5 sm:px-8 py-5 sm:py-6 border-b border-[#27272a] flex items-center justify-between bg-[#0f0f13]">
+      <div className={`rounded-3xl sm:rounded-[32px] shadow-2xl flex flex-col overflow-hidden w-full ${isClosing ? 'animate-modal-out' : 'animate-modal-pop'} ${fullWidth ? 'max-w-7xl h-[80dvh] sm:h-[88dvh]' : 'max-w-4xl max-h-[80dvh] sm:max-h-[85dvh]'}`} style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }} onClick={(e) => e.stopPropagation()}>
+        <div className="px-5 sm:px-8 py-5 sm:py-6 border-b flex items-center justify-between" style={{ borderColor: 'var(--border-primary)', background: 'var(--bg-tertiary)' }}>
            <div className="flex items-center gap-4">
-             <div className="p-2.5 bg-white/5 rounded-xl border border-white/10 hidden sm:block">{icon}</div>
-             <h2 className="font-display text-xl font-bold text-white tracking-tight">{title}</h2>
+             <div className="p-2.5 rounded-xl hidden sm:block" style={{ background: 'var(--bg-overlay)', border: '1px solid var(--border-overlay)' }}>{icon}</div>
+             <h2 className="font-display text-xl font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>{title}</h2>
            </div>
-           <button onClick={onClose} className="p-2.5 rounded-xl text-neutral-500 hover:bg-white/5 hover:text-white transition-colors shrink-0"><X size={20}/></button>
+           <button onClick={onClose} className="p-2.5 rounded-xl transition-colors shrink-0 hover:bg-[var(--bg-overlay)] hover:text-[var(--text-primary)]" style={{ color: 'var(--text-muted)' }}><X size={20}/></button>
         </div>
-        <div className="flex-1 overflow-y-auto kp-scroll p-5 sm:p-8 bg-[#09090b] flex flex-col">
+        <div className="flex-1 overflow-y-auto kp-scroll p-5 sm:p-8 flex flex-col" style={{ background: 'var(--bg-primary)' }}>
           {children}
         </div>
       </div>
@@ -2237,12 +2341,12 @@ function OverlayModal({ title, icon, onClose, children, fullWidth, isClosing }: 
 
 function FilterSelect({ value, onChange, options, defaultLabel }: any) {
   return (
-    <div className="relative flex items-center w-full lg:w-auto shrink-0 flex-1 lg:flex-none bg-[#12121a] lg:bg-transparent rounded-xl lg:rounded-none">
-      <select value={value || 'all'} onChange={(e) => onChange(e.target.value)} className="appearance-none w-full lg:w-auto text-[11px] font-bold bg-transparent border border-[#27272a] lg:border-none pl-4 pr-10 py-3 lg:p-0 lg:pr-6 rounded-xl lg:rounded-none text-neutral-300 outline-none cursor-pointer transition-all hover:text-white">
-        <option value="all" className="bg-[#1c1d26] text-white">{defaultLabel}</option>
-        {options.map((o: any) => (<option key={o.id} value={o.id} className="bg-[#1c1d26] text-white">{o.name}</option>))}
+    <div className="relative flex items-center w-full lg:w-auto shrink-0 flex-1 lg:flex-none bg-[var(--bg-secondary)] lg:bg-transparent rounded-xl lg:rounded-none">
+      <select value={value || 'all'} onChange={(e) => onChange(e.target.value)} className="appearance-none w-full lg:w-auto text-[11px] font-bold bg-transparent border border-[var(--border-primary)] lg:border-none pl-4 pr-10 py-3 lg:p-0 lg:pr-6 rounded-xl lg:rounded-none text-[var(--text-secondary)] outline-none cursor-pointer transition-all hover:text-[var(--text-primary)]">
+        <option value="all" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">{defaultLabel}</option>
+        {options.map((o: any) => (<option key={o.id} value={o.id} className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">{o.name}</option>))}
       </select>
-      <ChevronDown size={14} className="absolute right-4 lg:right-0 text-neutral-600 pointer-events-none" />
+      <ChevronDown size={14} className="absolute right-4 lg:right-0 text-[var(--text-muted)] pointer-events-none" />
     </div>
   );
 }
@@ -2250,12 +2354,12 @@ function FilterSelect({ value, onChange, options, defaultLabel }: any) {
 function CustomSelect({ label, value, onChange, options, hasError, required }: any) {
   return (
     <div className="w-full">
-      <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-1.5 block ml-1">{label} {required && <span className="text-red-500">*</span>}</label>
+      <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-1.5 block ml-1">{label} {required && <span className="text-red-500">*</span>}</label>
       <div className="relative flex items-center">
-        <select value={value || ''} onChange={onChange} className={`appearance-none w-full bg-[#09090b] border rounded-xl pl-4 pr-10 py-4 sm:py-3.5 text-sm text-white outline-none focus:border-indigo-500 transition-all cursor-pointer shadow-sm ${hasError ? 'border-red-500' : 'border-[#27272a]'}`}>
+        <select value={value || ''} onChange={onChange} className={`appearance-none w-full bg-[var(--bg-primary)] border rounded-xl pl-4 pr-10 py-4 sm:py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 transition-all cursor-pointer shadow-sm ${hasError ? 'border-red-500' : 'border-[var(--border-primary)]'}`}>
           {options}
         </select>
-        <ChevronDown size={16} className="absolute right-4 text-neutral-600 pointer-events-none" />
+        <ChevronDown size={16} className="absolute right-4 text-[var(--text-muted)] pointer-events-none" />
       </div>
     </div>
   );
@@ -2274,7 +2378,7 @@ function LiveElapsed({ task, getElapsed }: any) {
 }
 
 const NOTE_COLORS = [
-  { id: 'default', bg: 'bg-[#1c1d26]', border: 'border-[#27272a]', swatch: 'bg-neutral-500' },
+  { id: 'default', bg: 'bg-[var(--bg-tertiary)]', border: 'border-[var(--border-primary)]', swatch: 'bg-neutral-500' },
   { id: 'red', bg: 'bg-red-500/10', border: 'border-red-500/30', swatch: 'bg-red-500' },
   { id: 'orange', bg: 'bg-orange-500/10', border: 'border-orange-500/30', swatch: 'bg-orange-500' },
   { id: 'yellow', bg: 'bg-amber-500/10', border: 'border-amber-500/30', swatch: 'bg-amber-500' },
@@ -2308,8 +2412,8 @@ function NoteCard({ note, onUpdate, onDelete }: any) {
     <div className={`rounded-2xl border p-4 flex flex-col gap-2 relative group transition-colors shadow-sm ${style.bg} ${style.border}`}>
       {editing ? (
         <>
-          <input autoFocus value={title} onChange={e => setTitle(e.target.value)} placeholder="Título" className="w-full bg-transparent outline-none font-bold text-sm text-white placeholder-neutral-600" />
-          <textarea value={content} onChange={e => setContent(e.target.value)} placeholder="Nota..." rows={5} className="w-full bg-transparent outline-none text-sm text-neutral-200 placeholder-neutral-600 resize-none" />
+          <input autoFocus value={title} onChange={e => setTitle(e.target.value)} placeholder="Título" className="w-full bg-transparent outline-none font-bold text-sm placeholder:text-[var(--text-muted)]" style={{ color: 'var(--text-primary)' }} />
+          <textarea value={content} onChange={e => setContent(e.target.value)} placeholder="Nota..." rows={5} className="w-full bg-transparent outline-none text-sm placeholder:text-[var(--text-muted)] resize-none" style={{ color: 'var(--text-secondary)' }} />
           <div className="flex justify-end">
             <button onClick={commit} className="text-[10px] font-black uppercase tracking-widest text-teal-400 hover:text-teal-300 px-3 py-1.5 transition-colors">Concluído</button>
           </div>
@@ -2317,29 +2421,31 @@ function NoteCard({ note, onUpdate, onDelete }: any) {
       ) : (
         <div onClick={() => setEditing(true)} className="cursor-text flex flex-col gap-2 min-h-[60px]">
           {note.pinned && <Pin size={12} className="absolute top-3 right-3 text-amber-400 fill-amber-400" />}
-          {note.title && <h4 className="font-bold text-sm text-white break-words pr-4">{note.title}</h4>}
+          {note.title && <h4 className="font-bold text-sm break-words pr-4" style={{ color: 'var(--text-primary)' }}>{note.title}</h4>}
           {note.content ? (
-            <p className="text-sm text-neutral-300 whitespace-pre-wrap break-words line-clamp-6">{note.content}</p>
+            <p className="text-sm whitespace-pre-wrap break-words line-clamp-6" style={{ color: 'var(--text-secondary)' }}>{note.content}</p>
           ) : (
-            <p className="text-sm text-neutral-600 italic">Nota vazia</p>
+            <p className="text-sm italic" style={{ color: 'var(--text-muted)' }}>Nota vazia</p>
           )}
         </div>
       )}
 
       <div className="flex items-center justify-between mt-1 pt-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
         <div className="relative">
-          <button onClick={() => setPickerOpen(v => !v)} title="Cor" className="p-1.5 rounded-lg hover:bg-black/20 text-neutral-400 hover:text-white transition-colors"><Palette size={13} /></button>
+          <button onClick={() => setPickerOpen(v => !v)} title="Cor" className="p-1.5 rounded-lg hover:bg-[var(--bg-overlay-strong)] transition-colors" style={{ color: 'var(--text-secondary)' }}><Palette size={13} /></button>
           {pickerOpen && (
-            <div className="absolute bottom-full left-0 mb-1 flex gap-1.5 bg-[#1c1d26] border border-[#27272a] rounded-xl p-2 shadow-xl z-10">
+            <div className="absolute bottom-full left-0 mb-1 flex gap-1.5 rounded-xl p-2 shadow-xl z-10" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-primary)' }}>
               {NOTE_COLORS.map(c => (
-                <button key={c.id} onClick={() => { onUpdate({ color: c.id }); setPickerOpen(false); }} className={`w-5 h-5 rounded-full ${c.swatch} ${note.color === c.id ? 'ring-2 ring-offset-2 ring-offset-[#1c1d26] ring-white' : ''}`} title={c.id} />
+                <button key={c.id} onClick={() => { onUpdate({ color: c.id }); setPickerOpen(false); }} className={`w-5 h-5 rounded-full ${c.swatch}`} style={note.color === c.id ? { boxShadow: '0 0 0 2px var(--bg-tertiary), 0 0 0 4px var(--text-primary)' } : undefined} title={c.id} />
               ))}
             </div>
           )}
         </div>
         <div className="flex items-center gap-1">
-          <button onClick={() => onUpdate({ pinned: !note.pinned })} title={note.pinned ? 'Desafixar' : 'Fixar'} className={`p-1.5 rounded-lg hover:bg-black/20 transition-colors ${note.pinned ? 'text-amber-400' : 'text-neutral-400 hover:text-white'}`}><Pin size={13} /></button>
-          <button onClick={onDelete} title="Excluir" className="p-1.5 rounded-lg hover:bg-red-500/10 text-neutral-400 hover:text-red-400 transition-colors"><Trash2 size={13} /></button>
+          <button onClick={() => onUpdate({ pinned: !note.pinned })} title={note.pinned ? 'Desafixar' : 'Fixar'} className="p-1.5 rounded-lg hover:bg-[var(--bg-overlay-strong)] transition-colors" style={{ color: note.pinned ? undefined : 'var(--text-secondary)' }}>
+            <Pin size={13} className={note.pinned ? 'text-amber-400' : ''} />
+          </button>
+          <button onClick={onDelete} title="Excluir" className="p-1.5 rounded-lg hover:bg-red-500/10 hover:text-red-400 transition-colors" style={{ color: 'var(--text-secondary)' }}><Trash2 size={13} /></button>
         </div>
       </div>
     </div>
@@ -2373,9 +2479,9 @@ function NotesPanelContent({ notes, setNotes, user, onDeleteNote }: any) {
   return (
     <div className="flex flex-col h-full fade-in">
       <div className="max-w-xl mx-auto w-full mb-8">
-        <div className="bg-[#12121a] border border-[#27272a] rounded-2xl p-4 shadow-sm">
+        <div className="rounded-2xl p-4 shadow-sm" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }}>
           {quickOpen && (
-            <input autoFocus value={quickTitle} onChange={e => setQuickTitle(e.target.value)} placeholder="Título" className="w-full bg-transparent outline-none font-bold text-sm text-white placeholder-neutral-600 mb-2" />
+            <input autoFocus value={quickTitle} onChange={e => setQuickTitle(e.target.value)} placeholder="Título" className="w-full bg-transparent outline-none font-bold text-sm placeholder:text-[var(--text-muted)] mb-2" style={{ color: 'var(--text-primary)' }} />
           )}
           <textarea
             value={quickContent}
@@ -2383,11 +2489,12 @@ function NotesPanelContent({ notes, setNotes, user, onDeleteNote }: any) {
             onFocus={() => setQuickOpen(true)}
             placeholder="Criar nota..."
             rows={quickOpen ? 3 : 1}
-            className="w-full bg-transparent outline-none text-sm text-neutral-200 placeholder-neutral-500 resize-none"
+            className="w-full bg-transparent outline-none text-sm placeholder:text-[var(--text-muted)] resize-none"
+            style={{ color: 'var(--text-secondary)' }}
           />
           {quickOpen && (
             <div className="flex justify-end gap-2 mt-2">
-              <button onClick={() => { setQuickTitle(''); setQuickContent(''); setQuickOpen(false); }} className="text-[11px] font-bold uppercase tracking-widest text-neutral-500 hover:text-white px-4 py-2 rounded-lg transition-colors">Cancelar</button>
+              <button onClick={() => { setQuickTitle(''); setQuickContent(''); setQuickOpen(false); }} className="text-[11px] font-bold uppercase tracking-widest px-4 py-2 rounded-lg transition-colors hover:text-[var(--text-primary)]" style={{ color: 'var(--text-muted)' }}>Cancelar</button>
               <button onClick={createQuickNote} className="text-[11px] font-black uppercase tracking-widest text-white bg-indigo-600 hover:bg-indigo-500 px-5 py-2 rounded-lg transition-colors">Criar</button>
             </div>
           )}
@@ -2395,14 +2502,14 @@ function NotesPanelContent({ notes, setNotes, user, onDeleteNote }: any) {
       </div>
 
       {sorted.length === 0 ? (
-        <div className="py-16 text-center text-sm text-neutral-600 border border-dashed border-[#27272a] rounded-3xl max-w-xl mx-auto w-full">
+        <div className="py-16 text-center text-sm border border-dashed rounded-3xl max-w-xl mx-auto w-full" style={{ color: 'var(--text-muted)', borderColor: 'var(--border-primary)' }}>
           Nenhuma nota ainda. Crie a primeira acima.
         </div>
       ) : (
         <div className="flex flex-col gap-6">
           {pinned.length > 0 && (
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-3 ml-1">Fixadas</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest mb-3 ml-1" style={{ color: 'var(--text-muted)' }}>Fixadas</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {pinned.map((n: any) => <NoteCard key={n.id} note={n} onUpdate={(patch: any) => updateNote(n.id, patch)} onDelete={() => onDeleteNote(n.id)} />)}
               </div>
@@ -2410,7 +2517,7 @@ function NotesPanelContent({ notes, setNotes, user, onDeleteNote }: any) {
           )}
           {others.length > 0 && (
             <div>
-              {pinned.length > 0 && <p className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-3 ml-1">Outras</p>}
+              {pinned.length > 0 && <p className="text-[10px] font-bold uppercase tracking-widest mb-3 ml-1" style={{ color: 'var(--text-muted)' }}>Outras</p>}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {others.map((n: any) => <NoteCard key={n.id} note={n} onUpdate={(patch: any) => updateNote(n.id, patch)} onDelete={() => onDeleteNote(n.id)} />)}
               </div>
@@ -2439,14 +2546,14 @@ function ResponsiblesPanelContent({ responsibles, tasks, user }: any) {
         {responsibles.map((r: any) => {
           const count = tasks.filter((t: any) => t.responsibleId === r.id).length;
           return (
-            <div key={r.id} className="flex items-center justify-between gap-4 bg-[#12121a] border border-[#27272a] rounded-2xl p-5 group hover:border-indigo-500/50 transition-all shadow-sm">
+            <div key={r.id} className="flex items-center justify-between gap-4 rounded-2xl p-5 group hover:border-indigo-500/50 transition-all shadow-sm" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }}>
               <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center overflow-hidden">
+                <div className="w-12 h-12 rounded-xl flex items-center justify-center overflow-hidden" style={{ background: 'var(--bg-overlay)', border: '1px solid var(--border-overlay)', color: 'var(--text-primary)' }}>
                   <UserAvatar url={r.avatar} name={r.name} />
                 </div>
                 <div className="flex flex-col">
-                  <span className="text-base font-bold text-neutral-100">{r.name}{r.is_admin ? ' (Admin)' : ''}</span>
-                  <span className="text-[10px] text-neutral-500 font-bold uppercase tracking-widest mt-0.5">{count} Demandas</span>
+                  <span className="text-base font-bold" style={{ color: 'var(--text-primary)' }}>{r.name}{r.is_admin ? ' (Admin)' : ''}</span>
+                  <span className="text-[10px] font-bold uppercase tracking-widest mt-0.5" style={{ color: 'var(--text-muted)' }}>{count} Demandas</span>
                 </div>
               </div>
             </div>
@@ -2490,45 +2597,45 @@ function ClientModal({ modal, setModal, setClients, user }: any) {
 
   return (
     <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center px-3 pt-3 pb-24 sm:p-4 z-[70] fade-in" onClick={() => setModal(null)}>
-      <div className="w-full max-w-md rounded-3xl sm:rounded-[32px] bg-[#12121a] border border-[#27272a] flex flex-col max-h-[80dvh] sm:max-h-[85dvh] shadow-2xl overflow-hidden animate-modal-pop" onClick={(e) => e.stopPropagation()}>
-        <div className="px-5 sm:px-8 py-5 border-b border-[#27272a] flex items-center justify-between bg-[#0f0f13] shrink-0">
-          <h3 className="font-display font-bold text-xl text-white tracking-tight">{modal.mode === "add" ? "Novo Cliente" : "Editar Cliente"}</h3>
-          <button onClick={() => setModal(null)} className="p-2.5 rounded-xl text-neutral-500 hover:text-white hover:bg-white/5 transition-colors"><X size={20} /></button>
+      <div className="w-full max-w-md rounded-3xl sm:rounded-[32px] bg-[var(--bg-secondary)] border border-[var(--border-primary)] flex flex-col max-h-[80dvh] sm:max-h-[85dvh] shadow-2xl overflow-hidden animate-modal-pop" onClick={(e) => e.stopPropagation()}>
+        <div className="px-5 sm:px-8 py-5 border-b border-[var(--border-primary)] flex items-center justify-between bg-[var(--bg-tertiary)] shrink-0">
+          <h3 className="font-display font-bold text-xl text-[var(--text-primary)] tracking-tight">{modal.mode === "add" ? "Novo Cliente" : "Editar Cliente"}</h3>
+          <button onClick={() => setModal(null)} className="p-2.5 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-overlay)] transition-colors"><X size={20} /></button>
         </div>
         
-        <div className="p-5 sm:p-8 flex flex-col gap-6 bg-[#09090b] flex-1 overflow-y-auto kp-scroll">
+        <div className="p-5 sm:p-8 flex flex-col gap-6 bg-[var(--bg-primary)] flex-1 overflow-y-auto kp-scroll">
           <div>
-            <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">Nome da Empresa *</label>
-            <input autoFocus value={form.name || ''} onChange={(e) => { setForm({ ...form, name: e.target.value }); setValidationError(null); }} className={`w-full bg-[#12121a] border rounded-xl px-4 py-4 sm:py-3.5 text-sm text-white outline-none focus:border-purple-500 transition-colors ${validationError && String(validationError).includes("nome") ? "border-red-500" : "border-[#27272a]"}`} placeholder="Ex: Acme Corp" />
+            <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Nome da Empresa *</label>
+            <input autoFocus value={form.name || ''} onChange={(e) => { setForm({ ...form, name: e.target.value }); setValidationError(null); }} className={`w-full bg-[var(--bg-secondary)] border rounded-xl px-4 py-4 sm:py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-purple-500 transition-colors ${validationError && String(validationError).includes("nome") ? "border-red-500" : "border-[var(--border-primary)]"}`} placeholder="Ex: Acme Corp" />
           </div>
 
           <div>
-            <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">Teto de Horas Contratadas (Mensal)</label>
-            <input type="number" value={form.contractedHours === 0 ? '' : form.contractedHours} onChange={(e) => setForm({ ...form, contractedHours: e.target.value })} className={`w-full bg-[#12121a] border border-[#27272a] rounded-xl px-4 py-4 sm:py-3.5 text-sm text-white outline-none focus:border-purple-500 transition-colors`} placeholder="Ex: 50" />
+            <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Teto de Horas Contratadas (Mensal)</label>
+            <input type="number" value={form.contractedHours === 0 ? '' : form.contractedHours} onChange={(e) => setForm({ ...form, contractedHours: e.target.value })} className={`w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-4 sm:py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-purple-500 transition-colors`} placeholder="Ex: 50" />
           </div>
 
 
           <div>
-            <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">E-mails (Contatos)</label>
+            <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">E-mails (Contatos)</label>
             <div className="flex flex-col sm:flex-row items-center gap-3 mb-4">
-              <input value={newEmail || ''} onChange={e => setNewEmail(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddEmail()} className="w-full sm:flex-1 bg-[#12121a] border border-[#27272a] rounded-xl px-4 py-4 sm:py-3.5 text-sm text-white outline-none focus:border-purple-500 transition-colors" placeholder="Ex: gestor@empresa.com" />
-              <button onClick={handleAddEmail} className="w-full sm:w-auto justify-center px-6 py-4 sm:py-3.5 bg-white/5 border border-white/10 hover:bg-white/10 text-white rounded-xl text-xs font-bold uppercase tracking-widest transition-colors flex items-center gap-2 shrink-0"><Plus size={16}/> Add</button>
+              <input value={newEmail || ''} onChange={e => setNewEmail(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddEmail()} className="w-full sm:flex-1 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-4 sm:py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-purple-500 transition-colors" placeholder="Ex: gestor@empresa.com" />
+              <button onClick={handleAddEmail} className="w-full sm:w-auto justify-center px-6 py-4 sm:py-3.5 bg-[var(--bg-overlay)] border border-[var(--border-overlay)] hover:bg-[var(--bg-overlay-strong)] text-[var(--text-primary)] rounded-xl text-xs font-bold uppercase tracking-widest transition-colors flex items-center gap-2 shrink-0"><Plus size={16}/> Add</button>
             </div>
 
             <div className="flex flex-col gap-2 max-h-32 overflow-y-auto kp-scroll pr-1">
-              {(!form.emails || form.emails.length === 0) && <div className="text-center text-xs text-neutral-600 py-6 border border-dashed border-[#27272a] rounded-2xl">Nenhum e-mail adicionado.</div>}
+              {(!form.emails || form.emails.length === 0) && <div className="text-center text-xs text-[var(--text-muted)] py-6 border border-dashed border-[var(--border-primary)] rounded-2xl">Nenhum e-mail adicionado.</div>}
               {form.emails && form.emails.map((email: string, index: number) => (
-                <div key={index} className="flex items-center justify-between bg-[#12121a] border border-[#27272a] rounded-xl px-4 py-3">
-                  <div className="flex items-center gap-3 text-sm text-neutral-300"><Mail size={16} className="text-purple-400" /> {email}</div>
-                  <button onClick={() => handleRemoveEmail(index)} className="p-2 text-neutral-500 hover:text-red-500 transition-colors"><X size={16} /></button>
+                <div key={index} className="flex items-center justify-between bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-3">
+                  <div className="flex items-center gap-3 text-sm text-[var(--text-secondary)]"><Mail size={16} className="text-purple-400" /> {email}</div>
+                  <button onClick={() => handleRemoveEmail(index)} className="p-2 text-[var(--text-muted)] hover:text-red-500 transition-colors"><X size={16} /></button>
                 </div>
               ))}
             </div>
           </div>
         </div>
         
-        <div className="px-5 sm:px-8 py-5 border-t border-[#27272a] bg-[#0f0f13] flex items-center justify-end gap-3 shrink-0">
-          <button onClick={() => setModal(null)} className="flex-1 sm:flex-none text-xs font-bold uppercase tracking-widest px-5 py-4 rounded-xl text-neutral-500 hover:text-white transition-colors">Cancelar</button>
+        <div className="px-5 sm:px-8 py-5 border-t border-[var(--border-primary)] bg-[var(--bg-tertiary)] flex items-center justify-end gap-3 shrink-0">
+          <button onClick={() => setModal(null)} className="flex-1 sm:flex-none text-xs font-bold uppercase tracking-widest px-5 py-4 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">Cancelar</button>
           <button onClick={saveClient} className="flex-1 sm:flex-none text-xs font-black uppercase tracking-[0.15em] px-8 py-4 rounded-xl bg-purple-600 hover:bg-purple-500 text-white transition-all shadow-[0_0_15px_rgba(147,51,234,0.3)]">Salvar Cliente</button>
         </div>
       </div>
@@ -2562,21 +2669,21 @@ function ClientDetailModal({ client, tasks, getElapsed, user, onClose, onEdit, o
 
   return (
     <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center px-3 pt-3 pb-24 sm:p-4 z-[75] fade-in" onClick={onClose}>
-      <div className="w-full max-w-2xl rounded-3xl sm:rounded-[32px] bg-[#12121a] border border-[#27272a] flex flex-col max-h-[80dvh] sm:max-h-[85dvh] shadow-2xl overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
-        <div className="px-5 sm:px-8 py-5 border-b border-[#27272a] flex items-center justify-between bg-[#0f0f13] shrink-0">
+      <div className="w-full max-w-2xl rounded-3xl sm:rounded-[32px] bg-[var(--bg-secondary)] border border-[var(--border-primary)] flex flex-col max-h-[80dvh] sm:max-h-[85dvh] shadow-2xl overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
+        <div className="px-5 sm:px-8 py-5 border-b border-[var(--border-primary)] flex items-center justify-between bg-[var(--bg-tertiary)] shrink-0">
           <div className="flex items-center gap-3 min-w-0">
             <div className="p-2.5 bg-purple-500/10 rounded-xl border border-purple-500/20 shrink-0"><Building2 size={22} className="text-purple-400" /></div>
-            <h3 className="font-display font-bold text-xl text-white tracking-tight truncate">{client.name}</h3>
+            <h3 className="font-display font-bold text-xl text-[var(--text-primary)] tracking-tight truncate">{client.name}</h3>
           </div>
-          <button onClick={onClose} className="p-2.5 rounded-xl text-neutral-500 hover:text-white hover:bg-white/5 transition-colors shrink-0"><X size={20} /></button>
+          <button onClick={onClose} className="p-2.5 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-overlay)] transition-colors shrink-0"><X size={20} /></button>
         </div>
 
-        <div className="p-5 sm:p-8 flex flex-col gap-6 bg-[#09090b] flex-1 overflow-y-auto kp-scroll">
+        <div className="p-5 sm:p-8 flex flex-col gap-6 bg-[var(--bg-primary)] flex-1 min-h-0 overflow-y-auto kp-scroll">
 
           {/* Banco de horas */}
-          <div className="rounded-2xl border border-[#27272a] bg-[#12121a] p-5 sm:p-6">
+          <div className="rounded-2xl border border-[var(--border-primary)] bg-[var(--bg-secondary)] p-5 sm:p-6">
             <div className="flex items-center justify-between mb-4">
-              <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-neutral-400">Banco de Horas</h4>
+              <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--text-secondary)]">Banco de Horas</h4>
               {teto > 0 && (
                 <span className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-md border ${over ? 'bg-red-500/10 text-red-400 border-red-500/20' : near ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'}`}>
                   {over ? `${Math.abs(remaining as number).toFixed(1)}h acima` : `${(remaining as number).toFixed(1)}h restam`}
@@ -2586,10 +2693,10 @@ function ClientDetailModal({ client, tasks, getElapsed, user, onClose, onEdit, o
             {teto > 0 ? (
               <>
                 <div className="flex items-end justify-between mb-3">
-                  <span className="text-3xl font-black text-white">{worked.toFixed(1)}<span className="text-lg text-neutral-500 font-bold ml-1">h</span></span>
-                  <span className="text-xs font-bold uppercase tracking-widest text-neutral-500">de {teto}h contratadas</span>
+                  <span className="text-3xl font-black text-[var(--text-primary)]">{worked.toFixed(1)}<span className="text-lg text-[var(--text-muted)] font-bold ml-1">h</span></span>
+                  <span className="text-xs font-bold uppercase tracking-widest text-[var(--text-muted)]">de {teto}h contratadas</span>
                 </div>
-                <div className="h-2.5 rounded-full bg-black/50 overflow-hidden border border-white/5">
+                <div className="h-2.5 rounded-full bg-[var(--bg-scrim)] overflow-hidden border border-[var(--border-overlay)]">
                   <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${pct}%` }} />
                 </div>
                 {(over || near) && (
@@ -2600,37 +2707,37 @@ function ClientDetailModal({ client, tasks, getElapsed, user, onClose, onEdit, o
               </>
             ) : (
               <div className="flex items-end justify-between">
-                <span className="text-3xl font-black text-white">{worked.toFixed(1)}<span className="text-lg text-neutral-500 font-bold ml-1">h</span></span>
-                <span className="text-xs font-bold uppercase tracking-widest text-neutral-600">sem teto definido</span>
+                <span className="text-3xl font-black text-[var(--text-primary)]">{worked.toFixed(1)}<span className="text-lg text-[var(--text-muted)] font-bold ml-1">h</span></span>
+                <span className="text-xs font-bold uppercase tracking-widest text-[var(--text-muted)]">sem teto definido</span>
               </div>
             )}
           </div>
 
           {/* Mini-stats */}
           <div className="grid grid-cols-3 gap-3">
-            <div className="rounded-xl border border-[#27272a] bg-[#12121a] p-4 flex flex-col gap-1">
-              <span className="text-2xl font-black text-white">{cTasks.length}</span>
-              <span className="text-[9px] font-bold uppercase tracking-widest text-neutral-500">Demandas</span>
+            <div className="rounded-xl border border-[var(--border-primary)] bg-[var(--bg-secondary)] p-4 flex flex-col gap-1">
+              <span className="text-2xl font-black text-[var(--text-primary)]">{cTasks.length}</span>
+              <span className="text-[9px] font-bold uppercase tracking-widest text-[var(--text-muted)]">Demandas</span>
             </div>
-            <div className="rounded-xl border border-[#27272a] bg-[#12121a] p-4 flex flex-col gap-1">
+            <div className="rounded-xl border border-[var(--border-primary)] bg-[var(--bg-secondary)] p-4 flex flex-col gap-1">
               <span className="text-2xl font-black text-blue-400">{activeCount}</span>
-              <span className="text-[9px] font-bold uppercase tracking-widest text-neutral-500">Ativas</span>
+              <span className="text-[9px] font-bold uppercase tracking-widest text-[var(--text-muted)]">Ativas</span>
             </div>
-            <div className="rounded-xl border border-[#27272a] bg-[#12121a] p-4 flex flex-col gap-1">
+            <div className="rounded-xl border border-[var(--border-primary)] bg-[var(--bg-secondary)] p-4 flex flex-col gap-1">
               <span className="text-2xl font-black text-emerald-400">{doneCount}</span>
-              <span className="text-[9px] font-bold uppercase tracking-widest text-neutral-500">Concluídas</span>
+              <span className="text-[9px] font-bold uppercase tracking-widest text-[var(--text-muted)]">Concluídas</span>
             </div>
           </div>
 
           {/* Contatos */}
           <div>
-            <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-neutral-400 mb-3 ml-0.5">Contatos</h4>
+            <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--text-secondary)] mb-3 ml-0.5">Contatos</h4>
             {emails.length === 0 ? (
-              <div className="text-center text-xs text-neutral-600 py-5 border border-dashed border-[#27272a] rounded-xl">Nenhum contato cadastrado.</div>
+              <div className="text-center text-xs text-[var(--text-muted)] py-5 border border-dashed border-[var(--border-primary)] rounded-xl">Nenhum contato cadastrado.</div>
             ) : (
               <div className="flex flex-col gap-2">
                 {emails.map((e: string, i: number) => (
-                  <a key={i} href={`mailto:${e}`} className="flex items-center gap-3 bg-[#12121a] border border-[#27272a] rounded-xl px-4 py-3 text-sm text-neutral-300 hover:border-purple-500/40 transition-colors">
+                  <a key={i} href={`mailto:${e}`} className="flex items-center gap-3 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-3 text-sm text-[var(--text-secondary)] hover:border-purple-500/40 transition-colors">
                     <Mail size={16} className="text-purple-400 shrink-0" /> <span className="truncate">{e}</span>
                   </a>
                 ))}
@@ -2640,9 +2747,9 @@ function ClientDetailModal({ client, tasks, getElapsed, user, onClose, onEdit, o
 
           {/* Demandas */}
           <div>
-            <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-neutral-400 mb-3 ml-0.5">Demandas ({cTasks.length})</h4>
+            <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--text-secondary)] mb-3 ml-0.5">Demandas ({cTasks.length})</h4>
             {cTasks.length === 0 ? (
-              <div className="text-center text-xs text-neutral-600 py-5 border border-dashed border-[#27272a] rounded-xl">Nenhuma demanda para este cliente.</div>
+              <div className="text-center text-xs text-[var(--text-muted)] py-5 border border-dashed border-[var(--border-primary)] rounded-xl">Nenhuma demanda para este cliente.</div>
             ) : (
               <div className="flex flex-col gap-2">
                 {sorted.map((t: any) => {
@@ -2650,13 +2757,13 @@ function ClientDetailModal({ client, tasks, getElapsed, user, onClose, onEdit, o
                   const tempo = getElapsed(t);
                   const closed = ['done', 'cancelled', 'formalize'].includes(t.status);
                   return (
-                    <div key={t.id} className="flex items-center gap-3 bg-[#12121a] border border-[#27272a] rounded-xl p-3">
+                    <div key={t.id} className="flex items-center gap-3 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl p-3">
                       <span className={`w-2 h-2 rounded-full shrink-0 ${col?.dot || 'bg-neutral-500'}`} />
                       <div className="min-w-0 flex-1">
-                        <div className={`text-[13px] font-bold leading-snug truncate ${closed ? 'text-neutral-500' : 'text-white'}`}>{t.title}</div>
-                        <div className="text-[9px] font-bold uppercase tracking-widest text-neutral-500 mt-0.5">{col?.name || t.status}</div>
+                        <div className={`text-[13px] font-bold leading-snug truncate ${closed ? 'text-[var(--text-muted)]' : 'text-[var(--text-primary)]'}`}>{t.title}</div>
+                        <div className="text-[9px] font-bold uppercase tracking-widest text-[var(--text-muted)] mt-0.5">{col?.name || t.status}</div>
                       </div>
-                      {tempo > 0 && <span className="text-[10px] font-mono font-bold text-neutral-400 shrink-0">{formatTime(tempo)}</span>}
+                      {tempo > 0 && <span className="text-[10px] font-mono font-bold text-[var(--text-secondary)] shrink-0">{formatTime(tempo)}</span>}
                     </div>
                   );
                 })}
@@ -2666,7 +2773,7 @@ function ClientDetailModal({ client, tasks, getElapsed, user, onClose, onEdit, o
         </div>
 
         {user.isAdmin && (
-          <div className="px-5 sm:px-8 py-5 border-t border-[#27272a] bg-[#0f0f13] flex items-center justify-between gap-3 shrink-0">
+          <div className="px-5 sm:px-8 py-5 border-t border-[var(--border-primary)] bg-[var(--bg-tertiary)] flex items-center justify-between gap-3 shrink-0">
             <button onClick={() => onRemove(client.id)} className="flex items-center gap-2 px-4 py-3 rounded-xl text-red-400/70 hover:text-red-400 hover:bg-red-500/10 text-[10px] font-bold uppercase tracking-widest transition-colors">
               <Trash2 size={16} /> Remover
             </button>
@@ -2716,7 +2823,7 @@ function ClientsPanelContent({ clients, setClients, tasks, setTasks, user, getEl
       
       <div className="grid grid-cols-1 gap-4">
         {clients.length === 0 && (
-          <div className="text-center text-sm text-neutral-500 py-16 border border-dashed border-[#27272a] rounded-[24px]">
+          <div className="text-center text-sm text-[var(--text-muted)] py-16 border border-dashed border-[var(--border-primary)] rounded-[24px]">
             A sua carteira de clientes está vazia.
           </div>
         )}
@@ -2730,12 +2837,12 @@ function ClientsPanelContent({ clients, setClients, tasks, setTasks, user, getEl
           const isNearLimit = remaining !== null && remaining <= 5;
           
           return (
-            <div key={c.id} onClick={() => setDetailClient(c)} className="flex flex-col sm:flex-row sm:items-center justify-between bg-[#12121a] border border-[#27272a] rounded-[20px] p-6 transition-all gap-5 sm:gap-0 shadow-sm relative group hover:border-purple-500/50 cursor-pointer">
+            <div key={c.id} onClick={() => setDetailClient(c)} className="flex flex-col sm:flex-row sm:items-center justify-between bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-[20px] p-6 transition-all gap-5 sm:gap-0 shadow-sm relative group hover:border-purple-500/50 cursor-pointer">
               <div className="flex items-center gap-5">
-                <div className="p-4 bg-white/5 rounded-2xl border border-white/10 group-hover:border-purple-500/30 transition-colors"><Building2 size={24} className="text-purple-400" /></div>
+                <div className="p-4 bg-[var(--bg-overlay)] rounded-2xl border border-[var(--border-overlay)] group-hover:border-purple-500/30 transition-colors"><Building2 size={24} className="text-purple-400" /></div>
                 <div className="flex flex-col">
-                  <span className="text-lg font-bold text-neutral-100 group-hover:text-purple-400 transition-colors">{c.name}</span>
-                  <span className="text-xs text-neutral-500 mt-1 uppercase tracking-widest font-bold">
+                  <span className="text-lg font-bold text-[var(--text-primary)] group-hover:text-purple-400 transition-colors">{c.name}</span>
+                  <span className="text-xs text-[var(--text-muted)] mt-1 uppercase tracking-widest font-bold">
                     {c.contractedHours ? <span className="text-indigo-400">Teto: {c.contractedHours}h | </span> : ''} {emailsArray.length === 0 ? "0 E-mails" : `${emailsArray.length} Contato(s)`} • {count} Demandas
                   </span>
                 </div>
@@ -2748,7 +2855,7 @@ function ClientsPanelContent({ clients, setClients, tasks, setTasks, user, getEl
                   </a>
                 )}
                 {user.isAdmin && (
-                   <button onClick={(e) => { e.stopPropagation(); remove(c.id); }} className="p-3.5 text-neutral-600 hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-colors sm:opacity-0 group-hover:opacity-100 z-10 relative">
+                   <button onClick={(e) => { e.stopPropagation(); remove(c.id); }} className="p-3.5 text-[var(--text-muted)] hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-colors sm:opacity-0 group-hover:opacity-100 z-10 relative">
                      <Trash2 size={20} />
                    </button>
                 )}
@@ -2757,16 +2864,21 @@ function ClientsPanelContent({ clients, setClients, tasks, setTasks, user, getEl
           )
         })}
       </div>
-      {clientModal && <ClientModal modal={clientModal} setModal={setClientModal} setClients={setClients} user={user} />}
-      {detailClient && <ClientDetailModal client={detailClient} tasks={tasks} getElapsed={getElapsed} user={user} onClose={() => setDetailClient(null)} onEdit={(c: any) => { setDetailClient(null); setClientModal({ mode: 'edit', form: { ...c, emails: Array.isArray(c.emails) ? c.emails : [] } }); }} onRemove={(id: string) => { setDetailClient(null); remove(id); }} />}
+      {clientModal && createPortal(<ClientModal modal={clientModal} setModal={setClientModal} setClients={setClients} user={user} />, document.body)}
+      {detailClient && createPortal(<ClientDetailModal client={detailClient} tasks={tasks} getElapsed={getElapsed} user={user} onClose={() => setDetailClient(null)} onEdit={(c: any) => { setDetailClient(null); setClientModal({ mode: 'edit', form: { ...c, emails: Array.isArray(c.emails) ? c.emails : [] } }); }} onRemove={(id: string) => { setDetailClient(null); remove(id); }} />, document.body)}
     </div>
   );
 }
 
-function AnalyticsModal({ onClose, tasks, clients, responsibles, getElapsed, isClosing, globalLookerUrl, setGlobalLookerUrl, user }: any) {
-  const [activeView, setActiveView] = useState('internal'); 
+function AnalyticsModal({ onClose, tasks, clients, responsibles, getElapsed, isClosing, globalLookerUrl, setGlobalLookerUrl, user, theme }: any) {
+  const [activeView, setActiveView] = useState('internal');
   const [isEditing, setIsEditing] = useState(false);
   const [inputUrl, setInputUrl] = useState(globalLookerUrl);
+
+  // Cores neutras dos gráficos (grid/eixos) — adaptam ao tema; as cores funcionais das barras/linhas (CHART_COLORS, COLUMN_HEX) permanecem fixas nos dois temas.
+  const chartGrid = theme === 'light' ? '#d4d4d8' : '#27272a';
+  const chartTick = theme === 'light' ? '#a1a1aa' : '#71717a';
+  const chartTickStrong = theme === 'light' ? '#52525b' : '#a3a3a3';
 
   const [showFilters, setShowFilters] = useState(false);
   const [filterClient, setFilterClient] = useState("all");
@@ -2945,9 +3057,9 @@ function AnalyticsModal({ onClose, tasks, clients, responsibles, getElapsed, isC
         
         {/* Toggle View */}
         <div className="flex justify-center mb-8 shrink-0">
-          <div className="bg-[#12121a] border border-[#27272a] p-1.5 rounded-2xl flex gap-2">
-             <button onClick={() => setActiveView('internal')} className={`px-8 py-3 rounded-xl text-xs font-bold uppercase tracking-widest transition-all ${activeView === 'internal' ? 'bg-[#27272a] text-white shadow-sm' : 'text-neutral-500 hover:text-white'}`}>Sistema Interno</button>
-             {user.isAdmin && <button onClick={() => setActiveView('looker')} className={`px-8 py-3 rounded-xl text-xs font-bold uppercase tracking-widest transition-all flex items-center gap-2 ${activeView === 'looker' ? 'bg-blue-600 text-white shadow-[0_0_15px_rgba(37,99,235,0.4)]' : 'text-neutral-500 hover:text-white'}`}><MonitorPlay size={16}/> Looker Studio</button>}
+          <div className="bg-[var(--bg-secondary)] border border-[var(--border-primary)] p-1.5 rounded-2xl flex gap-2">
+             <button onClick={() => setActiveView('internal')} className={`px-8 py-3 rounded-xl text-xs font-bold uppercase tracking-widest transition-all ${activeView === 'internal' ? 'bg-[var(--bg-overlay-strong)] text-[var(--text-primary)] shadow-sm' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}`}>Sistema Interno</button>
+             {user.isAdmin && <button onClick={() => setActiveView('looker')} className={`px-8 py-3 rounded-xl text-xs font-bold uppercase tracking-widest transition-all flex items-center gap-2 ${activeView === 'looker' ? 'bg-blue-600 text-white shadow-[0_0_15px_rgba(37,99,235,0.4)]' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}`}><MonitorPlay size={16}/> Looker Studio</button>}
           </div>
         </div>
 
@@ -2959,13 +3071,13 @@ function AnalyticsModal({ onClose, tasks, clients, responsibles, getElapsed, isC
              <div className="flex flex-wrap items-center gap-3">
                <button
                  onClick={(e) => { e.stopPropagation(); setShowFilters(!showFilters); }}
-                 className={`h-11 w-full sm:w-auto px-4 flex items-center justify-center gap-2 rounded-xl transition-all shadow-sm shrink-0 border font-bold uppercase tracking-widest text-[10px] ${showFilters ? 'bg-indigo-600 text-white border-indigo-500 shadow-[0_0_15px_rgba(79,70,229,0.3)]' : 'glass-panel text-neutral-400 border-white/5 hover:text-white'}`}
+                 className={`h-11 w-full sm:w-auto px-4 flex items-center justify-center gap-2 rounded-xl transition-all shadow-sm shrink-0 border font-bold uppercase tracking-widest text-[10px] ${showFilters ? 'bg-indigo-600 text-white border-indigo-500 shadow-[0_0_15px_rgba(79,70,229,0.3)]' : 'glass-panel text-[var(--text-secondary)] border-[var(--border-overlay)] hover:text-[var(--text-primary)]'}`}
                >
                  <Filter size={16} /> Filtros
                </button>
                <button
                  onClick={exportTasksCSV}
-                 className="h-11 w-full sm:w-auto px-4 flex items-center justify-center gap-2 rounded-xl transition-all shadow-sm shrink-0 border font-bold uppercase tracking-widest text-[10px] glass-panel text-neutral-400 border-white/5 hover:text-white"
+                 className="h-11 w-full sm:w-auto px-4 flex items-center justify-center gap-2 rounded-xl transition-all shadow-sm shrink-0 border font-bold uppercase tracking-widest text-[10px] glass-panel text-[var(--text-secondary)] border-[var(--border-overlay)] hover:text-[var(--text-primary)]"
                >
                  <Download size={16} /> Baixar CSV
                </button>
@@ -2980,41 +3092,41 @@ function AnalyticsModal({ onClose, tasks, clients, responsibles, getElapsed, isC
                       <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-5">
                          <FilterSelect value={filterClient} onChange={setFilterClient} options={clients} defaultLabel="Todos Clientes" />
                          {user.isAdmin && <>
-                           <div className="hidden sm:block w-px h-4 bg-white/10"></div>
+                           <div className="hidden sm:block w-px h-4 bg-[var(--bg-overlay-strong)]"></div>
                            <FilterSelect value={filterResp} onChange={setFilterResp} options={responsibles} defaultLabel="Todos Responsáveis" />
                          </>}
-                         <div className="hidden sm:block w-px h-4 bg-white/10"></div>
+                         <div className="hidden sm:block w-px h-4 bg-[var(--bg-overlay-strong)]"></div>
                          <FilterSelect value={filterPriority} onChange={setFilterPriority} options={[{id: 'Baixa', name: 'Baixa'}, {id: 'Média', name: 'Média'}, {id: 'Alta', name: 'Alta'}]} defaultLabel="Prioridades" />
                       </div>
 
-                      <div className="h-px w-full bg-white/5"></div>
+                      <div className="h-px w-full bg-[var(--bg-overlay)]"></div>
 
                       {/* Intervalos de data */}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                         <div className="rounded-xl border border-white/5 bg-black/20 p-3.5 flex flex-col gap-2.5">
+                         <div className="rounded-xl border border-[var(--border-overlay)] bg-[var(--bg-scrim)] p-3.5 flex flex-col gap-2.5">
                             <span className="text-[10px] uppercase font-bold tracking-widest text-indigo-300 flex items-center gap-1.5"><Clock size={12}/> Criado entre</span>
                             <div className="grid grid-cols-2 gap-2">
                                <div className="flex flex-col gap-1">
-                                  <label className="text-[9px] uppercase font-bold text-neutral-500 ml-0.5">De</label>
-                                  <input type="date" value={filterCreatedStart} onChange={e => setFilterCreatedStart(e.target.value)} className="w-full bg-[#12121a] border border-[#27272a] rounded-lg px-3 h-10 text-xs text-white outline-none focus:border-indigo-500 [color-scheme:dark]" />
+                                  <label className="text-[9px] uppercase font-bold text-[var(--text-muted)] ml-0.5">De</label>
+                                  <input type="date" value={filterCreatedStart} onChange={e => setFilterCreatedStart(e.target.value)} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-lg px-3 h-10 text-xs text-[var(--text-primary)] outline-none focus:border-indigo-500 [color-scheme:dark]" />
                                </div>
                                <div className="flex flex-col gap-1">
-                                  <label className="text-[9px] uppercase font-bold text-neutral-500 ml-0.5">Até</label>
-                                  <input type="date" value={filterCreatedEnd} onChange={e => setFilterCreatedEnd(e.target.value)} className="w-full bg-[#12121a] border border-[#27272a] rounded-lg px-3 h-10 text-xs text-white outline-none focus:border-indigo-500 [color-scheme:dark]" />
+                                  <label className="text-[9px] uppercase font-bold text-[var(--text-muted)] ml-0.5">Até</label>
+                                  <input type="date" value={filterCreatedEnd} onChange={e => setFilterCreatedEnd(e.target.value)} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-lg px-3 h-10 text-xs text-[var(--text-primary)] outline-none focus:border-indigo-500 [color-scheme:dark]" />
                                </div>
                             </div>
                          </div>
 
-                         <div className="rounded-xl border border-white/5 bg-black/20 p-3.5 flex flex-col gap-2.5">
+                         <div className="rounded-xl border border-[var(--border-overlay)] bg-[var(--bg-scrim)] p-3.5 flex flex-col gap-2.5">
                             <span className="text-[10px] uppercase font-bold tracking-widest text-emerald-300 flex items-center gap-1.5"><CheckCircle2 size={12}/> Concluído entre</span>
                             <div className="grid grid-cols-2 gap-2">
                                <div className="flex flex-col gap-1">
-                                  <label className="text-[9px] uppercase font-bold text-neutral-500 ml-0.5">De</label>
-                                  <input type="date" value={filterCompletedStart} onChange={e => setFilterCompletedStart(e.target.value)} className="w-full bg-[#12121a] border border-[#27272a] rounded-lg px-3 h-10 text-xs text-white outline-none focus:border-emerald-500 [color-scheme:dark]" />
+                                  <label className="text-[9px] uppercase font-bold text-[var(--text-muted)] ml-0.5">De</label>
+                                  <input type="date" value={filterCompletedStart} onChange={e => setFilterCompletedStart(e.target.value)} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-lg px-3 h-10 text-xs text-[var(--text-primary)] outline-none focus:border-emerald-500 [color-scheme:dark]" />
                                </div>
                                <div className="flex flex-col gap-1">
-                                  <label className="text-[9px] uppercase font-bold text-neutral-500 ml-0.5">Até</label>
-                                  <input type="date" value={filterCompletedEnd} onChange={e => setFilterCompletedEnd(e.target.value)} className="w-full bg-[#12121a] border border-[#27272a] rounded-lg px-3 h-10 text-xs text-white outline-none focus:border-emerald-500 [color-scheme:dark]" />
+                                  <label className="text-[9px] uppercase font-bold text-[var(--text-muted)] ml-0.5">Até</label>
+                                  <input type="date" value={filterCompletedEnd} onChange={e => setFilterCompletedEnd(e.target.value)} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-lg px-3 h-10 text-xs text-[var(--text-primary)] outline-none focus:border-emerald-500 [color-scheme:dark]" />
                                </div>
                             </div>
                          </div>
@@ -3033,9 +3145,9 @@ function AnalyticsModal({ onClose, tasks, clients, responsibles, getElapsed, isC
                 {completionTrend.length === 0 ? <ChartEmpty /> : (
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={completionTrend} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
-                      <XAxis dataKey="label" tick={{ fill: '#737373', fontSize: 11 }} axisLine={{ stroke: '#27272a' }} tickLine={false} />
-                      <YAxis allowDecimals={false} tick={{ fill: '#737373', fontSize: 11 }} axisLine={{ stroke: '#27272a' }} tickLine={false} />
+                      <CartesianGrid strokeDasharray="3 3" stroke={chartGrid} vertical={false} />
+                      <XAxis dataKey="label" tick={{ fill: chartTick, fontSize: 11 }} axisLine={{ stroke: chartGrid }} tickLine={false} />
+                      <YAxis allowDecimals={false} tick={{ fill: chartTick, fontSize: 11 }} axisLine={{ stroke: chartGrid }} tickLine={false} />
                       <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
                       <Bar dataKey="count" name="Concluídas" fill={CHART_COLORS.indigo} radius={[6, 6, 0, 0]} />
                     </BarChart>
@@ -3047,9 +3159,9 @@ function AnalyticsModal({ onClose, tasks, clients, responsibles, getElapsed, isC
                 {hoursByClient.length === 0 ? <ChartEmpty /> : (
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={hoursByClient} layout="vertical" margin={{ top: 5, right: 20, left: 10, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#27272a" horizontal={false} />
-                      <XAxis type="number" tick={{ fill: '#737373', fontSize: 11 }} axisLine={{ stroke: '#27272a' }} tickLine={false} />
-                      <YAxis type="category" dataKey="name" width={110} tick={{ fill: '#a3a3a3', fontSize: 11 }} axisLine={{ stroke: '#27272a' }} tickLine={false} />
+                      <CartesianGrid strokeDasharray="3 3" stroke={chartGrid} horizontal={false} />
+                      <XAxis type="number" tick={{ fill: chartTick, fontSize: 11 }} axisLine={{ stroke: chartGrid }} tickLine={false} />
+                      <YAxis type="category" dataKey="name" width={110} tick={{ fill: chartTickStrong, fontSize: 11 }} axisLine={{ stroke: chartGrid }} tickLine={false} />
                       <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
                       <Bar dataKey="hours" name="Horas" fill={CHART_COLORS.teal} radius={[0, 6, 6, 0]} />
                     </BarChart>
@@ -3061,9 +3173,9 @@ function AnalyticsModal({ onClose, tasks, clients, responsibles, getElapsed, isC
                 {avgTimeByPriority.every((p: any) => p.count === 0) ? <ChartEmpty /> : (
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={avgTimeByPriority} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
-                      <XAxis dataKey="priority" tick={{ fill: '#737373', fontSize: 11 }} axisLine={{ stroke: '#27272a' }} tickLine={false} />
-                      <YAxis allowDecimals={false} tick={{ fill: '#737373', fontSize: 11 }} axisLine={{ stroke: '#27272a' }} tickLine={false} />
+                      <CartesianGrid strokeDasharray="3 3" stroke={chartGrid} vertical={false} />
+                      <XAxis dataKey="priority" tick={{ fill: chartTick, fontSize: 11 }} axisLine={{ stroke: chartGrid }} tickLine={false} />
+                      <YAxis allowDecimals={false} tick={{ fill: chartTick, fontSize: 11 }} axisLine={{ stroke: chartGrid }} tickLine={false} />
                       <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
                       <Bar dataKey="avgHours" name="Horas médias" fill={CHART_COLORS.purple} radius={[6, 6, 0, 0]} />
                     </BarChart>
@@ -3075,11 +3187,11 @@ function AnalyticsModal({ onClose, tasks, clients, responsibles, getElapsed, isC
                 {productivityRanking.length === 0 ? <ChartEmpty /> : (
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={productivityRanking} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
-                      <XAxis dataKey="name" tick={{ fill: '#737373', fontSize: 11 }} axisLine={{ stroke: '#27272a' }} tickLine={false} />
-                      <YAxis allowDecimals={false} tick={{ fill: '#737373', fontSize: 11 }} axisLine={{ stroke: '#27272a' }} tickLine={false} />
+                      <CartesianGrid strokeDasharray="3 3" stroke={chartGrid} vertical={false} />
+                      <XAxis dataKey="name" tick={{ fill: chartTick, fontSize: 11 }} axisLine={{ stroke: chartGrid }} tickLine={false} />
+                      <YAxis allowDecimals={false} tick={{ fill: chartTick, fontSize: 11 }} axisLine={{ stroke: chartGrid }} tickLine={false} />
                       <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
-                      <Legend wrapperStyle={{ fontSize: 11, color: '#a3a3a3' }} />
+                      <Legend wrapperStyle={{ fontSize: 11, color: chartTickStrong }} />
                       <Bar dataKey="done" name="Demandas Concluídas" fill={CHART_COLORS.indigo} radius={[6, 6, 0, 0]} />
                       <Bar dataKey="hours" name="Horas Trabalhadas" fill={CHART_COLORS.amber} radius={[6, 6, 0, 0]} />
                     </BarChart>
@@ -3091,10 +3203,10 @@ function AnalyticsModal({ onClose, tasks, clients, responsibles, getElapsed, isC
                 {overdueHistory.length === 0 ? <ChartEmpty /> : (
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={overdueHistory} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
-                      <XAxis dataKey="label" tick={{ fill: '#737373', fontSize: 11 }} axisLine={{ stroke: '#27272a' }} tickLine={false} />
-                      <YAxis allowDecimals={false} tick={{ fill: '#737373', fontSize: 11 }} axisLine={{ stroke: '#27272a' }} tickLine={false} />
-                      <Tooltip content={<ChartTooltip />} cursor={{ stroke: '#27272a' }} />
+                      <CartesianGrid strokeDasharray="3 3" stroke={chartGrid} vertical={false} />
+                      <XAxis dataKey="label" tick={{ fill: chartTick, fontSize: 11 }} axisLine={{ stroke: chartGrid }} tickLine={false} />
+                      <YAxis allowDecimals={false} tick={{ fill: chartTick, fontSize: 11 }} axisLine={{ stroke: chartGrid }} tickLine={false} />
+                      <Tooltip content={<ChartTooltip />} cursor={{ stroke: chartGrid }} />
                       <Line type="monotone" dataKey="count" name="Em Atraso" stroke={CHART_COLORS.amber} strokeWidth={2} dot={{ fill: CHART_COLORS.amber, r: 3 }} activeDot={{ r: 5 }} />
                     </LineChart>
                   </ResponsiveContainer>
@@ -3105,9 +3217,9 @@ function AnalyticsModal({ onClose, tasks, clients, responsibles, getElapsed, isC
                 <ChartSection title="Por Fase do Fluxo" height={Math.max(200, statusChartData.length * 34)}>
                    <ResponsiveContainer width="100%" height="100%">
                      <BarChart data={statusChartData} layout="vertical" margin={{ top: 5, right: 20, left: 10, bottom: 0 }}>
-                       <CartesianGrid strokeDasharray="3 3" stroke="#27272a" horizontal={false} />
-                       <XAxis type="number" allowDecimals={false} tick={{ fill: '#737373', fontSize: 11 }} axisLine={{ stroke: '#27272a' }} tickLine={false} />
-                       <YAxis type="category" dataKey="name" width={95} tick={{ fill: '#a3a3a3', fontSize: 11 }} axisLine={{ stroke: '#27272a' }} tickLine={false} />
+                       <CartesianGrid strokeDasharray="3 3" stroke={chartGrid} horizontal={false} />
+                       <XAxis type="number" allowDecimals={false} tick={{ fill: chartTick, fontSize: 11 }} axisLine={{ stroke: chartGrid }} tickLine={false} />
+                       <YAxis type="category" dataKey="name" width={95} tick={{ fill: chartTickStrong, fontSize: 11 }} axisLine={{ stroke: chartGrid }} tickLine={false} />
                        <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
                        <Bar dataKey="count" name="Demandas" radius={[0, 6, 6, 0]}>
                          {statusChartData.map((entry: any) => <Cell key={entry.id} fill={COLUMN_HEX[entry.id]} />)}
@@ -3120,11 +3232,11 @@ function AnalyticsModal({ onClose, tasks, clients, responsibles, getElapsed, isC
                    {responsibleChartData.length === 0 ? <ChartEmpty /> : (
                      <ResponsiveContainer width="100%" height="100%">
                        <BarChart data={responsibleChartData} layout="vertical" margin={{ top: 5, right: 20, left: 10, bottom: 0 }}>
-                         <CartesianGrid strokeDasharray="3 3" stroke="#27272a" horizontal={false} />
-                         <XAxis type="number" allowDecimals={false} tick={{ fill: '#737373', fontSize: 11 }} axisLine={{ stroke: '#27272a' }} tickLine={false} />
-                         <YAxis type="category" dataKey="name" width={95} tick={{ fill: '#a3a3a3', fontSize: 11 }} axisLine={{ stroke: '#27272a' }} tickLine={false} />
+                         <CartesianGrid strokeDasharray="3 3" stroke={chartGrid} horizontal={false} />
+                         <XAxis type="number" allowDecimals={false} tick={{ fill: chartTick, fontSize: 11 }} axisLine={{ stroke: chartGrid }} tickLine={false} />
+                         <YAxis type="category" dataKey="name" width={95} tick={{ fill: chartTickStrong, fontSize: 11 }} axisLine={{ stroke: chartGrid }} tickLine={false} />
                          <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
-                         <Legend wrapperStyle={{ fontSize: 11, color: '#a3a3a3' }} />
+                         <Legend wrapperStyle={{ fontSize: 11, color: chartTickStrong }} />
                          <Bar dataKey="count" name="Demandas" fill={CHART_COLORS.indigo} radius={[0, 6, 6, 0]} />
                          <Bar dataKey="hours" name="Horas" fill={CHART_COLORS.amber} radius={[0, 6, 6, 0]} />
                        </BarChart>
@@ -3136,11 +3248,11 @@ function AnalyticsModal({ onClose, tasks, clients, responsibles, getElapsed, isC
                    {clientChartData.length === 0 ? <ChartEmpty /> : (
                      <ResponsiveContainer width="100%" height="100%">
                        <BarChart data={clientChartData} layout="vertical" margin={{ top: 5, right: 20, left: 10, bottom: 0 }}>
-                         <CartesianGrid strokeDasharray="3 3" stroke="#27272a" horizontal={false} />
-                         <XAxis type="number" allowDecimals={false} tick={{ fill: '#737373', fontSize: 11 }} axisLine={{ stroke: '#27272a' }} tickLine={false} />
-                         <YAxis type="category" dataKey="name" width={95} tick={{ fill: '#a3a3a3', fontSize: 11 }} axisLine={{ stroke: '#27272a' }} tickLine={false} />
+                         <CartesianGrid strokeDasharray="3 3" stroke={chartGrid} horizontal={false} />
+                         <XAxis type="number" allowDecimals={false} tick={{ fill: chartTick, fontSize: 11 }} axisLine={{ stroke: chartGrid }} tickLine={false} />
+                         <YAxis type="category" dataKey="name" width={95} tick={{ fill: chartTickStrong, fontSize: 11 }} axisLine={{ stroke: chartGrid }} tickLine={false} />
                          <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
-                         <Legend wrapperStyle={{ fontSize: 11, color: '#a3a3a3' }} />
+                         <Legend wrapperStyle={{ fontSize: 11, color: chartTickStrong }} />
                          <Bar dataKey="count" name="Demandas" fill={CHART_COLORS.teal} radius={[0, 6, 6, 0]} />
                          <Bar dataKey="hours" name="Horas" fill={CHART_COLORS.purple} radius={[0, 6, 6, 0]} />
                        </BarChart>
@@ -3159,32 +3271,32 @@ function AnalyticsModal({ onClose, tasks, clients, responsibles, getElapsed, isC
                  <div className="flex-1 flex flex-col items-center justify-center max-w-xl mx-auto w-full text-center gap-8">
                    <div className="w-24 h-24 rounded-[32px] bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-500 shadow-[0_0_30px_rgba(59,130,246,0.15)]"><BarChart3 size={40} /></div>
                    <div>
-                     <h3 className="text-3xl font-bold text-white mb-3 tracking-tight">Painel Analítico Global</h3>
-                     <p className="text-sm text-neutral-400 leading-relaxed max-w-md mx-auto">Configure aqui o Link de Incorporação (Embed) do Looker Studio para o painel de uso da sua equipe interna.</p>
+                     <h3 className="text-3xl font-bold text-[var(--text-primary)] mb-3 tracking-tight">Painel Analítico Global</h3>
+                     <p className="text-sm text-[var(--text-secondary)] leading-relaxed max-w-md mx-auto">Configure aqui o Link de Incorporação (Embed) do Looker Studio para o painel de uso da sua equipe interna.</p>
                    </div>
                    <div className="w-full">
-                      <input value={inputUrl} onChange={e => setInputUrl(e.target.value)} placeholder="https://lookerstudio.google.com/embed/reporting/..." className="w-full bg-[#12121a] border border-[#27272a] rounded-2xl px-6 py-5 text-sm text-white outline-none focus:border-blue-500 text-center shadow-inner mb-5" />
+                      <input value={inputUrl} onChange={e => setInputUrl(e.target.value)} placeholder="https://lookerstudio.google.com/embed/reporting/..." className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-2xl px-6 py-5 text-sm text-[var(--text-primary)] outline-none focus:border-blue-500 text-center shadow-inner mb-5" />
                       <button onClick={saveUrl} className="w-full py-5 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-bold uppercase tracking-widest text-sm transition-all shadow-[0_0_20px_rgba(37,99,235,0.3)]">Ligar Relatório Global</button>
                    </div>
-                   {globalLookerUrl && <button onClick={() => setIsEditing(false)} className="text-xs font-bold text-neutral-500 uppercase tracking-widest hover:text-white mt-2">Cancelar</button>}
+                   {globalLookerUrl && <button onClick={() => setIsEditing(false)} className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-widest hover:text-[var(--text-primary)] mt-2">Cancelar</button>}
                  </div>
                ) : (
                  <div className="flex-1 flex flex-col items-center justify-center text-center gap-4">
                    <div className="w-20 h-20 rounded-[24px] bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-500"><Lock size={32} /></div>
-                   <p className="text-sm text-neutral-400 max-w-sm">O painel do Looker Studio ainda não foi configurado. Peça ao administrador do Lumina para conectar o relatório global.</p>
+                   <p className="text-sm text-[var(--text-secondary)] max-w-sm">O painel do Looker Studio ainda não foi configurado. Peça ao administrador do Lumina para conectar o relatório global.</p>
                  </div>
                )
             ) : (
                <div className="flex flex-col h-full gap-5">
                  {user.isAdmin && (
                    <div className="flex justify-end shrink-0">
-                      <button onClick={() => {setInputUrl(globalLookerUrl); setIsEditing(true);}} className="flex justify-center items-center gap-2 px-6 py-3.5 bg-white/5 text-neutral-300 border border-white/10 hover:bg-white/10 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-colors"><Settings size={16}/> Trocar Conexão Looker</button>
+                      <button onClick={() => {setInputUrl(globalLookerUrl); setIsEditing(true);}} className="flex justify-center items-center gap-2 px-6 py-3.5 bg-[var(--bg-overlay)] text-[var(--text-secondary)] border border-[var(--border-overlay)] hover:bg-[var(--bg-overlay-strong)] rounded-xl text-[10px] font-bold uppercase tracking-widest transition-colors"><Settings size={16}/> Trocar Conexão Looker</button>
                    </div>
                  )}
-                 <div className="flex-1 w-full bg-[#12121a] rounded-[32px] border border-[#27272a] overflow-hidden relative shadow-inner">
+                 <div className="flex-1 w-full bg-[var(--bg-secondary)] rounded-[32px] border border-[var(--border-primary)] overflow-hidden relative shadow-inner">
                    <div className="absolute inset-0 flex flex-col gap-4 items-center justify-center -z-10">
                      <Cloud size={40} className="text-indigo-500/20 animate-pulse" />
-                     <span className="text-xs font-bold uppercase tracking-widest text-neutral-600">A Carregar Looker...</span>
+                     <span className="text-xs font-bold uppercase tracking-widest text-[var(--text-muted)]">A Carregar Looker...</span>
                    </div>
                    <iframe src={globalLookerUrl} className="w-full h-full border-0 bg-transparent z-10 relative" allowFullScreen />
                  </div>
@@ -3237,15 +3349,15 @@ function FocusRow({ t, clientName, onOpen, onToggleTimer, onComplete, onOpenAgen
   const pr = PRIORITY_STYLE[t.priority] || PRIORITY_STYLE['Média'];
   const closed = ['done', 'cancelled', 'formalize'].includes(t.status);
   return (
-    <div onClick={() => onOpen(t)} className="group flex items-stretch gap-3 bg-[#12121a] border border-[#27272a] rounded-xl p-3 cursor-pointer hover:border-[#3f3f46] transition-colors">
+    <div onClick={() => onOpen(t)} className="group flex items-stretch gap-3 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl p-3 cursor-pointer hover:border-[var(--border-hover)] transition-colors">
       <div className={`w-1 shrink-0 rounded-full ${accent}`} />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2 mb-1">
-          {clientName && <span className="text-[9px] font-bold uppercase tracking-widest text-neutral-400 truncate max-w-[160px]">{clientName}</span>}
+          {clientName && <span className="text-[9px] font-bold uppercase tracking-widest text-[var(--text-secondary)] truncate max-w-[160px]">{clientName}</span>}
           <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${pr.dot}`} />
         </div>
-        <div className={`text-[13px] font-bold leading-snug truncate ${closed ? 'text-neutral-500 line-through' : 'text-white'}`}>{t.title}</div>
-        {meta && <div className={`text-[10px] font-bold mt-1 ${metaColor || 'text-neutral-500'}`}>{meta}</div>}
+        <div className={`text-[13px] font-bold leading-snug truncate ${closed ? 'line-through' : ''}`} style={{ color: closed ? 'var(--text-muted)' : 'var(--text-primary)' }}>{t.title}</div>
+        {meta && <div className={`text-[10px] font-bold mt-1 ${metaColor || 'text-[var(--text-muted)]'}`}>{meta}</div>}
       </div>
       {!closed && (
         <div className="self-center shrink-0 flex items-center gap-1.5">
@@ -3254,7 +3366,7 @@ function FocusRow({ t, clientName, onOpen, onToggleTimer, onComplete, onOpenAgen
               <CalendarDays size={14} />
             </button>
           )}
-          <button onClick={(e) => { e.stopPropagation(); onToggleTimer(t.id); }} className={`p-2 rounded-lg border transition-colors ${t.timerRunning ? 'text-amber-400 bg-amber-400/10 border-amber-400/20' : 'text-neutral-400 bg-white/5 border-transparent hover:bg-white/10'}`} title={t.timerRunning ? 'Pausar' : 'Iniciar timer'}>
+          <button onClick={(e) => { e.stopPropagation(); onToggleTimer(t.id); }} className={`p-2 rounded-lg border transition-colors ${t.timerRunning ? 'text-amber-400 bg-amber-400/10 border-amber-400/20' : 'text-[var(--text-secondary)] bg-[var(--bg-overlay)] border-transparent hover:bg-[var(--bg-overlay-strong)]'}`} title={t.timerRunning ? 'Pausar' : 'Iniciar timer'}>
             {t.timerRunning ? <Pause size={14} /> : <Play size={14} />}
           </button>
           <button onClick={(e) => { e.stopPropagation(); onComplete(t); }} className="p-2 rounded-lg border border-transparent bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-colors" title="Concluir">
@@ -3272,8 +3384,8 @@ function FocusSection({ label, count, dot, children }: any) {
     <div className="flex flex-col gap-2.5">
       <div className="flex items-center gap-2 ml-0.5">
         <span className={`w-2 h-2 rounded-full ${dot} shadow-[0_0_8px_currentColor]`} />
-        <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-neutral-300">{label}</h3>
-        <span className="text-[10px] font-bold text-neutral-500 bg-white/5 border border-white/10 px-2 py-0.5 rounded-md">{count}</span>
+        <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--text-secondary)]">{label}</h3>
+        <span className="text-[10px] font-bold text-[var(--text-muted)] bg-[var(--bg-overlay)] border border-[var(--border-overlay)] px-2 py-0.5 rounded-md">{count}</span>
       </div>
       <div className="flex flex-col gap-2">{children}</div>
     </div>
@@ -3298,42 +3410,42 @@ function SearchModal({ tasks, clients, onOpen, onClose }: any) {
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-start justify-center px-3 pt-[12vh] pb-24 sm:p-4 sm:pt-[12vh] z-[95] fade-in" onClick={onClose}>
-      <div className="w-full max-w-xl rounded-3xl bg-[#12121a] border border-[#27272a] shadow-2xl overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center gap-3 px-5 py-4 border-b border-[#27272a]">
-          <Search size={18} className="text-neutral-500 shrink-0" />
-          <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar por título, cliente ou descrição..." className="flex-1 bg-transparent text-sm text-white outline-none placeholder:text-neutral-600" />
-          <button onClick={onClose} className="p-1.5 rounded-lg text-neutral-500 hover:text-white transition-colors"><X size={18} /></button>
+      <div className="w-full max-w-xl rounded-3xl bg-[var(--bg-secondary)] border border-[var(--border-primary)] shadow-2xl overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-[var(--border-primary)]">
+          <Search size={18} className="text-[var(--text-muted)] shrink-0" />
+          <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar por título, cliente ou descrição..." className="flex-1 bg-transparent text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]" />
+          <button onClick={onClose} className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"><X size={18} /></button>
         </div>
         <div className="max-h-[52vh] overflow-y-auto kp-scroll p-2">
           {query.length === 0 && (
-            <div className="text-center text-xs text-neutral-600 py-12">Digite para buscar entre suas demandas.</div>
+            <div className="text-center text-xs text-[var(--text-muted)] py-12">Digite para buscar entre suas demandas.</div>
           )}
           {query.length > 0 && results.length === 0 && (
-            <div className="text-center text-xs text-neutral-600 py-12">Nenhuma demanda encontrada para "{q}".</div>
+            <div className="text-center text-xs text-[var(--text-muted)] py-12">Nenhuma demanda encontrada para "{q}".</div>
           )}
           {results.map((t: any) => {
             const col = COLUMNS.find(c => c.id === t.status);
             const cn = clientName(t.clientId);
             const pr = PRIORITY_STYLE[t.priority] || PRIORITY_STYLE['Média'];
             return (
-              <button key={t.id} onClick={() => { onOpen(t); onClose(); }} className="w-full text-left flex items-center gap-3 p-3 rounded-xl hover:bg-white/5 transition-colors group">
+              <button key={t.id} onClick={() => { onOpen(t); onClose(); }} className="w-full text-left flex items-center gap-3 p-3 rounded-xl hover:bg-[var(--bg-overlay)] transition-colors group">
                 <span className={`w-2 h-2 rounded-full shrink-0 ${col?.dot || 'bg-neutral-500'}`} />
                 <div className="min-w-0 flex-1">
-                  <div className="text-[13px] font-bold text-white truncate">{t.title}</div>
-                  <div className="text-[10px] text-neutral-500 uppercase tracking-widest font-bold mt-0.5 flex items-center gap-2 flex-wrap">
+                  <div className="text-[13px] font-bold text-[var(--text-primary)] truncate">{t.title}</div>
+                  <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-widest font-bold mt-0.5 flex items-center gap-2 flex-wrap">
                     {cn && <><span className="truncate max-w-[140px]">{cn}</span><span className="opacity-40">·</span></>}
                     <span>{col?.name || t.status}</span>
                     <span className="opacity-40">·</span>
                     <span className={pr.text}>{t.priority}</span>
                   </div>
                 </div>
-                <ChevronRight size={16} className="text-neutral-700 group-hover:text-neutral-400 shrink-0 transition-colors" />
+                <ChevronRight size={16} className="text-[var(--text-muted)] group-hover:text-[var(--text-secondary)] shrink-0 transition-colors" />
               </button>
             );
           })}
         </div>
         {results.length > 0 && (
-          <div className="px-5 py-3 border-t border-[#27272a] text-[10px] text-neutral-600 uppercase tracking-widest font-bold flex items-center justify-between">
+          <div className="px-5 py-3 border-t border-[var(--border-primary)] text-[10px] text-[var(--text-muted)] uppercase tracking-widest font-bold flex items-center justify-between">
             <span>{results.length} resultado{results.length > 1 ? 's' : ''}</span>
             <span>Esc para fechar</span>
           </div>
@@ -3358,44 +3470,44 @@ function QuickAddModal({ clients, onCreate, onClose }: any) {
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center px-3 pt-3 pb-24 sm:p-4 z-[95] fade-in" onClick={onClose}>
-      <div className="w-full max-w-md rounded-3xl sm:rounded-[32px] bg-[#12121a] border border-[#27272a] shadow-2xl overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
-        <div className="px-6 py-5 border-b border-[#27272a] flex items-center justify-between bg-[#0f0f13]">
+      <div className="w-full max-w-md rounded-3xl sm:rounded-[32px] bg-[var(--bg-secondary)] border border-[var(--border-primary)] shadow-2xl overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
+        <div className="px-6 py-5 border-b border-[var(--border-primary)] flex items-center justify-between bg-[var(--bg-tertiary)]">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-indigo-500/10 rounded-xl border border-indigo-500/20"><Plus size={18} className="text-indigo-400" /></div>
-            <h3 className="font-bold text-lg text-white tracking-tight">Captura Rápida</h3>
+            <h3 className="font-bold text-lg text-[var(--text-primary)] tracking-tight">Captura Rápida</h3>
           </div>
-          <button onClick={onClose} className="p-2 rounded-xl text-neutral-500 hover:text-white transition-colors"><X size={20} /></button>
+          <button onClick={onClose} className="p-2 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"><X size={20} /></button>
         </div>
-        <div className="p-6 flex flex-col gap-5 bg-[#09090b]">
+        <div className="p-6 flex flex-col gap-5 bg-[var(--bg-primary)]">
           {error && <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs px-3 py-2.5 rounded-lg flex items-center gap-2"><AlertTriangle size={14} className="shrink-0" /> {error}</div>}
           <div>
-            <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">Título *</label>
-            <input autoFocus value={title} onChange={e => { setTitle(e.target.value); setError(''); }} onKeyDown={e => e.key === 'Enter' && save()} className="w-full bg-[#12121a] border border-[#27272a] rounded-xl px-4 py-3.5 text-sm text-white outline-none focus:border-indigo-500 transition-colors" placeholder="O que precisa ser feito?" />
+            <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Título *</label>
+            <input autoFocus value={title} onChange={e => { setTitle(e.target.value); setError(''); }} onKeyDown={e => e.key === 'Enter' && save()} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 transition-colors" placeholder="O que precisa ser feito?" />
           </div>
           <div>
-            <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">Cliente *</label>
+            <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Cliente *</label>
             <div className="relative">
-              <select value={clientId} onChange={e => { setClientId(e.target.value); setError(''); }} className="appearance-none w-full bg-[#12121a] border border-[#27272a] rounded-xl pl-4 pr-10 py-3.5 text-sm text-white outline-none focus:border-indigo-500 cursor-pointer transition-colors">
-                <option value="" className="bg-[#1c1d26]">Selecione o cliente...</option>
-                {clients.map((c: any) => <option key={c.id} value={c.id} className="bg-[#1c1d26]">{c.name}</option>)}
+              <select value={clientId} onChange={e => { setClientId(e.target.value); setError(''); }} className="appearance-none w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl pl-4 pr-10 py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 cursor-pointer transition-colors">
+                <option value="" className="bg-[var(--bg-tertiary)]">Selecione o cliente...</option>
+                {clients.map((c: any) => <option key={c.id} value={c.id} className="bg-[var(--bg-tertiary)]">{c.name}</option>)}
               </select>
-              <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-neutral-600 pointer-events-none" />
+              <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" />
             </div>
           </div>
           <div>
-            <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">Prioridade</label>
+            <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Prioridade</label>
             <div className="flex gap-2">
               {['Baixa', 'Média', 'Alta'].map(p => {
                 const st = PRIORITY_STYLE[p];
                 const on = priority === p;
-                return <button key={p} onClick={() => setPriority(p)} className={`flex-1 py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-widest border transition-colors ${on ? `${st.bg} ${st.text} ${st.border}` : 'bg-[#12121a] text-neutral-500 border-[#27272a] hover:text-neutral-300'}`}>{p}</button>;
+                return <button key={p} onClick={() => setPriority(p)} className={`flex-1 py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-widest border transition-colors ${on ? `${st.bg} ${st.text} ${st.border}` : 'bg-[var(--bg-secondary)] text-[var(--text-muted)] border-[var(--border-primary)] hover:text-[var(--text-secondary)]'}`}>{p}</button>;
               })}
             </div>
           </div>
-          <p className="text-[10px] text-neutral-600 ml-1 leading-relaxed">A demanda entra no Backlog com você como responsável. Detalhe (descrição, prazo, checklist) depois.</p>
+          <p className="text-[10px] text-[var(--text-muted)] ml-1 leading-relaxed">A demanda entra no Backlog com você como responsável. Detalhe (descrição, prazo, checklist) depois.</p>
         </div>
-        <div className="px-6 py-5 border-t border-[#27272a] bg-[#0f0f13] flex items-center justify-end gap-3">
-          <button onClick={onClose} className="text-xs font-bold uppercase tracking-widest px-5 py-3.5 rounded-xl text-neutral-500 hover:text-white transition-colors">Cancelar</button>
+        <div className="px-6 py-5 border-t border-[var(--border-primary)] bg-[var(--bg-tertiary)] flex items-center justify-end gap-3">
+          <button onClick={onClose} className="text-xs font-bold uppercase tracking-widest px-5 py-3.5 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">Cancelar</button>
           <button onClick={save} className="text-xs font-black uppercase tracking-widest px-8 py-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition-all shadow-[0_0_15px_rgba(79,70,229,0.3)]">Adicionar</button>
         </div>
       </div>
@@ -3423,7 +3535,7 @@ function TodayView({ tasks, clients, user, getElapsed, onOpen, onToggleTimer, on
     const d = dueMs(t);
     if (d !== null && d < todayMs) return true;
     const sd = startDay(t);
-    if (sd && ['backlog', 'todo'].includes(t.status)) {
+    if (sd) {
       const [y, m, dd] = sd.split('-');
       if (new Date(+y, +m - 1, +dd).setHours(0, 0, 0, 0) < todayMs) return true;
     }
@@ -3433,7 +3545,7 @@ function TodayView({ tasks, clients, user, getElapsed, onOpen, onToggleTimer, on
   // "Para hoje": agendada na Agenda (scheduledStart) OU com início previsto (startDate) para hoje.
   // Exclui as que já caem em Atrasadas/Vence hoje, pra não repetir.
   const scheduledToday = mine.filter((t: any) => isActive(t)
-      && (schedDay(t) === todayStr || (startDay(t) === todayStr && ['backlog', 'todo'].includes(t.status)))
+      && ((schedDay(t) === todayStr && !isScheduleWindowOver(t)) || startDay(t) === todayStr)
       && (dueMs(t) === null || (dueMs(t) as number) > todayMs)
     ).sort((a: any, b: any) => {
       const aS = a.scheduledStart ? new Date(a.scheduledStart).getTime() : Infinity;
@@ -3462,8 +3574,8 @@ function TodayView({ tasks, clients, user, getElapsed, onOpen, onToggleTimer, on
     <div className="flex flex-col h-full fade-in gap-6">
       {/* Saudação */}
       <div className="shrink-0">
-        <h2 className="font-display text-xl sm:text-2xl font-bold text-white tracking-tight">{greet}, {user.name.split(' ')[0]}</h2>
-        <p className="text-xs text-neutral-500 mt-1 capitalize">{new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }).format(nowD)}</p>
+        <h2 className="font-display text-xl sm:text-2xl font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>{greet}, {user.name.split(' ')[0]}</h2>
+        <p className="text-xs mt-1 capitalize" style={{ color: 'var(--text-muted)' }}>{new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }).format(nowD)}</p>
       </div>
 
       {/* Resumo */}
@@ -3471,14 +3583,14 @@ function TodayView({ tasks, clients, user, getElapsed, onOpen, onToggleTimer, on
         {stats.map(s => (
           <div key={s.label} className={`rounded-2xl border p-4 flex flex-col gap-1 ${s.bg}`}>
             <span className={`text-3xl font-black ${s.color}`}>{s.value}</span>
-            <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">{s.label}</span>
+            <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)]">{s.label}</span>
           </div>
         ))}
       </div>
 
       {/* Minha Semana */}
       <div className="shrink-0">
-        <h3 className="text-[10px] font-bold text-neutral-500 mb-3 uppercase tracking-[0.2em] ml-0.5">Minha Semana</h3>
+        <h3 className="text-[10px] font-bold mb-3 uppercase tracking-[0.2em] ml-0.5" style={{ color: 'var(--text-muted)' }}>Minha Semana</h3>
         <div className="grid grid-cols-7 gap-2">
           {week.map((d, i) => {
             const dStr = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -3486,13 +3598,13 @@ function TodayView({ tasks, clients, user, getElapsed, onOpen, onToggleTimer, on
             const load = dayTasks.reduce((acc: number, t: any) => acc + (t.durationMin > 0 ? t.durationMin : 60), 0);
             const isToday = new Date(d).setHours(0, 0, 0, 0) === todayMs;
             return (
-              <div key={i} className={`rounded-xl border p-2 flex flex-col items-center gap-1 ${isToday ? 'border-teal-500/40 bg-teal-500/[0.06]' : 'border-[#27272a] bg-[#12121a]'}`}>
-                <span className={`text-[9px] font-bold uppercase tracking-widest ${isToday ? 'text-teal-400' : 'text-neutral-500'}`}>{dayNames[i]}</span>
-                <span className={`text-sm font-bold ${isToday ? 'text-white' : 'text-neutral-300'}`}>{pad(d.getDate())}</span>
+              <div key={i} className={`rounded-xl border p-2 flex flex-col items-center gap-1 ${isToday ? 'border-teal-500/40 bg-teal-500/[0.06]' : 'border-[var(--border-primary)] bg-[var(--bg-secondary)]'}`}>
+                <span className={`text-[9px] font-bold uppercase tracking-widest ${isToday ? 'text-teal-400' : 'text-[var(--text-muted)]'}`}>{dayNames[i]}</span>
+                <span className={`text-sm font-bold ${isToday ? '' : ''}`} style={{ color: isToday ? 'var(--text-primary)' : 'var(--text-secondary)' }}>{pad(d.getDate())}</span>
                 {dayTasks.length > 0 ? (
-                  <span className="text-[8px] font-bold text-neutral-500 text-center leading-tight">{dayTasks.length}× · {(load / 60).toFixed(1)}h</span>
+                  <span className="text-[8px] font-bold text-center leading-tight" style={{ color: 'var(--text-muted)' }}>{dayTasks.length}× · {(load / 60).toFixed(1)}h</span>
                 ) : (
-                  <span className="text-[8px] text-neutral-700">—</span>
+                  <span className="text-[8px]" style={{ color: 'var(--text-muted)' }}>—</span>
                 )}
               </div>
             );
@@ -3503,7 +3615,7 @@ function TodayView({ tasks, clients, user, getElapsed, onOpen, onToggleTimer, on
       {/* Listas de foco */}
       <div className="flex-1 overflow-y-auto kp-scroll flex flex-col gap-6 pr-0.5 pb-2">
         {nothing && (
-          <div className="text-center text-sm text-neutral-500 py-12 border border-dashed border-[#27272a] rounded-2xl flex flex-col items-center gap-3">
+          <div className="text-center text-sm py-12 border border-dashed rounded-2xl flex flex-col items-center gap-3" style={{ color: 'var(--text-muted)', borderColor: 'var(--border-primary)' }}>
             <CheckCircle2 size={32} className="text-emerald-500/60" />
             Nada atrasado ou pendente para hoje. Bom trabalho!
           </div>
@@ -3520,7 +3632,7 @@ function TodayView({ tasks, clients, user, getElapsed, onOpen, onToggleTimer, on
         <FocusSection label="Para hoje" count={scheduledToday.length} dot="bg-teal-500">
           {scheduledToday.map((t: any) => {
             let meta;
-            if (t.scheduledStart) { const s = new Date(t.scheduledStart); const dur = t.durationMin > 0 ? t.durationMin : 60; meta = `${pad(s.getHours())}:${pad(s.getMinutes())} · ${dur}min`; }
+            if (t.scheduledStart) { const s = new Date(t.scheduledStart); const dur = t.scheduledDurationMin > 0 ? t.scheduledDurationMin : (t.durationMin > 0 ? t.durationMin : 60); meta = `${pad(s.getHours())}:${pad(s.getMinutes())} · ${dur}min`; }
             else meta = 'Início previsto para hoje';
             return <FocusRow key={t.id} t={t} clientName={clientName(t.clientId)} onOpen={onOpen} onToggleTimer={onToggleTimer} onComplete={onComplete} onOpenAgenda={onOpenAgenda} accent="bg-teal-500" meta={meta} metaColor="text-teal-400" />;
           })}
@@ -3786,25 +3898,25 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove, user, onCre
 
   return (
     <div className="flex flex-col h-full fade-in gap-5" onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}>
-      <p className="text-sm text-neutral-400 text-center max-w-2xl mx-auto shrink-0">
+      <p className="text-sm text-center max-w-2xl mx-auto shrink-0" style={{ color: 'var(--text-secondary)' }}>
         Arraste uma demanda de "A Agendar" para o dia e horário em que vai atuar — o card é agendado ali (o status não muda) e o Google Agenda abre já preenchido. Ou clique num horário vazio para criar um novo evento. Arraste a borda inferior de um bloco para ajustar a duração.
       </p>
 
       {/* A agendar */}
       <div className="shrink-0">
-        <h3 className="text-[10px] font-bold text-neutral-500 mb-3 uppercase tracking-[0.2em] ml-1">A Agendar ({unscheduled.length})</h3>
+        <h3 className="text-[10px] font-bold mb-3 uppercase tracking-[0.2em] ml-1" style={{ color: 'var(--text-muted)' }}>A Agendar ({unscheduled.length})</h3>
         {unscheduled.length === 0 ? (
-          <div className="text-center text-xs text-neutral-600 py-5 border border-dashed border-[#27272a] rounded-2xl">Todas as demandas ativas já estão agendadas.</div>
+          <div className="text-center text-xs py-5 border border-dashed rounded-2xl" style={{ color: 'var(--text-muted)', borderColor: 'var(--border-primary)' }}>Todas as demandas ativas já estão agendadas.</div>
         ) : (
           <div className="flex gap-2 overflow-x-auto kp-scroll pb-2">
             {unscheduled.map((t: any) => (
               <div key={t.id} onPointerDown={(e) => beginDrag(e, t, 'place')} style={{ touchAction: 'none' }}
-                className="shrink-0 w-56 cursor-grab active:cursor-grabbing rounded-2xl bg-[#12121a] border border-[#27272a] hover:border-teal-500/40 p-3.5 select-none transition-colors">
+                className="shrink-0 w-56 cursor-grab active:cursor-grabbing rounded-2xl bg-[var(--bg-secondary)] border border-[var(--border-primary)] hover:border-teal-500/40 p-3.5 select-none transition-colors">
                 <div className="flex items-start gap-2">
-                  <GripVertical size={16} className="text-neutral-600 shrink-0 mt-0.5" />
+                  <GripVertical size={16} className="shrink-0 mt-0.5" style={{ color: 'var(--text-muted)' }} />
                   <div className="min-w-0">
-                    <div className="text-sm font-bold text-white truncate">{t.title}</div>
-                    <div className="text-[10px] text-neutral-500 uppercase tracking-widest font-bold mt-1 flex items-center gap-2 flex-wrap">
+                    <div className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{t.title}</div>
+                    <div className="text-[10px] uppercase tracking-widest font-bold mt-1 flex items-center gap-2 flex-wrap" style={{ color: 'var(--text-muted)' }}>
                       {clientName(t.clientId) && <span className="flex items-center gap-1 truncate"><Building2 size={10} /> {clientName(t.clientId)}</span>}
                       <span>{t.durationMin > 0 ? `${t.durationMin}min` : '60min'}</span>
                     </div>
@@ -3817,27 +3929,27 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove, user, onCre
       </div>
 
       {/* Navegação de semana */}
-      <div className="flex flex-col items-center gap-3 shrink-0 border-t border-[#27272a] pt-4 sm:flex-row sm:justify-center">
+      <div className="flex flex-col items-center gap-3 shrink-0 border-t pt-4 sm:flex-row sm:justify-center" style={{ borderColor: 'var(--border-primary)' }}>
         <div className="flex items-center justify-center gap-3">
-          <button onClick={() => shiftWeek(-1)} className="p-2.5 rounded-xl bg-white/5 border border-white/10 text-neutral-300 hover:bg-white/10 transition-colors shrink-0"><ChevronLeft size={18} /></button>
-          <span className="text-base sm:text-sm font-bold text-white px-2 whitespace-nowrap">{weekLabel}</span>
-          <button onClick={() => shiftWeek(1)} className="p-2.5 rounded-xl bg-white/5 border border-white/10 text-neutral-300 hover:bg-white/10 transition-colors shrink-0"><ChevronRight size={18} /></button>
+          <button onClick={() => shiftWeek(-1)} className="p-2.5 rounded-xl bg-[var(--bg-overlay)] border border-[var(--border-overlay)] hover:bg-[var(--bg-overlay-strong)] transition-colors shrink-0" style={{ color: 'var(--text-secondary)' }}><ChevronLeft size={18} /></button>
+          <span className="text-base sm:text-sm font-bold px-2 whitespace-nowrap" style={{ color: 'var(--text-primary)' }}>{weekLabel}</span>
+          <button onClick={() => shiftWeek(1)} className="p-2.5 rounded-xl bg-[var(--bg-overlay)] border border-[var(--border-overlay)] hover:bg-[var(--bg-overlay-strong)] transition-colors shrink-0" style={{ color: 'var(--text-secondary)' }}><ChevronRight size={18} /></button>
         </div>
         <div className="flex items-center gap-2">
-          <div className="w-px h-5 bg-white/10 mx-1 hidden sm:block" />
+          <div className="w-px h-5 mx-1 hidden sm:block" style={{ background: 'var(--border-overlay)' }} />
           <button onClick={goToday} className="text-[10px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-lg bg-teal-500/10 text-teal-400 border border-teal-500/20 hover:bg-teal-500/20 transition-colors shrink-0">Hoje</button>
-          <button onClick={() => setWeekdaysOnly(!weekdaysOnly)} className={`text-[10px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-lg border transition-colors shrink-0 ${weekdaysOnly ? 'bg-teal-500/10 text-teal-400 border-teal-500/20' : 'bg-white/5 text-neutral-400 border-white/10 hover:text-white'}`} title="Alternar fim de semana">{weekdaysOnly ? 'Dias úteis' : 'Todos os dias'}</button>
+          <button onClick={() => setWeekdaysOnly(!weekdaysOnly)} className={`text-[10px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-lg border transition-colors shrink-0 ${weekdaysOnly ? 'bg-teal-500/10 text-teal-400 border-teal-500/20' : 'bg-[var(--bg-overlay)] text-[var(--text-secondary)] border-[var(--border-overlay)] hover:text-[var(--text-primary)]'}`} title="Alternar fim de semana">{weekdaysOnly ? 'Dias úteis' : 'Todos os dias'}</button>
         </div>
       </div>
 
       {/* Grade 24h */}
-      <div ref={gridScrollRef} className="flex-1 overflow-auto kp-scroll border border-[#27272a] rounded-2xl bg-[#0d0d12] min-h-[240px]">
+      <div ref={gridScrollRef} className="flex-1 overflow-auto kp-scroll border border-[var(--border-primary)] rounded-2xl bg-[var(--bg-primary)] min-h-[240px]">
         <div className={`flex ${weekdaysOnly ? 'w-full' : 'min-w-max'}`}>
           {/* Gutter de horas */}
-          <div className="sticky left-0 z-20 bg-[#0d0d12] border-r border-white/5 shrink-0" style={{ width: 46 }}>
-            <div className="h-9 border-b border-white/5" />
+          <div className="sticky left-0 z-20 bg-[var(--bg-primary)] border-r border-[var(--border-overlay)] shrink-0" style={{ width: 46 }}>
+            <div className="h-9 border-b border-[var(--border-overlay)]" />
             {hours.map(h => (
-              <div key={h} className="text-[9px] font-mono text-neutral-600 text-right pr-2" style={{ height: ROW_H }}>
+              <div key={h} className="text-[9px] font-mono text-right pr-2" style={{ height: ROW_H, color: 'var(--text-muted)' }}>
                 <span className="relative -top-1.5">{pad(h)}:00</span>
               </div>
             ))}
@@ -3849,13 +3961,13 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove, user, onCre
             const isToday = new Date(day).setHours(0, 0, 0, 0) === todayKey;
             const showHint = dropHint && dropHint.dayIndex === i;
             return (
-              <div key={i} className={`border-r border-white/5 ${weekdaysOnly ? 'flex-1 min-w-[100px]' : 'shrink-0'} ${isToday ? 'bg-teal-500/[0.04]' : ''}`} style={weekdaysOnly ? undefined : { width: 150 }}>
-                <div className={`h-9 sticky top-0 z-10 flex items-center justify-center border-b border-white/5 ${isToday ? 'bg-teal-600/20 text-teal-300' : 'bg-[#12121a] text-neutral-300'}`}>
+              <div key={i} className={`border-r border-[var(--border-overlay)] ${weekdaysOnly ? 'flex-1 min-w-[100px]' : 'shrink-0'} ${isToday ? 'bg-teal-500/[0.04]' : ''}`} style={weekdaysOnly ? undefined : { width: 150 }}>
+                <div className={`h-9 sticky top-0 z-10 flex items-center justify-center border-b border-[var(--border-overlay)] ${isToday ? 'bg-teal-600/20' : 'bg-[var(--bg-secondary)]'}`} style={{ color: isToday ? 'var(--accent-strong-teal)' : 'var(--text-secondary)' }}>
                   <span className="text-[11px] font-bold uppercase tracking-widest">{dayNames[i]} {pad(day.getDate())}</span>
                 </div>
                 <div data-cal-day={i} className="relative cursor-pointer" style={{ height: 24 * ROW_H }} onClick={(e) => openCreateAt(e, day)}>
                   {hours.map(h => (
-                    <div key={h} className="absolute left-0 right-0 border-b border-white/5 pointer-events-none" style={{ top: h * ROW_H, height: ROW_H }} />
+                    <div key={h} className="absolute left-0 right-0 border-b border-[var(--border-overlay)] pointer-events-none" style={{ top: h * ROW_H, height: ROW_H }} />
                   ))}
 
                   {/* Indicador ao vivo de onde vai cair */}
@@ -3879,23 +3991,23 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove, user, onCre
                     return (
                       <div key={t.id} onClick={(e) => e.stopPropagation()} className={`absolute left-1 right-1 rounded-lg ${blockColor} overflow-hidden group ${isDragging ? 'opacity-40' : ''} ${isClosed ? 'opacity-70' : ''}`} style={{ top, height: bh }}>
                         <div onPointerDown={(e) => !isClosed && beginDrag(e, t, 'move')} style={{ touchAction: 'none' }} className={`h-full p-1.5 select-none ${isClosed ? 'cursor-default' : 'cursor-grab active:cursor-grabbing'}`}>
-                          <div className={`text-[9px] font-mono font-bold leading-none mb-1 flex items-center gap-1 ${isDone ? 'text-emerald-300' : isCancelled ? 'text-neutral-400' : 'text-teal-300'}`}>
+                          <div className="text-[9px] font-mono font-bold leading-none mb-1 flex items-center gap-1" style={{ color: isDone ? 'var(--accent-strong-emerald)' : isCancelled ? 'var(--text-muted)' : 'var(--accent-strong-teal)' }}>
                             {isDone && <CheckCircle2 size={9} />}
                             {t.recurrence && t.recurrence !== 'none' && <span className="flex items-center gap-0.5"><RotateCcw size={8} />{recurLabel(t.recurrence)}</span>}
                             {pad(s.getHours())}:{pad(s.getMinutes())} · {dur}min
                           </div>
-                          <div className={`text-[10px] font-bold leading-tight line-clamp-2 ${isClosed ? 'text-neutral-300 line-through' : 'text-white'}`}>{t.title}</div>
-                          {cn && bh > ROW_H && <div className="text-[8px] text-teal-300/70 uppercase tracking-widest font-bold mt-1 truncate">{cn}</div>}
+                          <div className={`text-[10px] font-bold leading-tight line-clamp-2 ${isClosed ? 'line-through' : ''}`} style={{ color: isClosed ? 'var(--text-muted)' : 'var(--text-primary)' }}>{t.title}</div>
+                          {cn && bh > ROW_H && <div className="text-[8px] uppercase tracking-widest font-bold mt-1 truncate" style={{ color: 'var(--accent-strong-teal)', opacity: 0.75 }}>{cn}</div>}
                         </div>
                         <div className="absolute top-1 right-1 flex gap-1">
-                          <button onPointerDown={(e) => e.stopPropagation()} onClick={() => { const d = new Date(t.scheduledStart); setEsDate(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`); setEsTime(`${pad(d.getHours())}:${pad(d.getMinutes())}`); setEsDur(durationOf(t)); setEditSchedule(t); }} className="p-1 rounded bg-black/40 text-neutral-400 hover:text-white hover:bg-black/60" title="Editar horário/duração"><Pencil size={11} /></button>
+                          <button onPointerDown={(e) => e.stopPropagation()} onClick={() => { const d = new Date(t.scheduledStart); setEsDate(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`); setEsTime(`${pad(d.getHours())}:${pad(d.getMinutes())}`); setEsDur(durationOf(t)); setEditSchedule(t); }} className="p-1 rounded bg-black/40 text-[var(--text-secondary)] hover:text-white hover:bg-black/60" title="Editar horário/duração"><Pencil size={11} /></button>
                           {t.templateId ? (
                             <span className="p-1 rounded bg-purple-500/30 text-purple-200" title="Gerado por uma recorrência — mover isto não muda o padrão, só esta ocorrência"><RotateCcw size={11} /></span>
                           ) : (
-                            <button onPointerDown={(e) => e.stopPropagation()} onClick={() => cycleRecurrence(t.id)} className={`p-1 rounded hover:bg-black/60 ${t.recurrence && t.recurrence !== 'none' ? 'bg-teal-500/50 text-white' : 'bg-black/40 text-neutral-400 hover:text-teal-300'}`} title={t.recurrence === 'daily' ? 'Repete todo dia (clique: semana)' : t.recurrence === 'weekly' ? 'Repete toda semana (clique: parar)' : 'Repetir (clique: dia → semana)'}><RotateCcw size={11} /></button>
+                            <button onPointerDown={(e) => e.stopPropagation()} onClick={() => cycleRecurrence(t.id)} className={`p-1 rounded hover:bg-black/60 ${t.recurrence && t.recurrence !== 'none' ? 'bg-teal-500/50 text-white' : 'bg-black/40 text-[var(--text-secondary)] hover:text-teal-300'}`} title={t.recurrence === 'daily' ? 'Repete todo dia (clique: semana)' : t.recurrence === 'weekly' ? 'Repete toda semana (clique: parar)' : 'Repetir (clique: dia → semana)'}><RotateCcw size={11} /></button>
                           )}
                           <a href={buildGCalLink(t, cn)} target="_blank" rel="noreferrer" onPointerDown={(e) => e.stopPropagation()} className="p-1 rounded bg-black/40 text-teal-300 hover:bg-black/60" title="Abrir no Google Agenda"><ExternalLink size={11} /></a>
-                          <button onPointerDown={(e) => e.stopPropagation()} onClick={() => { if (t.agendaOnly) { onDeleteTask(t.id); } else { setSchedule(t.id, ''); } }} className="p-1 rounded bg-black/40 text-neutral-400 hover:text-red-400 hover:bg-black/60" title={t.agendaOnly ? 'Excluir evento' : 'Desagendar'}><X size={11} /></button>
+                          <button onPointerDown={(e) => e.stopPropagation()} onClick={() => { if (t.agendaOnly) { onDeleteTask(t.id); } else { setSchedule(t.id, ''); } }} className="p-1 rounded bg-black/40 text-[var(--text-secondary)] hover:text-red-400 hover:bg-black/60" title={t.agendaOnly ? 'Excluir evento' : 'Desagendar'}><X size={11} /></button>
                         </div>
                         {!isClosed && <div onPointerDown={(e) => { const rect = (e.currentTarget.parentElement as Element).getBoundingClientRect(); beginResize(e, t, rect.top); }} style={{ touchAction: 'none' }} className="absolute bottom-0 left-0 right-0 h-2.5 cursor-ns-resize bg-teal-500/40 opacity-0 group-hover:opacity-100 transition-opacity" title="Ajustar duração" />}
                       </div>
@@ -3917,51 +4029,51 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove, user, onCre
 
       {scheduleChoice && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center px-3 pt-3 pb-24 sm:p-4 z-[95] fade-in" onClick={() => setScheduleChoice(null)}>
-          <div className="w-full max-w-sm rounded-3xl bg-[#12121a] border border-[#27272a] shadow-2xl overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
-            <div className="px-6 py-5 border-b border-[#27272a] bg-[#0f0f13]">
-              <h3 className="font-display font-bold text-lg text-white">Como agendar?</h3>
-              <p className="text-[12px] text-neutral-400 mt-1 leading-snug truncate">{scheduleChoice.task.title} · {pad(scheduleChoice.hour)}:{pad(scheduleChoice.minute)}</p>
+          <div className="w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden animate-modal-pop" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }} onClick={e => e.stopPropagation()}>
+            <div className="px-6 py-5 border-b" style={{ borderColor: 'var(--border-primary)', background: 'var(--bg-tertiary)' }}>
+              <h3 className="font-display font-bold text-lg" style={{ color: 'var(--text-primary)' }}>Como agendar?</h3>
+              <p className="text-[12px] mt-1 leading-snug truncate" style={{ color: 'var(--text-secondary)' }}>{scheduleChoice.task.title} · {pad(scheduleChoice.hour)}:{pad(scheduleChoice.minute)}</p>
             </div>
-            <div className="p-5 flex flex-col gap-4 bg-[#09090b]">
+            <div className="p-5 flex flex-col gap-4" style={{ background: 'var(--bg-primary)' }}>
               <div>
-                <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">Duração de hoje na Agenda</label>
+                <label className="text-[10px] font-bold uppercase tracking-widest mb-2 block ml-1" style={{ color: 'var(--text-muted)' }}>Duração de hoje na Agenda</label>
                 <div className="flex gap-2 mb-2">
                   {[30, 60, 90, 120].map(m => (
-                    <button key={m} onClick={() => setScDuration(m)} className={`flex-1 py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-widest border transition-colors ${scDuration === m ? 'bg-teal-500/15 text-teal-300 border-teal-500/40' : 'bg-[#12121a] text-neutral-500 border-[#27272a] hover:text-neutral-300'}`}>{m < 60 ? `${m}min` : `${m / 60}h${m % 60 ? '30' : ''}`}</button>
+                    <button key={m} onClick={() => setScDuration(m)} className={`flex-1 py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-widest border transition-colors ${scDuration === m ? 'bg-teal-500/15 text-teal-300 border-teal-500/40' : 'bg-[var(--bg-secondary)] text-[var(--text-muted)] border-[var(--border-primary)] hover:text-[var(--text-secondary)]'}`}>{m < 60 ? `${m}min` : `${m / 60}h${m % 60 ? '30' : ''}`}</button>
                   ))}
                 </div>
                 <div className="flex items-center gap-2">
-                  <input type="number" min={5} step={5} value={scDuration} onChange={e => setScDuration(Math.max(5, parseInt(e.target.value) || 0))} className="w-24 bg-[#12121a] border border-[#27272a] rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-teal-500 transition-colors" />
-                  <span className="text-[11px] text-neutral-500">minutos exatos {![30, 60, 90, 120].includes(scDuration) && <span className="text-amber-400 font-bold">(valor já agendado)</span>}</span>
+                  <input type="number" min={5} step={5} value={scDuration} onChange={e => setScDuration(Math.max(5, parseInt(e.target.value) || 0))} className="w-24 rounded-xl px-3 py-2 text-sm outline-none focus:border-teal-500 transition-colors" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)', color: 'var(--text-primary)' }} />
+                  <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>minutos exatos {![30, 60, 90, 120].includes(scDuration) && <span className="text-amber-400 font-bold">(valor já agendado)</span>}</span>
                 </div>
-                <p className="text-[10px] text-neutral-600 mt-2 ml-1 leading-relaxed">Isso só define o bloco na Agenda — não altera o "Est. Minutos" da demanda.</p>
+                <p className="text-[10px] mt-2 ml-1 leading-relaxed" style={{ color: 'var(--text-muted)' }}>Isso só define o bloco na Agenda — não altera o "Est. Minutos" da demanda.</p>
               </div>
               <div>
-                <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">Como aparece no Google Agenda</label>
+                <label className="text-[10px] font-bold uppercase tracking-widest mb-2 block ml-1" style={{ color: 'var(--text-muted)' }}>Como aparece no Google Agenda</label>
                 <div className="flex gap-2">
                   {[{ v: 'reuniao', l: 'Reunião' }, { v: 'foco', l: '🎯 Foco' }, { v: 'tarefa', l: '✅ Tarefa' }].map(o => (
-                    <button key={o.v} onClick={() => setScLabel(o.v)} className={`flex-1 py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-widest border transition-colors ${scLabel === o.v ? 'bg-indigo-500/15 text-indigo-300 border-indigo-500/40' : 'bg-[#12121a] text-neutral-500 border-[#27272a] hover:text-neutral-300'}`}>{o.l}</button>
+                    <button key={o.v} onClick={() => setScLabel(o.v)} className={`flex-1 py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-widest border transition-colors ${scLabel === o.v ? 'bg-indigo-500/15 text-indigo-300 border-indigo-500/40' : 'bg-[var(--bg-secondary)] text-[var(--text-muted)] border-[var(--border-primary)] hover:text-[var(--text-secondary)]'}`}>{o.l}</button>
                   ))}
                 </div>
-                <p className="text-[10px] text-neutral-600 mt-2 ml-1 leading-relaxed">"Foco"/"Tarefa" só ajustam o título do evento — o Google não libera o bloco nativo de concentração por link direto (precisaria de acesso OAuth da organização).</p>
+                <p className="text-[10px] mt-2 ml-1 leading-relaxed" style={{ color: 'var(--text-muted)' }}>"Foco"/"Tarefa" só ajustam o título do evento — o Google não libera o bloco nativo de concentração por link direto (precisaria de acesso OAuth da organização).</p>
               </div>
-              <button onClick={() => { doMeeting(scheduleChoice.task, scheduleChoice.day, scheduleChoice.hour, scheduleChoice.minute, scDuration); setScheduleChoice(null); }} className="flex items-start gap-3 text-left p-4 rounded-2xl border border-[#27272a] bg-[#12121a] hover:border-teal-500/40 transition-colors">
+              <button onClick={() => { doMeeting(scheduleChoice.task, scheduleChoice.day, scheduleChoice.hour, scheduleChoice.minute, scDuration); setScheduleChoice(null); }} className="flex items-start gap-3 text-left p-4 rounded-2xl border hover:border-teal-500/40 transition-colors" style={{ borderColor: 'var(--border-primary)', background: 'var(--bg-secondary)' }}>
                 <div className="p-2 rounded-xl bg-teal-500/10 border border-teal-500/20 shrink-0"><CalendarDays size={16} className="text-teal-400" /></div>
                 <div>
-                  <div className="text-sm font-bold text-white">Marcar reunião</div>
-                  <div className="text-[11px] text-neutral-500 mt-0.5 leading-snug">Só marca o horário. Não muda a etapa e não abre o Google Agenda.</div>
+                  <div className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Marcar reunião</div>
+                  <div className="text-[11px] mt-0.5 leading-snug" style={{ color: 'var(--text-muted)' }}>Só marca o horário. Não muda a etapa e não abre o Google Agenda.</div>
                 </div>
               </button>
-              <button onClick={() => { doExecute(scheduleChoice.task, scheduleChoice.day, scheduleChoice.hour, scheduleChoice.minute, scDuration, scLabel); setScheduleChoice(null); }} className="flex items-start gap-3 text-left p-4 rounded-2xl border border-[#27272a] bg-[#12121a] hover:border-indigo-500/40 transition-colors">
+              <button onClick={() => { doExecute(scheduleChoice.task, scheduleChoice.day, scheduleChoice.hour, scheduleChoice.minute, scDuration, scLabel); setScheduleChoice(null); }} className="flex items-start gap-3 text-left p-4 rounded-2xl border hover:border-indigo-500/40 transition-colors" style={{ borderColor: 'var(--border-primary)', background: 'var(--bg-secondary)' }}>
                 <div className="p-2 rounded-xl bg-indigo-500/10 border border-indigo-500/20 shrink-0"><Play size={16} className="text-indigo-400" /></div>
                 <div>
-                  <div className="text-sm font-bold text-white">Vou executar</div>
-                  <div className="text-[11px] text-neutral-500 mt-0.5 leading-snug">Move para "Em Andamento" e abre o Google Agenda preenchido.</div>
+                  <div className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Vou executar</div>
+                  <div className="text-[11px] mt-0.5 leading-snug" style={{ color: 'var(--text-muted)' }}>Move para "Em Andamento" e abre o Google Agenda preenchido.</div>
                 </div>
               </button>
             </div>
-            <div className="px-6 py-4 border-t border-[#27272a] bg-[#0f0f13] flex justify-end">
-              <button onClick={() => setScheduleChoice(null)} className="text-xs font-bold uppercase tracking-widest px-5 py-2.5 rounded-xl text-neutral-500 hover:text-white transition-colors">Cancelar</button>
+            <div className="px-6 py-4 border-t flex justify-end" style={{ borderColor: 'var(--border-primary)', background: 'var(--bg-tertiary)' }}>
+              <button onClick={() => setScheduleChoice(null)} className="text-xs font-bold uppercase tracking-widest px-5 py-2.5 rounded-xl transition-colors hover:text-[var(--text-primary)]" style={{ color: 'var(--text-muted)' }}>Cancelar</button>
             </div>
           </div>
         </div>
@@ -3971,43 +4083,43 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove, user, onCre
         const isPastSchedule = editSchedule.scheduledStart && new Date(editSchedule.scheduledStart) < new Date();
         return (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center px-3 pt-3 pb-24 sm:p-4 z-[95] fade-in" onClick={() => setEditSchedule(null)}>
-          <div className="w-full max-w-sm rounded-3xl bg-[#12121a] border border-[#27272a] shadow-2xl overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
-            <div className="px-6 py-5 border-b border-[#27272a] flex items-center justify-between bg-[#0f0f13]">
+          <div className="w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden animate-modal-pop" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }} onClick={e => e.stopPropagation()}>
+            <div className="px-6 py-5 border-b flex items-center justify-between" style={{ borderColor: 'var(--border-primary)', background: 'var(--bg-tertiary)' }}>
               <div>
-                <h3 className="font-display font-bold text-lg text-white">{isPastSchedule ? 'Reagendar' : 'Editar horário'}</h3>
-                <p className="text-[12px] text-neutral-400 mt-1 leading-snug truncate">{editSchedule.title}</p>
+                <h3 className="font-display font-bold text-lg" style={{ color: 'var(--text-primary)' }}>{isPastSchedule ? 'Reagendar' : 'Editar horário'}</h3>
+                <p className="text-[12px] mt-1 leading-snug truncate" style={{ color: 'var(--text-secondary)' }}>{editSchedule.title}</p>
               </div>
-              <button onClick={() => setEditSchedule(null)} className="p-2 rounded-xl text-neutral-500 hover:text-white transition-colors"><X size={20} /></button>
+              <button onClick={() => setEditSchedule(null)} className="p-2 rounded-xl transition-colors hover:text-[var(--text-primary)]" style={{ color: 'var(--text-muted)' }}><X size={20} /></button>
             </div>
-            <div className="p-6 flex flex-col gap-5 bg-[#09090b]">
+            <div className="p-6 flex flex-col gap-5" style={{ background: 'var(--bg-primary)' }}>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">Data</label>
-                  <input type="date" value={esDate} onChange={e => setEsDate(e.target.value)} className="w-full bg-[#12121a] border border-[#27272a] rounded-xl px-4 py-3.5 text-sm text-white outline-none focus:border-teal-500 transition-colors" />
+                  <label className="text-[10px] font-bold uppercase tracking-widest mb-2 block ml-1" style={{ color: 'var(--text-muted)' }}>Data</label>
+                  <input type="date" value={esDate} onChange={e => setEsDate(e.target.value)} className="w-full rounded-xl px-4 py-3.5 text-sm outline-none focus:border-teal-500 transition-colors" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)', color: 'var(--text-primary)' }} />
                 </div>
                 <div>
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">Hora</label>
-                  <input type="time" value={esTime} onChange={e => setEsTime(e.target.value)} className="w-full bg-[#12121a] border border-[#27272a] rounded-xl px-4 py-3.5 text-sm text-white outline-none focus:border-teal-500 transition-colors" />
+                  <label className="text-[10px] font-bold uppercase tracking-widest mb-2 block ml-1" style={{ color: 'var(--text-muted)' }}>Hora</label>
+                  <input type="time" value={esTime} onChange={e => setEsTime(e.target.value)} className="w-full rounded-xl px-4 py-3.5 text-sm outline-none focus:border-teal-500 transition-colors" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)', color: 'var(--text-primary)' }} />
                 </div>
               </div>
               <div>
-                <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">Duração</label>
+                <label className="text-[10px] font-bold uppercase tracking-widest mb-2 block ml-1" style={{ color: 'var(--text-muted)' }}>Duração</label>
                 <div className="flex gap-2 flex-wrap mb-2">
                   {[30, 60, 90, 120, 180].map(m => (
-                    <button key={m} onClick={() => setEsDur(m)} className={`flex-1 min-w-[64px] py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-widest border transition-colors ${esDur === m ? 'bg-teal-500/15 text-teal-300 border-teal-500/40' : 'bg-[#12121a] text-neutral-500 border-[#27272a] hover:text-neutral-300'}`}>{m < 60 ? `${m}min` : `${m / 60}h${m % 60 ? '30' : ''}`}</button>
+                    <button key={m} onClick={() => setEsDur(m)} className={`flex-1 min-w-[64px] py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-widest border transition-colors ${esDur === m ? 'bg-teal-500/15 text-teal-300 border-teal-500/40' : 'bg-[var(--bg-secondary)] text-[var(--text-muted)] border-[var(--border-primary)] hover:text-[var(--text-secondary)]'}`}>{m < 60 ? `${m}min` : `${m / 60}h${m % 60 ? '30' : ''}`}</button>
                   ))}
                 </div>
                 <div className="flex items-center gap-2">
-                  <input type="number" min={5} step={5} value={esDur} onChange={e => setEsDur(Math.max(5, parseInt(e.target.value) || 0))} className="w-24 bg-[#12121a] border border-[#27272a] rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-teal-500 transition-colors" />
-                  <span className="text-[11px] text-neutral-500">minutos exatos {![30, 60, 90, 120, 180].includes(esDur) && <span className="text-amber-400 font-bold">(valor já agendado)</span>}</span>
+                  <input type="number" min={5} step={5} value={esDur} onChange={e => setEsDur(Math.max(5, parseInt(e.target.value) || 0))} className="w-24 rounded-xl px-3 py-2 text-sm outline-none focus:border-teal-500 transition-colors" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)', color: 'var(--text-primary)' }} />
+                  <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>minutos exatos {![30, 60, 90, 120, 180].includes(esDur) && <span className="text-amber-400 font-bold">(valor já agendado)</span>}</span>
                 </div>
-                <p className="text-[10px] text-neutral-600 mt-2 ml-1">Funciona mesmo se a demanda já estiver "Em Andamento" — ajusta só o horário e a duração na Agenda, sem tocar no "Est. Minutos" da demanda.</p>
+                <p className="text-[10px] mt-2 ml-1" style={{ color: 'var(--text-muted)' }}>Funciona mesmo se a demanda já estiver "Em Andamento" — ajusta só o horário e a duração na Agenda, sem tocar no "Est. Minutos" da demanda.</p>
               </div>
             </div>
-            <div className="px-6 pt-4 pb-5 border-t border-[#27272a] bg-[#0f0f13] flex flex-col gap-3">
+            <div className="px-6 pt-4 pb-5 border-t flex flex-col gap-3" style={{ borderColor: 'var(--border-primary)', background: 'var(--bg-tertiary)' }}>
               {isPastSchedule && <p className="text-[11px] text-amber-400/90 leading-snug">O horário original já passou — escolha uma nova data/hora acima para reagendar.</p>}
               <div className="flex items-center justify-end gap-3">
-                <button onClick={() => setEditSchedule(null)} className="text-xs font-bold uppercase tracking-widest px-5 py-3.5 rounded-xl text-neutral-500 hover:text-white transition-colors">Cancelar</button>
+                <button onClick={() => setEditSchedule(null)} className="text-xs font-bold uppercase tracking-widest px-5 py-3.5 rounded-xl transition-colors hover:text-[var(--text-primary)]" style={{ color: 'var(--text-muted)' }}>Cancelar</button>
                 <button onClick={() => {
                   if (!esDate || !esTime) return;
                   setTasks((prev: any) => prev.map((t: any) => t.id === editSchedule.id ? { ...t, scheduledStart: `${esDate}T${esTime}`, startDate: (t.agendaOnly || t.generatesCards) ? t.startDate : esDate, scheduledDurationMin: esDur } : t));
@@ -4022,69 +4134,69 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove, user, onCre
 
       {createSlot && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center px-3 pt-3 pb-24 sm:p-4 z-[95] fade-in" onClick={() => setCreateSlot(null)}>
-          <div className="w-full max-w-md rounded-3xl bg-[#12121a] border border-[#27272a] shadow-2xl overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
-            <div className="px-6 py-5 border-b border-[#27272a] flex items-center justify-between bg-[#0f0f13]">
+          <div className="w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-modal-pop" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }} onClick={e => e.stopPropagation()}>
+            <div className="px-6 py-5 border-b flex items-center justify-between" style={{ borderColor: 'var(--border-primary)', background: 'var(--bg-tertiary)' }}>
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-teal-500/10 rounded-xl border border-teal-500/20"><CalendarDays size={18} className="text-teal-400" /></div>
                 <div>
-                  <h3 className="font-display font-bold text-lg text-white">Novo evento</h3>
-                  <p className="text-[11px] text-neutral-500 mt-0.5">Reunião, atividade ou demanda</p>
+                  <h3 className="font-display font-bold text-lg" style={{ color: 'var(--text-primary)' }}>Novo evento</h3>
+                  <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>Reunião, atividade ou demanda</p>
                 </div>
               </div>
-              <button onClick={() => setCreateSlot(null)} className="p-2 rounded-xl text-neutral-500 hover:text-white transition-colors"><X size={20} /></button>
+              <button onClick={() => setCreateSlot(null)} className="p-2 rounded-xl transition-colors hover:text-[var(--text-primary)]" style={{ color: 'var(--text-muted)' }}><X size={20} /></button>
             </div>
-            <div className="p-6 flex flex-col gap-5 bg-[#09090b]">
+            <div className="p-6 flex flex-col gap-5" style={{ background: 'var(--bg-primary)' }}>
               {cErr && <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs px-3 py-2.5 rounded-lg flex items-center gap-2"><AlertTriangle size={14} className="shrink-0" /> {cErr}</div>}
               <div>
-                <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">Título *</label>
-                <input autoFocus value={cTitle} onChange={e => { setCTitle(e.target.value); setCErr(''); }} onKeyDown={e => e.key === 'Enter' && createEvent()} className="w-full bg-[#12121a] border border-[#27272a] rounded-xl px-4 py-3.5 text-sm text-white outline-none focus:border-teal-500 transition-colors" placeholder="Reunião, almoço, academia, demanda..." />
+                <label className="text-[10px] font-bold uppercase tracking-widest mb-2 block ml-1" style={{ color: 'var(--text-muted)' }}>Título *</label>
+                <input autoFocus value={cTitle} onChange={e => { setCTitle(e.target.value); setCErr(''); }} onKeyDown={e => e.key === 'Enter' && createEvent()} className="w-full rounded-xl px-4 py-3.5 text-sm outline-none focus:border-teal-500 transition-colors" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)', color: 'var(--text-primary)' }} placeholder="Reunião, almoço, academia, demanda..." />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">Data</label>
-                  <input type="date" value={cDate} onChange={e => setCDate(e.target.value)} className="w-full bg-[#12121a] border border-[#27272a] rounded-xl px-4 py-3.5 text-sm text-white outline-none focus:border-teal-500 transition-colors" />
+                  <label className="text-[10px] font-bold uppercase tracking-widest mb-2 block ml-1" style={{ color: 'var(--text-muted)' }}>Data</label>
+                  <input type="date" value={cDate} onChange={e => setCDate(e.target.value)} className="w-full rounded-xl px-4 py-3.5 text-sm outline-none focus:border-teal-500 transition-colors" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)', color: 'var(--text-primary)' }} />
                 </div>
                 <div>
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">Hora</label>
-                  <input type="time" value={cTime} onChange={e => setCTime(e.target.value)} className="w-full bg-[#12121a] border border-[#27272a] rounded-xl px-4 py-3.5 text-sm text-white outline-none focus:border-teal-500 transition-colors" />
+                  <label className="text-[10px] font-bold uppercase tracking-widest mb-2 block ml-1" style={{ color: 'var(--text-muted)' }}>Hora</label>
+                  <input type="time" value={cTime} onChange={e => setCTime(e.target.value)} className="w-full rounded-xl px-4 py-3.5 text-sm outline-none focus:border-teal-500 transition-colors" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)', color: 'var(--text-primary)' }} />
                 </div>
               </div>
               <div>
-                <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">Cliente</label>
+                <label className="text-[10px] font-bold uppercase tracking-widest mb-2 block ml-1" style={{ color: 'var(--text-muted)' }}>Cliente</label>
                 <div className="relative">
-                  <select value={cClient} onChange={e => setCClient(e.target.value)} className="appearance-none w-full bg-[#12121a] border border-[#27272a] rounded-xl pl-4 pr-10 py-3.5 text-sm text-white outline-none focus:border-teal-500 cursor-pointer transition-colors">
-                    <option value="" className="bg-[#1c1d26]">Pessoal / sem cliente</option>
-                    {clients.map((c: any) => <option key={c.id} value={c.id} className="bg-[#1c1d26]">{c.name}</option>)}
+                  <select value={cClient} onChange={e => setCClient(e.target.value)} className="appearance-none w-full rounded-xl pl-4 pr-10 py-3.5 text-sm outline-none focus:border-teal-500 cursor-pointer transition-colors" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)', color: 'var(--text-primary)' }}>
+                    <option value="" className="bg-[var(--bg-tertiary)]">Pessoal / sem cliente</option>
+                    {clients.map((c: any) => <option key={c.id} value={c.id} className="bg-[var(--bg-tertiary)]">{c.name}</option>)}
                   </select>
-                  <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-neutral-600 pointer-events-none" />
+                  <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--text-muted)' }} />
                 </div>
               </div>
               <div>
-                <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">Duração</label>
+                <label className="text-[10px] font-bold uppercase tracking-widest mb-2 block ml-1" style={{ color: 'var(--text-muted)' }}>Duração</label>
                 <div className="flex gap-2">
                   {[30, 60, 90, 120].map(m => (
-                    <button key={m} onClick={() => setCDur(m)} className={`flex-1 py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-widest border transition-colors ${cDur === m ? 'bg-teal-500/15 text-teal-300 border-teal-500/40' : 'bg-[#12121a] text-neutral-500 border-[#27272a] hover:text-neutral-300'}`}>{m < 60 ? `${m}min` : `${m / 60}h${m % 60 ? '30' : ''}`}</button>
+                    <button key={m} onClick={() => setCDur(m)} className={`flex-1 py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-widest border transition-colors ${cDur === m ? 'bg-teal-500/15 text-teal-300 border-teal-500/40' : 'bg-[var(--bg-secondary)] text-[var(--text-muted)] border-[var(--border-primary)] hover:text-[var(--text-secondary)]'}`}>{m < 60 ? `${m}min` : `${m / 60}h${m % 60 ? '30' : ''}`}</button>
                   ))}
                 </div>
               </div>
               <div>
-                <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">Repetição</label>
+                <label className="text-[10px] font-bold uppercase tracking-widest mb-2 block ml-1" style={{ color: 'var(--text-muted)' }}>Repetição</label>
                 <div className="flex gap-2">
                   {[{ v: 'none', l: 'Não repete' }, { v: 'daily', l: 'Todo dia' }, { v: 'weekly', l: 'Toda semana' }].map(o => (
-                    <button key={o.v} onClick={() => setCRecur(o.v)} className={`flex-1 py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-widest border transition-colors ${cRecur === o.v ? 'bg-teal-500/15 text-teal-300 border-teal-500/40' : 'bg-[#12121a] text-neutral-500 border-[#27272a] hover:text-neutral-300'}`}>{o.l}</button>
+                    <button key={o.v} onClick={() => setCRecur(o.v)} className={`flex-1 py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-widest border transition-colors ${cRecur === o.v ? 'bg-teal-500/15 text-teal-300 border-teal-500/40' : 'bg-[var(--bg-secondary)] text-[var(--text-muted)] border-[var(--border-primary)] hover:text-[var(--text-secondary)]'}`}>{o.l}</button>
                   ))}
                 </div>
               </div>
-              <button onClick={() => setCShowBoard(!cShowBoard)} className={`flex items-center justify-between px-4 py-3.5 rounded-xl border transition-colors ${cShowBoard ? 'bg-indigo-500/10 border-indigo-500/40' : 'bg-[#12121a] border-[#27272a]'}`}>
+              <button onClick={() => setCShowBoard(!cShowBoard)} className={`flex items-center justify-between px-4 py-3.5 rounded-xl border transition-colors ${cShowBoard ? 'bg-indigo-500/10 border-indigo-500/40' : 'bg-[var(--bg-secondary)] border-[var(--border-primary)]'}`}>
                 <span className="flex flex-col text-left">
-                  <span className="text-sm font-medium text-white">Mostrar no quadro</span>
-                  <span className="text-[10px] text-neutral-500">Aparece como demanda no Kanban (senão fica só na Agenda)</span>
+                  <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Mostrar no quadro</span>
+                  <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>Aparece como demanda no Kanban (senão fica só na Agenda)</span>
                 </span>
-                <span className={`w-10 h-6 rounded-full transition-colors relative shrink-0 ml-3 ${cShowBoard ? 'bg-indigo-500' : 'bg-[#27272a]'}`}><span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${cShowBoard ? 'left-[18px]' : 'left-0.5'}`} /></span>
+                <span className={`w-10 h-6 rounded-full transition-colors relative shrink-0 ml-3 ${cShowBoard ? 'bg-indigo-500' : 'bg-[var(--border-primary)]'}`}><span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${cShowBoard ? 'left-[18px]' : 'left-0.5'}`} /></span>
               </button>
             </div>
-            <div className="px-6 py-5 border-t border-[#27272a] bg-[#0f0f13] flex items-center justify-end gap-3">
-              <button onClick={() => setCreateSlot(null)} className="text-xs font-bold uppercase tracking-widest px-5 py-3.5 rounded-xl text-neutral-500 hover:text-white transition-colors">Cancelar</button>
+            <div className="px-6 py-5 border-t flex items-center justify-end gap-3" style={{ borderColor: 'var(--border-primary)', background: 'var(--bg-tertiary)' }}>
+              <button onClick={() => setCreateSlot(null)} className="text-xs font-bold uppercase tracking-widest px-5 py-3.5 rounded-xl transition-colors hover:text-[var(--text-primary)]" style={{ color: 'var(--text-muted)' }}>Cancelar</button>
               <button onClick={createEvent} className="text-xs font-black uppercase tracking-widest px-8 py-3.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white transition-all shadow-[0_0_15px_rgba(20,184,166,0.3)]">{cShowBoard ? 'Detalhar' : 'Criar'}</button>
             </div>
           </div>
@@ -4213,24 +4325,24 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center px-3 pt-3 pb-24 sm:p-4 z-[80] fade-in" onClick={onClose}>
-      <div className="w-full max-w-4xl rounded-3xl sm:rounded-[32px] bg-[#12121a] border border-[#27272a] flex flex-col max-h-[80dvh] sm:max-h-[88dvh] shadow-2xl overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
+      <div className="w-full max-w-4xl rounded-3xl sm:rounded-[32px] bg-[var(--bg-secondary)] border border-[var(--border-primary)] flex flex-col max-h-[80dvh] sm:max-h-[88dvh] shadow-2xl overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
         
-        <div className="px-5 sm:px-8 py-5 sm:py-6 border-b border-[#27272a] flex items-center justify-between bg-[#0f0f13]">
+        <div className="px-5 sm:px-8 py-5 sm:py-6 border-b border-[var(--border-primary)] flex items-center justify-between bg-[var(--bg-tertiary)]">
           <div className="flex items-center gap-4">
             <div className="p-2.5 bg-indigo-500/10 rounded-xl hidden sm:block text-indigo-400 border border-indigo-500/20"><Mail size={24} /></div>
             <div>
-              <h3 className="font-display font-bold text-xl text-white tracking-tight">Fechamento Semanal</h3>
-              <p className="text-xs text-neutral-500 mt-1 uppercase tracking-widest font-bold">Dispare os e-mails e copie os relatórios para o Notion.</p>
+              <h3 className="font-display font-bold text-xl text-[var(--text-primary)] tracking-tight">Fechamento Semanal</h3>
+              <p className="text-xs text-[var(--text-muted)] mt-1 uppercase tracking-widest font-bold">Dispare os e-mails e copie os relatórios para o Notion.</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-2.5 rounded-xl text-neutral-500 hover:bg-white/5 hover:text-white transition-colors shrink-0">
+          <button onClick={onClose} className="p-2.5 rounded-xl text-[var(--text-muted)] hover:bg-[var(--bg-overlay)] hover:text-[var(--text-primary)] transition-colors shrink-0">
             <X size={20} />
           </button>
         </div>
         
-        <div className="p-5 sm:p-8 overflow-y-auto kp-scroll flex flex-col gap-8 flex-1 bg-[#09090b]">
+        <div className="p-5 sm:p-8 overflow-y-auto kp-scroll flex flex-col gap-8 flex-1 bg-[var(--bg-primary)]">
           {Object.keys(tasksByClient).length === 0 && (
-             <div className="text-center text-sm text-neutral-500 py-12 border border-dashed border-[#27272a] rounded-3xl">
+             <div className="text-center text-sm text-[var(--text-muted)] py-12 border border-dashed border-[var(--border-primary)] rounded-3xl">
                Nenhuma demanda pendente para fechamento nesta semana.
              </div>
           )}
@@ -4244,23 +4356,23 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
             const totalTasksCount = clientTasks.done.length + clientTasks.inProgress.length;
             
             return (
-              <div key={clientId} className="bg-[#12121a] border border-[#27272a] rounded-3xl p-6 sm:p-8 shadow-sm">
-                <div className="flex items-center justify-between mb-6 border-b border-[#27272a] pb-5">
-                  <h4 className="font-bold text-lg text-white flex items-center gap-3">
+              <div key={clientId} className="bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-3xl p-6 sm:p-8 shadow-sm">
+                <div className="flex items-center justify-between mb-6 border-b border-[var(--border-primary)] pb-5">
+                  <h4 className="font-bold text-lg text-[var(--text-primary)] flex items-center gap-3">
                     <Building2 size={20} className="text-indigo-400" /> {clientName}
                   </h4>
-                  <span className="text-[10px] font-bold uppercase tracking-widest bg-white/5 border border-white/10 text-neutral-300 px-3 py-1.5 rounded-lg">
+                  <span className="text-[10px] font-bold uppercase tracking-widest bg-[var(--bg-overlay)] border border-[var(--border-overlay)] text-[var(--text-secondary)] px-3 py-1.5 rounded-lg">
                     {totalTasksCount} Demandas
                   </span>
                 </div>
 
-                <div className="text-[13px] text-neutral-400 mb-8 max-h-48 overflow-y-auto pr-2 kp-scroll font-mono border border-[#27272a] p-4 rounded-2xl bg-[#09090b]">
+                <div className="text-[13px] text-[var(--text-secondary)] mb-8 max-h-48 overflow-y-auto pr-2 kp-scroll font-mono border border-[var(--border-primary)] p-4 rounded-2xl bg-[var(--bg-primary)]">
                   {clientTasks.done.length > 0 && (
                     <div className="mb-5">
                       <strong className="text-emerald-400 uppercase tracking-widest text-[10px] block mb-3 border-b border-emerald-500/20 pb-2">Demandas Finalizadas:</strong>
                       {clientTasks.done.map((t: any) => (
                         <div key={t.id} className="mt-2 pl-2 border-l-2 border-emerald-500/30">
-                          <div className="text-neutral-200 font-bold">- {t.title}</div>
+                          <div className="text-[var(--text-secondary)] font-bold">- {t.title}</div>
                           {t.description && <div className="pl-3 opacity-60 line-clamp-2 mt-1 leading-relaxed text-[11px]">{t.description}</div>}
                         </div>
                       ))}
@@ -4271,7 +4383,7 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
                       <strong className="text-indigo-400 uppercase tracking-widest text-[10px] block mb-3 border-b border-indigo-500/20 pb-2">Demandas em Andamento:</strong>
                       {clientTasks.inProgress.map((t: any) => (
                         <div key={t.id} className="mt-2 pl-2 border-l-2 border-indigo-500/30">
-                          <div className="text-neutral-200 font-bold">- {t.title}</div>
+                          <div className="text-[var(--text-secondary)] font-bold">- {t.title}</div>
                           {t.description && <div className="pl-3 opacity-60 line-clamp-2 mt-1 leading-relaxed text-[11px]">{t.description}</div>}
                         </div>
                       ))}
@@ -4279,7 +4391,7 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
                   )}
                 </div>
                 
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-t border-[#27272a] pt-6">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-t border-[var(--border-primary)] pt-6">
                   <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
                     <button
                       onClick={() => setEmailPopup({ clientId, date: mData.date || '', link: mData.link || '', includeTime: false })}
@@ -4292,7 +4404,7 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
                   {clientTasks.done.length > 0 && (
                     <button 
                       onClick={() => onFormalize(clientId)}
-                      className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3.5 sm:py-3 bg-transparent border border-[#27272a] text-neutral-400 hover:text-white hover:border-emerald-500/50 hover:bg-emerald-500/10 rounded-xl text-xs font-bold uppercase tracking-widest transition-all"
+                      className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3.5 sm:py-3 bg-transparent border border-[var(--border-primary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-emerald-500/50 hover:bg-emerald-500/10 rounded-xl text-xs font-bold uppercase tracking-widest transition-all"
                     >
                       <CheckCircle2 size={16} /> Formalizar ({clientTasks.done.length})
                     </button>
@@ -4303,8 +4415,8 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
           })}
         </div>
         
-        <div className="px-5 sm:px-8 py-5 border-t border-[#27272a] flex flex-col sm:flex-row items-center justify-between gap-4 bg-[#0f0f13]">
-          <span className="text-xs font-bold text-neutral-500 uppercase tracking-widest">Ação em lote (Formaliza tudo do sistema)</span>
+        <div className="px-5 sm:px-8 py-5 border-t border-[var(--border-primary)] flex flex-col sm:flex-row items-center justify-between gap-4 bg-[var(--bg-tertiary)]">
+          <span className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-widest">Ação em lote (Formaliza tudo do sistema)</span>
           <button 
             onClick={() => onFormalize(null)} 
             className="w-full sm:w-auto flex items-center justify-center gap-2 px-8 py-4 sm:py-3.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold uppercase tracking-widest text-xs transition-all shadow-[0_0_15px_rgba(13,148,136,0.3)]"
@@ -4329,54 +4441,54 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
 
         return (
           <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center px-3 pt-3 pb-24 sm:p-4 z-[95] fade-in" onClick={() => setEmailPopup(null)}>
-            <div className="w-full max-w-lg rounded-3xl sm:rounded-[32px] bg-[#12121a] border border-[#27272a] shadow-2xl overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
-              <div className="px-6 py-5 border-b border-[#27272a] flex items-center justify-between bg-[#0f0f13]">
+            <div className="w-full max-w-lg rounded-3xl sm:rounded-[32px] bg-[var(--bg-secondary)] border border-[var(--border-primary)] shadow-2xl overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
+              <div className="px-6 py-5 border-b border-[var(--border-primary)] flex items-center justify-between bg-[var(--bg-tertiary)]">
                 <div className="flex items-center gap-3">
                   <div className="p-2 bg-indigo-500/10 rounded-xl border border-indigo-500/20"><Mail size={18} className="text-indigo-400" /></div>
                   <div>
-                    <h3 className="font-display font-bold text-lg text-white tracking-tight">Preparar E-mail</h3>
-                    <p className="text-[12px] text-neutral-400 mt-0.5">{clientName}</p>
+                    <h3 className="font-display font-bold text-lg text-[var(--text-primary)] tracking-tight">Preparar E-mail</h3>
+                    <p className="text-[12px] text-[var(--text-secondary)] mt-0.5">{clientName}</p>
                   </div>
                 </div>
-                <button onClick={() => setEmailPopup(null)} className="p-2 rounded-xl text-neutral-500 hover:text-white transition-colors"><X size={20} /></button>
+                <button onClick={() => setEmailPopup(null)} className="p-2 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"><X size={20} /></button>
               </div>
 
-              <div className="p-6 flex flex-col gap-5 bg-[#09090b]">
+              <div className="p-6 flex flex-col gap-5 bg-[var(--bg-primary)]">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="text-[10px] text-neutral-500 uppercase font-bold tracking-widest mb-2 block ml-1">Data da Reunião (Opcional)</label>
+                    <label className="text-[10px] text-[var(--text-muted)] uppercase font-bold tracking-widest mb-2 block ml-1">Data da Reunião (Opcional)</label>
                     <input
                       type="date"
                       value={emailPopup.date || ''}
                       onChange={e => updateField({ date: e.target.value })}
-                      className="w-full bg-[#12121a] border border-[#27272a] rounded-xl px-4 py-3.5 text-sm text-white outline-none focus:border-indigo-500 [color-scheme:dark]"
+                      className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 [color-scheme:dark]"
                     />
                   </div>
                   <div>
-                    <label className="text-[10px] text-neutral-500 uppercase font-bold tracking-widest mb-2 block ml-1">Link da Gravação (Opcional)</label>
+                    <label className="text-[10px] text-[var(--text-muted)] uppercase font-bold tracking-widest mb-2 block ml-1">Link da Gravação (Opcional)</label>
                     <input
                       type="text"
                       value={emailPopup.link || ''}
                       onChange={e => updateField({ link: e.target.value })}
-                      className="w-full bg-[#12121a] border border-[#27272a] rounded-xl px-4 py-3.5 text-sm text-white outline-none focus:border-indigo-500"
+                      className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500"
                       placeholder="Ex: meet.google.com/..."
                     />
                   </div>
                 </div>
 
-                <label className="flex items-center justify-between gap-3 bg-[#12121a] border border-[#27272a] rounded-xl px-4 py-3.5 cursor-pointer">
-                  <span className="text-xs font-bold text-neutral-300">Incluir horas trabalhadas de cada demanda</span>
+                <label className="flex items-center justify-between gap-3 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-3.5 cursor-pointer">
+                  <span className="text-xs font-bold text-[var(--text-secondary)]">Incluir horas trabalhadas de cada demanda</span>
                   <button
                     type="button"
                     onClick={() => setEmailPopup({ ...emailPopup, includeTime: !emailPopup.includeTime })}
-                    className={`w-11 h-6 rounded-full relative transition-colors shrink-0 ${emailPopup.includeTime ? 'bg-indigo-600' : 'bg-white/10'}`}
+                    className={`w-11 h-6 rounded-full relative transition-colors shrink-0 ${emailPopup.includeTime ? 'bg-indigo-600' : 'bg-[var(--bg-overlay-strong)]'}`}
                   >
                     <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${emailPopup.includeTime ? 'translate-x-5' : ''}`} />
                   </button>
                 </label>
               </div>
 
-              <div className="px-6 py-5 border-t border-[#27272a] bg-[#0f0f13] flex flex-wrap items-center gap-3">
+              <div className="px-6 py-5 border-t border-[var(--border-primary)] bg-[var(--bg-tertiary)] flex flex-wrap items-center gap-3">
                 <a
                   href={generateEmailLink(clientTasks, clientData, mData, emailPopup.includeTime)}
                   target="_blank"
@@ -4389,7 +4501,7 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
 
                 <button
                   onClick={() => handleCopyText(clientTasks, emailPopup.clientId, mData, emailPopup.includeTime)}
-                  className="flex-1 justify-center inline-flex items-center gap-2 px-5 py-3.5 bg-white/5 text-neutral-300 border border-white/10 hover:bg-white/10 rounded-xl text-xs font-bold uppercase tracking-widest transition-colors"
+                  className="flex-1 justify-center inline-flex items-center gap-2 px-5 py-3.5 bg-[var(--bg-overlay)] text-[var(--text-secondary)] border border-[var(--border-overlay)] hover:bg-[var(--bg-overlay-strong)] rounded-xl text-xs font-bold uppercase tracking-widest transition-colors"
                 >
                   {copiedId === emailPopup.clientId ? <Check size={16} className="text-emerald-400" /> : <Copy size={16} />}
                   {copiedId === emailPopup.clientId ? "Copiado!" : "Copiar Texto"}
@@ -4397,7 +4509,7 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
 
                 <button
                   onClick={() => handleCopyNotion(clientTasks, emailPopup.clientId)}
-                  className="flex-1 justify-center inline-flex items-center gap-2 px-5 py-3.5 bg-white/5 text-neutral-300 border border-white/10 hover:bg-white/10 rounded-xl text-xs font-bold uppercase tracking-widest transition-colors"
+                  className="flex-1 justify-center inline-flex items-center gap-2 px-5 py-3.5 bg-[var(--bg-overlay)] text-[var(--text-secondary)] border border-[var(--border-overlay)] hover:bg-[var(--bg-overlay-strong)] rounded-xl text-xs font-bold uppercase tracking-widest transition-colors"
                 >
                   {copiedNotionId === emailPopup.clientId ? <Check size={16} className="text-emerald-400" /> : <ClipboardList size={16} />}
                   {copiedNotionId === emailPopup.clientId ? "Copiado!" : "Copiar (Notion)"}
@@ -4416,28 +4528,28 @@ function TaskModal({ modal, setModal, clients, responsibles, closeModal, saveMod
   const addChecklistRow = () => { setModal((m: any) => ({ ...m, form: { ...m.form, checklist: [...(m.form.checklist || []), { id: nextId(), text: "", done: false }] } })); };
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center px-3 pt-3 pb-24 sm:p-4 z-[85] fade-in" onClick={closeModal}>
-      <div className="w-full max-w-xl rounded-[32px] bg-[#12121a] border border-[#27272a] flex flex-col max-h-[80dvh] sm:max-h-[85dvh] shadow-2xl overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
-        <div className="px-6 sm:px-8 py-5 border-b border-[#27272a] flex items-center justify-between bg-[#0f0f13] shrink-0"><h3 className="font-display font-bold text-xl text-white tracking-tight">{modal.mode === "add" ? "Nova Demanda" : "Editar Demanda"}</h3><button onClick={closeModal} className="p-2.5 rounded-xl text-neutral-500 hover:text-white hover:bg-white/5 transition-colors"><X size={20} /></button></div>
-        <div className="p-6 sm:p-8 overflow-y-auto kp-scroll flex flex-col gap-6 bg-[#09090b] flex-1">
-          <div><label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">Título do Card *</label><input autoFocus value={modal.form.title || ''} onChange={(e) => updateForm({ title: e.target.value })} className={`w-full bg-[#12121a] border rounded-xl px-4 py-4 sm:py-3.5 text-sm text-white outline-none focus:border-indigo-500 transition-all ${validationError && String(validationError).includes("Título") ? "border-red-500" : "border-[#27272a]"}`} placeholder="Ex: Ajustar Fluxo de E-mails..." /></div>
-          <div><label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">Contexto / Descrição *</label><textarea value={modal.form.description || ''} onChange={(e) => updateForm({ description: e.target.value })} rows={4} className={`w-full bg-[#12121a] border rounded-xl px-4 py-4 sm:py-3.5 text-sm text-white outline-none focus:border-indigo-500 resize-none transition-all ${validationError && String(validationError).includes("Descrição") ? "border-red-500" : "border-[#27272a]"}`} placeholder="Descreva os requisitos técnicos ou regras de negócio..." /></div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5"><CustomSelect label="Prioridade *" required hasError={validationError && String(validationError).includes("Prioridade")} value={modal.form.priority || ''} onChange={(e: any) => updateForm({ priority: e.target.value })} options={<><option value="" className="bg-[#1c1d26] text-white">Selecione...</option><option value="Baixa" className="bg-[#1c1d26] text-white">Baixa</option><option value="Média" className="bg-[#1c1d26] text-white">Média</option><option value="Alta" className="bg-[#1c1d26] text-white">Alta</option></>} /><div><label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">Est. Minutos</label><input type="number" value={modal.form.durationMin ?? ''} onChange={(e) => updateForm({ durationMin: e.target.value })} className="w-full bg-[#12121a] border border-[#27272a] rounded-xl px-4 py-4 sm:py-3.5 text-sm text-white outline-none focus:border-indigo-500 shadow-sm" placeholder="Ex: 60" /></div></div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5"><CustomSelect label="Responsável *" required hasError={validationError && String(validationError).includes("Responsável")} value={modal.form.responsibleId || ''} onChange={(e: any) => updateForm({ responsibleId: e.target.value })} options={<><option value="" className="bg-[#1c1d26] text-white">Selecione a pessoa...</option>{responsibles.map((r: any) => <option key={r.id} value={r.id} className="bg-[#1c1d26] text-white">{r.name}</option>)}</>} /><CustomSelect label="Cliente *" required hasError={validationError && String(validationError).includes("Cliente")} value={modal.form.clientId || ''} onChange={(e: any) => updateForm({ clientId: e.target.value })} options={<><option value="" className="bg-[#1c1d26] text-white">Selecione a empresa...</option>{clients.map((c: any) => <option key={c.id} value={c.id} className="bg-[#1c1d26] text-white">{c.name}</option>)}</>} /></div>
+      <div className="w-full max-w-xl rounded-[32px] bg-[var(--bg-secondary)] border border-[var(--border-primary)] flex flex-col max-h-[80dvh] sm:max-h-[85dvh] shadow-2xl overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
+        <div className="px-6 sm:px-8 py-5 border-b border-[var(--border-primary)] flex items-center justify-between bg-[var(--bg-tertiary)] shrink-0"><h3 className="font-display font-bold text-xl text-[var(--text-primary)] tracking-tight">{modal.mode === "add" ? "Nova Demanda" : "Editar Demanda"}</h3><button onClick={closeModal} className="p-2.5 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-overlay)] transition-colors"><X size={20} /></button></div>
+        <div className="p-6 sm:p-8 overflow-y-auto kp-scroll flex flex-col gap-6 bg-[var(--bg-primary)] flex-1">
+          <div><label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Título do Card *</label><input autoFocus value={modal.form.title || ''} onChange={(e) => updateForm({ title: e.target.value })} className={`w-full bg-[var(--bg-secondary)] border rounded-xl px-4 py-4 sm:py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 transition-all ${validationError && String(validationError).includes("Título") ? "border-red-500" : "border-[var(--border-primary)]"}`} placeholder="Ex: Ajustar Fluxo de E-mails..." /></div>
+          <div><label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Contexto / Descrição *</label><textarea value={modal.form.description || ''} onChange={(e) => updateForm({ description: e.target.value })} rows={4} className={`w-full bg-[var(--bg-secondary)] border rounded-xl px-4 py-4 sm:py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 resize-none transition-all ${validationError && String(validationError).includes("Descrição") ? "border-red-500" : "border-[var(--border-primary)]"}`} placeholder="Descreva os requisitos técnicos ou regras de negócio..." /></div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5"><CustomSelect label="Prioridade *" required hasError={validationError && String(validationError).includes("Prioridade")} value={modal.form.priority || ''} onChange={(e: any) => updateForm({ priority: e.target.value })} options={<><option value="" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Selecione...</option><option value="Baixa" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Baixa</option><option value="Média" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Média</option><option value="Alta" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Alta</option></>} /><div><label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Est. Minutos</label><input type="number" value={modal.form.durationMin ?? ''} onChange={(e) => updateForm({ durationMin: e.target.value })} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-4 sm:py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 shadow-sm" placeholder="Ex: 60" /></div></div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5"><CustomSelect label="Responsável *" required hasError={validationError && String(validationError).includes("Responsável")} value={modal.form.responsibleId || ''} onChange={(e: any) => updateForm({ responsibleId: e.target.value })} options={<><option value="" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Selecione a pessoa...</option>{responsibles.map((r: any) => <option key={r.id} value={r.id} className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">{r.name}</option>)}</>} /><CustomSelect label="Cliente *" required hasError={validationError && String(validationError).includes("Cliente")} value={modal.form.clientId || ''} onChange={(e: any) => updateForm({ clientId: e.target.value })} options={<><option value="" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Selecione a empresa...</option>{clients.map((c: any) => <option key={c.id} value={c.id} className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">{c.name}</option>)}</>} /></div>
           
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-            <div><label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">Data de Início</label><input type="date" value={modal.form.startDate || ''} onChange={(e) => updateForm({ startDate: e.target.value })} className="w-full bg-[#12121a] border border-[#27272a] rounded-xl px-4 py-4 sm:py-3.5 text-sm text-white outline-none focus:border-indigo-500 [color-scheme:dark] shadow-sm" /></div>
-            <div><label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-2 block ml-1">Prazo / Deadline</label><input type="date" value={modal.form.dueDate || ''} onChange={(e) => updateForm({ dueDate: e.target.value })} className="w-full bg-[#12121a] border border-[#27272a] rounded-xl px-4 py-4 sm:py-3.5 text-sm text-white outline-none focus:border-indigo-500 [color-scheme:dark] shadow-sm" /></div>
+            <div><label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Data de Início</label><input type="date" value={modal.form.startDate || ''} onChange={(e) => updateForm({ startDate: e.target.value })} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-4 sm:py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 [color-scheme:dark] shadow-sm" /></div>
+            <div><label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Prazo / Deadline</label><input type="date" value={modal.form.dueDate || ''} onChange={(e) => updateForm({ dueDate: e.target.value })} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-4 sm:py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 [color-scheme:dark] shadow-sm" /></div>
           </div>
           
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-             <CustomSelect label="Fase do Fluxo *" required hasError={validationError && String(validationError).includes("Fase")} value={modal.form.status || ''} onChange={(e: any) => updateForm({ status: e.target.value, waitingFor: e.target.value === 'waiting' ? modal.form.waitingFor : "" })} options={<><option value="" className="bg-[#1c1d26] text-white">Selecionar...</option>{COLUMNS.map(c => <option key={c.id} value={c.id} className="bg-[#1c1d26] text-white">{c.name}</option>)}</>} />
-             {modal.form.status === 'waiting' && <div className="animate-fade-in"><CustomSelect label="Dependência *" required hasError={validationError && String(validationError).includes("Dependência")} value={modal.form.waitingFor || ''} onChange={(e: any) => updateForm({ waitingFor: e.target.value })} options={<><option value="" className="bg-[#1c1d26] text-white">Pendente de quem?</option><option value="Cliente" className="bg-[#1c1d26] text-white">Cliente</option><option value="Time Interno" className="bg-[#1c1d26] text-white">Time Interno</option></>} /></div>}
+             <CustomSelect label="Fase do Fluxo *" required hasError={validationError && String(validationError).includes("Fase")} value={modal.form.status || ''} onChange={(e: any) => updateForm({ status: e.target.value, waitingFor: e.target.value === 'waiting' ? modal.form.waitingFor : "" })} options={<><option value="" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Selecionar...</option>{COLUMNS.map(c => <option key={c.id} value={c.id} className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">{c.name}</option>)}</>} />
+             {modal.form.status === 'waiting' && <div className="animate-fade-in"><CustomSelect label="Dependência *" required hasError={validationError && String(validationError).includes("Dependência")} value={modal.form.waitingFor || ''} onChange={(e: any) => updateForm({ waitingFor: e.target.value })} options={<><option value="" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Pendente de quem?</option><option value="Cliente" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Cliente</option><option value="Time Interno" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Time Interno</option></>} /></div>}
           </div>
           
-          <div className="mt-2"><div className="flex items-center justify-between mb-3"><label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 ml-1">Checklist de Passos</label><button onClick={addChecklistRow} className="text-[10px] font-black uppercase text-indigo-400 hover:text-indigo-300 transition-colors p-1 flex items-center gap-1"><Plus size={12}/> Adicionar Passo</button></div><div className="flex flex-col gap-3 pb-safe">{(modal.form.checklist || []).map((c: any) => (<div key={c.id} className="flex items-center gap-3"><button onClick={() => { setModal((m: any) => ({ ...m, form: { ...m.form, checklist: m.form.checklist.map((ci: any) => ci.id === c.id ? { ...ci, done: !ci.done } : ci) } })); }} className={`p-2.5 border rounded-xl transition-all shrink-0 ${c.done ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-400 shadow-[0_0_10px_rgba(99,102,241,0.2)]' : 'bg-[#12121a] border-[#27272a] text-neutral-700 hover:text-neutral-500 hover:bg-white/5'}`}><Check size={16}/></button><input value={c.text || ''} onChange={(e) => { setModal((m: any) => ({ ...m, form: { ...m.form, checklist: m.form.checklist.map((ci: any) => ci.id === c.id ? { ...ci, text: e.target.value } : ci) } })); }} className="flex-1 bg-[#12121a] border border-[#27272a] rounded-xl px-4 py-3.5 text-sm text-white outline-none focus:border-indigo-500 transition-all shadow-sm" placeholder="O que precisa ser feito?" /><button onClick={() => setModal((m: any) => ({ ...m, form: { ...m.form, checklist: m.form.checklist.filter((ci: any) => ci.id !== c.id) } }))} className="p-2.5 text-neutral-600 hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-colors"><X size={18} /></button></div>))}</div></div>
+          <div className="mt-2"><div className="flex items-center justify-between mb-3"><label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] ml-1">Checklist de Passos</label><button onClick={addChecklistRow} className="text-[10px] font-black uppercase text-indigo-400 hover:text-indigo-300 transition-colors p-1 flex items-center gap-1"><Plus size={12}/> Adicionar Passo</button></div><div className="flex flex-col gap-3 pb-safe">{(modal.form.checklist || []).map((c: any) => (<div key={c.id} className="flex items-center gap-3"><button onClick={() => { setModal((m: any) => ({ ...m, form: { ...m.form, checklist: m.form.checklist.map((ci: any) => ci.id === c.id ? { ...ci, done: !ci.done } : ci) } })); }} className={`p-2.5 border rounded-xl transition-all shrink-0 ${c.done ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-400 shadow-[0_0_10px_rgba(99,102,241,0.2)]' : 'bg-[var(--bg-secondary)] border-[var(--border-primary)] text-[var(--text-muted)] hover:text-[var(--text-muted)] hover:bg-[var(--bg-overlay)]'}`}><Check size={16}/></button><input value={c.text || ''} onChange={(e) => { setModal((m: any) => ({ ...m, form: { ...m.form, checklist: m.form.checklist.map((ci: any) => ci.id === c.id ? { ...ci, text: e.target.value } : ci) } })); }} className="flex-1 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 transition-all shadow-sm" placeholder="O que precisa ser feito?" /><button onClick={() => setModal((m: any) => ({ ...m, form: { ...m.form, checklist: m.form.checklist.filter((ci: any) => ci.id !== c.id) } }))} className="p-2.5 text-[var(--text-muted)] hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-colors"><X size={18} /></button></div>))}</div></div>
           {modal.mode === 'edit' && Array.isArray(modal.task?.history) && modal.task.history.length > 0 && (
             <div className="mt-2">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-3 block ml-1">Histórico</label>
+              <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-3 block ml-1">Histórico</label>
               <div className="flex flex-col">
                 {modal.task.history.map((h: any, i: number) => {
                   const d = new Date(h.at);
@@ -4451,12 +4563,12 @@ function TaskModal({ modal, setModal, clients, responsibles, closeModal, saveMod
                   return (
                     <div key={i} className="flex gap-3">
                       <div className="flex flex-col items-center shrink-0">
-                        <span className={`w-2.5 h-2.5 rounded-full mt-1 shrink-0 ${isLast ? 'bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.6)]' : 'bg-[#3f3f46]'}`}></span>
-                        {!isLast && <span className="w-px flex-1 bg-[#27272a] my-1"></span>}
+                        <span className={`w-2.5 h-2.5 rounded-full mt-1 shrink-0 ${isLast ? 'bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.6)]' : 'bg-[var(--border-hover)]'}`}></span>
+                        {!isLast && <span className="w-px flex-1 bg-[var(--border-primary)] my-1"></span>}
                       </div>
                       <div className="pb-4 min-w-0">
-                        <div className="text-[12px] text-neutral-200 font-medium leading-snug">{label}</div>
-                        {dateStr && <div className="text-[10px] text-neutral-500 font-mono mt-0.5">{dateStr}</div>}
+                        <div className="text-[12px] text-[var(--text-secondary)] font-medium leading-snug">{label}</div>
+                        {dateStr && <div className="text-[10px] text-[var(--text-muted)] font-mono mt-0.5">{dateStr}</div>}
                       </div>
                     </div>
                   );
@@ -4465,7 +4577,7 @@ function TaskModal({ modal, setModal, clients, responsibles, closeModal, saveMod
             </div>
           )}
         </div>
-        <div className="px-6 sm:px-8 py-5 border-t border-[#27272a] flex flex-col sm:flex-row items-center justify-end gap-3 bg-[#0f0f13] shrink-0 pb-[max(env(safe-area-inset-bottom),1.25rem)] md:pb-5"><button onClick={closeModal} className="w-full sm:w-auto text-xs font-bold uppercase tracking-widest px-6 py-4 rounded-xl text-neutral-500 hover:text-white hover:bg-white/5 transition-colors">Cancelar</button><button onClick={saveModal} className="w-full sm:w-auto text-xs font-black uppercase tracking-[0.15em] px-10 py-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition-all shadow-[0_0_20px_rgba(79,70,229,0.3)]">Salvar Demanda</button></div>
+        <div className="px-6 sm:px-8 py-5 border-t border-[var(--border-primary)] flex flex-col sm:flex-row items-center justify-end gap-3 bg-[var(--bg-tertiary)] shrink-0 pb-[max(env(safe-area-inset-bottom),1.25rem)] md:pb-5"><button onClick={closeModal} className="w-full sm:w-auto text-xs font-bold uppercase tracking-widest px-6 py-4 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-overlay)] transition-colors">Cancelar</button><button onClick={saveModal} className="w-full sm:w-auto text-xs font-black uppercase tracking-[0.15em] px-10 py-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition-all shadow-[0_0_20px_rgba(79,70,229,0.3)]">Salvar Demanda</button></div>
       </div>
       {validationError && <div className="absolute top-6 left-1/2 -translate-x-1/2 bg-red-600 text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 fade-in z-[80] font-bold text-[11px] uppercase tracking-widest w-11/12 max-w-md"><AlertTriangle size={20} className="shrink-0" /> <span className="truncate">{Array.isArray(validationError) ? `Obrigatório: ${validationError.join(", ")}` : String(validationError)}</span></div>}
     </div>

@@ -1679,15 +1679,17 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                    <div className="absolute top-12 left-0 mt-2 w-48 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-2xl shadow-xl z-50 py-2 flex flex-col animate-modal-pop" onClick={e => e.stopPropagation()}>
                       <button onClick={() => { setProfileModal(true); setShowProfileMenu(false); }} className="w-full text-left px-5 py-3 text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-overlay)] flex items-center gap-3 font-medium"><UserCog size={16}/> Editar Perfil</button>
                       <div className="h-px w-full bg-[var(--border-primary)] my-1"></div>
+                      <button onClick={toggleTheme} className="w-full text-left px-5 py-3 text-sm text-[var(--text-secondary)] flex items-center justify-between gap-3 font-medium">
+                         <span className="flex items-center gap-3">{theme === 'dark' ? <Moon size={16}/> : <Sun size={16}/>} {theme === 'dark' ? 'Tema Escuro' : 'Tema Claro'}</span>
+                         <span className={`w-10 h-6 rounded-full transition-colors relative shrink-0 ml-3 ${theme === 'dark' ? 'bg-indigo-500' : 'bg-[var(--border-primary)]'}`}><span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${theme === 'dark' ? 'left-[18px]' : 'left-0.5'}`} /></span>
+                      </button>
+                      <div className="h-px w-full bg-[var(--border-primary)] my-1"></div>
                       <button onClick={onLogout} className="w-full text-left px-5 py-3 text-sm text-red-400 hover:bg-red-500/10 flex items-center gap-3 font-medium"><LogOut size={16}/> Sair</button>
                    </div>
                 )}
              </div>
 
              <div className="flex items-center gap-2 shrink-0">
-                <button onClick={toggleTheme} className="w-9 h-9 rounded-full flex items-center justify-center transition-colors hover:opacity-80" style={{ color: 'var(--text-secondary)' }} title={theme === 'dark' ? 'Tema claro' : 'Tema escuro'}>
-                  {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
-                </button>
                 <TopWidgets />
              </div>
           </div>

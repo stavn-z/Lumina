@@ -132,6 +132,7 @@ function normalizeTask(t: any) {
     generatesCards: !!t.generatesCards,
     templateId: t.templateId || '',
     occurrenceKey: t.occurrenceKey || '',
+    skippedOccurrences: Array.isArray(t.skippedOccurrences) ? t.skippedOccurrences : [],
     isMeeting: !!t.isMeeting,
     scheduledDurationMin: t.scheduledDurationMin || 0,
     timerElapsed: t.timerElapsed || 0,
@@ -693,6 +694,43 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
     return () => clearInterval(id);
   }, [tasks, user]);
 
+  // Alerta "hora de finalizar": avisa ~5 min depois do horário de término esperado (scheduledStart +
+  // duração) de uma demanda cujo timer ainda está rodando — sugere pausar e concluir.
+  useEffect(() => {
+    const check = () => {
+      const nowMs = Date.now();
+      const late = tasks.find((t: any) => {
+        if (t.responsibleId !== user.id) return false;
+        if (!t.timerRunning) return false;
+        if (!t.scheduledStart) return false;
+        if (['done', 'cancelled', 'formalize'].includes(t.status)) return false;
+        if (t.generatesCards) return false;
+        const start = new Date(t.scheduledStart);
+        if (isNaN(start.getTime())) return false;
+        const dur = t.scheduledDurationMin > 0 ? t.scheduledDurationMin : (t.durationMin > 0 ? t.durationMin : 60);
+        const endMs = start.getTime() + dur * 60000;
+        if (finishAlertedRef.current.has(t.id + '|' + endMs)) return false;
+        const diff = nowMs - endMs;
+        return diff >= 5 * 60000 && diff <= 15 * 60000;
+      });
+      if (late) {
+        const start = new Date(late.scheduledStart);
+        const dur = late.scheduledDurationMin > 0 ? late.scheduledDurationMin : (late.durationMin > 0 ? late.durationMin : 60);
+        const endMs = start.getTime() + dur * 60000;
+        finishAlertedRef.current.add(late.id + '|' + endMs);
+        setFinishAlert(late);
+        try {
+          if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification('Hora de finalizar — Lumina', { body: `${late.title} já passou do horário previsto.` });
+          }
+        } catch {}
+      }
+    };
+    check();
+    const id = setInterval(check, 30000);
+    return () => clearInterval(id);
+  }, [tasks, user]);
+
   // Materialização de recorrências: gera 1 card real por ocorrência (modelos "geram cards")
   // Protegido contra duplicidade: nunca gera se já existir uma instância com o mesmo occurrenceKey.
   useEffect(() => {
@@ -710,6 +748,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
         if (!occToday) return;
         const key = `${t.id}|${todayStr}`;
         if (existingKeys.has(key)) return; // já existe instância de hoje para este modelo: não duplica
+        if (Array.isArray(t.skippedOccurrences) && t.skippedOccurrences.includes(todayStr)) return; // usuário excluiu essa ocorrência: não recria
         news.push({
           id: `inst_${t.id}_${todayStr}`,
           title: t.title, description: t.description || '', priority: t.priority || 'Média',
@@ -734,6 +773,35 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
     gen();
     const gid = setInterval(gen, 60000);
     return () => clearInterval(gid);
+  }, [tasks, user]);
+
+  // Expiração de reuniões soltas: quando o horário (scheduledStart + duração) de uma demanda
+  // isMeeting=true passa, ela volta para "A Agendar" (scheduledStart e isMeeting limpos),
+  // preservando o rastro no histórico (meeting_expired). Não se aplica a instâncias de
+  // recorrência (templateId) nem a modelos (generatesCards) — tratado à parte.
+  useEffect(() => {
+    const check = () => {
+      const hasExpired = tasks.some((t: any) => t.isMeeting && t.scheduledStart && !t.templateId && !t.generatesCards && t.responsibleId === user.id && isScheduleWindowOver(t));
+      if (!hasExpired) return;
+      setTasks((prev: any) => prev.map((t: any) => {
+        if (!t.isMeeting || !t.scheduledStart || t.templateId || t.generatesCards || t.responsibleId !== user.id) return t;
+        if (!isScheduleWindowOver(t)) return t;
+        const oldStart = t.scheduledStart;
+        // Limpa também a Data de Início se ela só estava lá por causa da própria reunião (setada pelo
+        // "Marcar reunião"), pra não deixar a flag/alerta de "Iniciar Hoje" pendurada sozinha.
+        const startDate = (t.startDate === oldStart.slice(0, 10)) ? '' : t.startDate;
+        return {
+          ...t,
+          scheduledStart: '',
+          isMeeting: false,
+          startDate,
+          history: [...(Array.isArray(t.history) ? t.history : []), histEntry('meeting_expired', oldStart, '')],
+        };
+      }));
+    };
+    check();
+    const id = setInterval(check, 60000);
+    return () => clearInterval(id);
   }, [tasks, user]);
 
   // Busca dados da Nuvem (o RLS já filtra o que cada usuário pode ver)
@@ -949,6 +1017,8 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
   const [searchOpen, setSearchOpen] = useState(false);
   const [dueAlert, setDueAlert] = useState<any>(null);
   const dueAlertedRef = useRef<Set<string>>(new Set());
+  const [finishAlert, setFinishAlert] = useState<any>(null);
+  const finishAlertedRef = useRef<Set<string>>(new Set());
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [validationError, setValidationError] = useState<any>(null);
   
@@ -970,10 +1040,27 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
     return t.timerElapsed || 0;
   };
 
-  // Exclui a demanda de vez (estado local + Supabase), evitando que "volte" no reload
+  // Exclui a demanda de vez (estado local + Supabase), evitando que "volte" no reload.
+  // Se for uma instância gerada por recorrência (templateId), marca a data como "pulada" no
+  // modelo antes de excluir — sem isso, a materialização recriaria a mesma instância em até 1 min.
   const deleteTaskById = async (id: string) => {
+    const task = tasks.find((t: any) => t.id === id);
+    const occDate = task?.templateId
+      ? (task.occurrenceKey && task.occurrenceKey.includes('|') ? task.occurrenceKey.split('|')[1] : (task.scheduledStart ? task.scheduledStart.slice(0, 10) : (task.startDate || '')))
+      : '';
     delete lastSyncedTasksRef.current[id];
-    setTasks((prev: any) => prev.filter((t: any) => t.id !== id));
+    setTasks((prev: any) => {
+      let next = prev;
+      if (task?.templateId && occDate) {
+        next = next.map((t: any) => {
+          if (t.id !== task.templateId) return t;
+          const skipped = Array.isArray(t.skippedOccurrences) ? t.skippedOccurrences : [];
+          if (skipped.includes(occDate)) return t;
+          return { ...t, skippedOccurrences: [...skipped, occDate] };
+        });
+      }
+      return next.filter((t: any) => t.id !== id);
+    });
     if ((window as any).supabaseClient) await (window as any).supabaseClient.from('tasks').delete().eq('id', id.toString());
   };
 
@@ -1128,6 +1215,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
         generatesCards: !!f.generatesCards,
         templateId: f.templateId || '',
         occurrenceKey: f.occurrenceKey || '',
+        skippedOccurrences: Array.isArray(f.skippedOccurrences) ? f.skippedOccurrences : [],
         isMeeting: !!f.isMeeting,
         scheduledDurationMin: f.scheduledDurationMin || 0,
         history: [histEntry('created')]
@@ -1185,6 +1273,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
             generatesCards: !!f.generatesCards,
             templateId: f.templateId || '',
             occurrenceKey: f.occurrenceKey || '',
+            skippedOccurrences: Array.isArray(t.skippedOccurrences) ? t.skippedOccurrences : [],
             isMeeting: !!f.isMeeting,
             scheduledDurationMin: f.scheduledDurationMin || 0,
             timerRunning, timerElapsed, timerStart,
@@ -1206,7 +1295,12 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
           const elapsed = t.timerElapsed + (Date.now() - t.timerStart) / 1000;
           return { ...t, timerRunning: false, timerStart: null, timerElapsed: elapsed };
         }
-        return { ...t, timerRunning: true, timerStart: Date.now() };
+        // Iniciar o timer sempre move a demanda para "Em Andamento" (pausar nunca reverte sozinho).
+        const originalStatus = t.status;
+        const history = originalStatus !== 'inprogress'
+          ? [...(Array.isArray(t.history) ? t.history : []), histEntry('status', originalStatus, 'inprogress')]
+          : t.history;
+        return { ...t, timerRunning: true, timerStart: Date.now(), status: 'inprogress', history };
       })
     );
   }
@@ -2189,6 +2283,25 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
           {typeof Notification !== 'undefined' && Notification.permission === 'default' && (
             <button onClick={() => { try { Notification.requestPermission(); } catch {} }} className="w-full py-2.5 bg-white/[0.03] border-t border-[var(--border-overlay)] text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] hover:text-teal-400 transition-colors">🔔 Ativar avisos no navegador</button>
           )}
+        </div>
+      )}
+
+      {/* Alerta "hora de finalizar" */}
+      {finishAlert && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[96] w-[92%] max-w-md rounded-2xl bg-[var(--bg-secondary)] border border-amber-500/30 shadow-2xl overflow-hidden animate-modal-pop">
+          <div className="p-4 flex items-start gap-3">
+            <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 shrink-0"><AlertTriangle size={18} className="text-amber-400" /></div>
+            <div className="min-w-0 flex-1">
+              <div className="text-[10px] font-bold uppercase tracking-widest text-amber-400 mb-0.5">Hora de finalizar</div>
+              <div className="text-sm font-bold text-[var(--text-primary)] leading-snug font-display">{finishAlert.title}</div>
+              <div className="text-[11px] text-[var(--text-muted)] mt-0.5 truncate">O horário previsto já passou — pause o timer e conclua a demanda.</div>
+            </div>
+            <button onClick={() => setFinishAlert(null)} className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors shrink-0"><X size={16} /></button>
+          </div>
+          <div className="px-4 pb-4 flex items-center gap-2">
+            <button onClick={() => { handleRequestMove(finishAlert.id, null, 'done'); setFinishAlert(null); }} className="flex-1 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold uppercase tracking-widest transition-colors flex items-center justify-center gap-2"><CheckCircle2 size={14} /> Finalizar agora</button>
+            <button onClick={() => setFinishAlert(null)} className="px-4 py-2.5 rounded-xl bg-[var(--bg-overlay)] border border-[var(--border-overlay)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] text-xs font-bold uppercase tracking-widest transition-colors">Adiar</button>
+          </div>
         </div>
       )}
 
@@ -3748,13 +3861,13 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove, user, onCre
   const doMeeting = (task: any, day: Date, hour: number, minute: number, durationMin: number) => {
     const start = new Date(day); start.setHours(hour, minute, 0, 0);
     const value = toLocalInput(start);
-    setTasks((prev: any) => prev.map((t: any) => t.id === task.id ? { ...t, scheduledStart: value, startDate: value.slice(0, 10), scheduledDurationMin: durationMin, isMeeting: true } : t));
+    setTasks((prev: any) => prev.map((t: any) => t.id === task.id ? { ...t, scheduledStart: value, startDate: value.slice(0, 10), scheduledDurationMin: durationMin, isMeeting: true, history: [...(Array.isArray(t.history) ? t.history : []), histEntry('meeting_scheduled', '', value)] } : t));
   };
 
   const doExecute = (task: any, day: Date, hour: number, minute: number, durationMin: number, label: string) => {
     const start = new Date(day); start.setHours(hour, minute, 0, 0);
     const value = toLocalInput(start);
-    setTasks((prev: any) => prev.map((t: any) => t.id === task.id ? { ...t, scheduledStart: value, startDate: value.slice(0, 10), scheduledDurationMin: durationMin, status: 'inprogress', isMeeting: false } : t));
+    setTasks((prev: any) => prev.map((t: any) => t.id === task.id ? { ...t, scheduledStart: value, startDate: value.slice(0, 10), scheduledDurationMin: durationMin, status: 'inprogress', isMeeting: false, history: [...(Array.isArray(t.history) ? t.history : []), histEntry('meeting_scheduled', '', value)] } : t));
     const link = buildGCalLink({ ...task, scheduledStart: value, scheduledDurationMin: durationMin }, clientName(task.clientId), label);
     if (link !== '#') window.open(link, '_blank', 'noopener');
   };
@@ -4002,7 +4115,24 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove, user, onCre
                           {cn && bh > ROW_H && <div className="text-[8px] uppercase tracking-widest font-bold mt-1 truncate" style={{ color: 'var(--accent-strong-teal)', opacity: 0.75 }}>{cn}</div>}
                         </div>
                         <div className="absolute top-1 right-1 flex gap-1">
-                          <button onPointerDown={(e) => e.stopPropagation()} onClick={() => { const d = new Date(t.scheduledStart); setEsDate(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`); setEsTime(`${pad(d.getHours())}:${pad(d.getMinutes())}`); setEsDur(durationOf(t)); setEditSchedule(t); }} className="p-1 rounded bg-black/40 text-[var(--text-secondary)] hover:text-white hover:bg-black/60" title="Editar horário/duração"><Pencil size={11} /></button>
+                          <button onPointerDown={(e) => e.stopPropagation()} onClick={() => {
+                            if (t.generatesCards && !t.templateId) {
+                              // Bloco virtual do modelo (ocorrência desta semana ainda não materializada):
+                              // editar aqui não pode alterar o padrão inteiro — vira uma instância nova só desta data.
+                              const dateStr = `${day.getFullYear()}-${pad(day.getMonth() + 1)}-${pad(day.getDate())}`;
+                              const s = new Date(t.scheduledStart);
+                              setEsDate(dateStr);
+                              setEsTime(`${pad(s.getHours())}:${pad(s.getMinutes())}`);
+                              setEsDur(durationOf(t));
+                              setEditSchedule({ ...t, id: null, templateId: t.id, scheduledStart: `${dateStr}T${pad(s.getHours())}:${pad(s.getMinutes())}` });
+                              return;
+                            }
+                            const d = new Date(t.scheduledStart);
+                            setEsDate(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`);
+                            setEsTime(`${pad(d.getHours())}:${pad(d.getMinutes())}`);
+                            setEsDur(durationOf(t));
+                            setEditSchedule(t);
+                          }} className="p-1 rounded bg-black/40 text-[var(--text-secondary)] hover:text-white hover:bg-black/60" title="Editar horário/duração"><Pencil size={11} /></button>
                           {t.templateId ? (
                             <span className="p-1 rounded bg-purple-500/30 text-purple-200" title="Gerado por uma recorrência — mover isto não muda o padrão, só esta ocorrência"><RotateCcw size={11} /></span>
                           ) : (
@@ -4124,7 +4254,33 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove, user, onCre
                 <button onClick={() => setEditSchedule(null)} className="text-xs font-bold uppercase tracking-widest px-5 py-3.5 rounded-xl transition-colors hover:text-[var(--text-primary)]" style={{ color: 'var(--text-muted)' }}>Cancelar</button>
                 <button onClick={() => {
                   if (!esDate || !esTime) return;
-                  setTasks((prev: any) => prev.map((t: any) => t.id === editSchedule.id ? { ...t, scheduledStart: `${esDate}T${esTime}`, startDate: (t.agendaOnly || t.generatesCards) ? t.startDate : esDate, scheduledDurationMin: esDur } : t));
+                  if (editSchedule.id === null && editSchedule.templateId) {
+                    // Ocorrência virtual do modelo: materializa uma instância só para esta data, sem tocar no modelo.
+                    const key = `${editSchedule.templateId}|${esDate}`;
+                    setTasks((prev: any) => {
+                      const existing = prev.find((p: any) => p.occurrenceKey === key);
+                      if (existing) {
+                        return prev.map((p: any) => p.occurrenceKey === key ? { ...p, scheduledStart: `${esDate}T${esTime}`, startDate: esDate, scheduledDurationMin: esDur } : p);
+                      }
+                      const tpl = prev.find((tt: any) => tt.id === editSchedule.templateId) || editSchedule;
+                      const newInst = {
+                        id: `inst_${editSchedule.templateId}_${esDate}`,
+                        title: tpl.title, description: tpl.description || '', priority: tpl.priority || 'Média',
+                        durationMin: tpl.durationMin || 0, scheduledDurationMin: esDur, clientId: tpl.clientId || '', responsibleId: tpl.responsibleId || user.id,
+                        startDate: esDate, dueDate: '', status: 'todo', waitingFor: '',
+                        checklist: (tpl.checklist || []).map((c: any) => ({ id: nextId(), text: c.text, done: false })),
+                        timerRunning: false, timerStart: null, timerElapsed: 0,
+                        createdAt: getBrasiliaDate(), completedAt: '',
+                        scheduledStart: `${esDate}T${esTime}`,
+                        recurrence: 'none', agendaOnly: false, generatesCards: false, isMeeting: false,
+                        templateId: editSchedule.templateId, occurrenceKey: key,
+                        history: [histEntry('created')],
+                      };
+                      return [...prev, newInst];
+                    });
+                  } else {
+                    setTasks((prev: any) => prev.map((t: any) => t.id === editSchedule.id ? { ...t, scheduledStart: `${esDate}T${esTime}`, startDate: (t.agendaOnly || t.generatesCards) ? t.startDate : esDate, scheduledDurationMin: esDur } : t));
+                  }
                   setEditSchedule(null);
                 }} className="text-xs font-black uppercase tracking-widest px-8 py-3.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white transition-all shadow-[0_0_15px_rgba(20,184,166,0.3)]">Salvar</button>
               </div>
@@ -4561,6 +4717,16 @@ function TaskModal({ modal, setModal, clients, responsibles, closeModal, saveMod
                   let label = h.type;
                   if (h.type === 'created') label = 'Demanda criada';
                   else if (h.type === 'status') { const to = COLUMNS.find(c => c.id === h.to); label = `Movida para ${to ? to.name : h.to}`; }
+                  else if (h.type === 'meeting_expired') {
+                    const fd = new Date(h.from);
+                    const fStr = !isNaN(fd.getTime()) ? `${p2(fd.getDate())}/${p2(fd.getMonth() + 1)}/${fd.getFullYear()} · ${p2(fd.getHours())}:${p2(fd.getMinutes())}` : h.from;
+                    label = `Reunião de ${fStr} expirou sem confirmação`;
+                  }
+                  else if (h.type === 'meeting_scheduled') {
+                    const td = new Date(h.to);
+                    const tStr = !isNaN(td.getTime()) ? `${p2(td.getDate())}/${p2(td.getMonth() + 1)}/${td.getFullYear()} · ${p2(td.getHours())}:${p2(td.getMinutes())}` : h.to;
+                    label = `Reunião marcada para ${tStr}`;
+                  }
                   const isLast = i === modal.task.history.length - 1;
                   return (
                     <div key={i} className="flex gap-3">

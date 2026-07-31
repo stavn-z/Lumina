@@ -623,6 +623,10 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
   const lastSyncedClientsRef = useRef<Record<string, string>>({});
   const lastSyncedNotesRef = useRef<Record<string, string>>({});
 
+  // Estado do alerta "hora de finalizar" (declarado cedo pois é usado por um efeito no topo do componente)
+  const [dismissedFinishAlerts, setDismissedFinishAlerts] = useState<Set<string>>(new Set());
+  const notifiedLateRef = useRef<Set<string>>(new Set());
+
   // Monitora se está em Mobile
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   useEffect(() => {
@@ -694,42 +698,49 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
     return () => clearInterval(id);
   }, [tasks, user]);
 
-  // Alerta "hora de finalizar": avisa ~5 min depois do horário de término esperado (scheduledStart +
-  // duração) de uma demanda cujo timer ainda está rodando — sugere pausar e concluir.
+  // Alerta "hora de finalizar": lista persistente (mesmo padrão do Alerta de Limite/banco de horas)
+  // com as demandas cujo horário previsto (scheduledStart + duração) já passou há 5+ minutos e que
+  // ainda não foram concluídas — independe do timer estar rodando, então cobre tanto demandas em
+  // execução quanto reuniões/recorrências "esquecidas". Fica visível até o usuário concluir ou
+  // dispensar (não depende de estar com a tela aberta numa janela de tempo específica).
+  const [lateTick, setLateTick] = useState(Date.now());
   useEffect(() => {
-    const check = () => {
-      const nowMs = Date.now();
-      const late = tasks.find((t: any) => {
-        if (t.responsibleId !== user.id) return false;
-        if (!t.timerRunning) return false;
-        if (!t.scheduledStart) return false;
-        if (['done', 'cancelled', 'formalize'].includes(t.status)) return false;
-        if (t.generatesCards) return false;
-        const start = new Date(t.scheduledStart);
-        if (isNaN(start.getTime())) return false;
-        const dur = t.scheduledDurationMin > 0 ? t.scheduledDurationMin : (t.durationMin > 0 ? t.durationMin : 60);
-        const endMs = start.getTime() + dur * 60000;
-        if (finishAlertedRef.current.has(t.id + '|' + endMs)) return false;
-        const diff = nowMs - endMs;
-        return diff >= 5 * 60000 && diff <= 15 * 60000;
-      });
-      if (late) {
-        const start = new Date(late.scheduledStart);
-        const dur = late.scheduledDurationMin > 0 ? late.scheduledDurationMin : (late.durationMin > 0 ? late.durationMin : 60);
-        const endMs = start.getTime() + dur * 60000;
-        finishAlertedRef.current.add(late.id + '|' + endMs);
-        setFinishAlert(late);
-        try {
-          if ('Notification' in window && Notification.permission === 'granted') {
-            new Notification('Hora de finalizar — Lumina', { body: `${late.title} já passou do horário previsto.` });
-          }
-        } catch {}
-      }
-    };
-    check();
-    const id = setInterval(check, 30000);
+    const id = setInterval(() => setLateTick(Date.now()), 30000);
     return () => clearInterval(id);
-  }, [tasks, user]);
+  }, []);
+  const lateItems = useMemo(() => {
+    const nowMs = Date.now();
+    return tasks.filter((t: any) => {
+      if (t.responsibleId !== user.id) return false;
+      if (!t.scheduledStart) return false;
+      if (['done', 'cancelled', 'formalize'].includes(t.status)) return false;
+      if (t.generatesCards) return false;
+      // Linha "âncora" de um padrão recorrente (agendaOnly repetindo toda semana/dia, sem virar
+      // instância própria): seu scheduledStart nunca avança sozinho, então ficaria "atrasada" pra
+      // sempre. Só entram aqui ocorrências concretas (data única ou instância materializada).
+      if (t.recurrence && t.recurrence !== 'none' && !t.templateId) return false;
+      const start = new Date(t.scheduledStart);
+      if (isNaN(start.getTime())) return false;
+      const dur = t.scheduledDurationMin > 0 ? t.scheduledDurationMin : (t.durationMin > 0 ? t.durationMin : 60);
+      const endMs = start.getTime() + dur * 60000;
+      return nowMs - endMs >= 5 * 60000;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tasks, user, lateTick]);
+  const pendingFinishAlerts = lateItems.filter((t: any) => !dismissedFinishAlerts.has(`${t.id}|${t.scheduledStart}`));
+  useEffect(() => {
+    lateItems.forEach((t: any) => {
+      const key = `${t.id}|${t.scheduledStart}`;
+      if (notifiedLateRef.current.has(key)) return;
+      notifiedLateRef.current.add(key);
+      try {
+        if ('Notification' in window && Notification.permission === 'granted') {
+          new Notification('Hora de finalizar — Lumina', { body: `${t.title} já passou do horário previsto.` });
+        }
+      } catch {}
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lateItems]);
 
   // Materialização de recorrências: gera 1 card real por ocorrência (modelos "geram cards")
   // Protegido contra duplicidade: nunca gera se já existir uma instância com o mesmo occurrenceKey.
@@ -1017,8 +1028,6 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
   const [searchOpen, setSearchOpen] = useState(false);
   const [dueAlert, setDueAlert] = useState<any>(null);
   const dueAlertedRef = useRef<Set<string>>(new Set());
-  const [finishAlert, setFinishAlert] = useState<any>(null);
-  const finishAlertedRef = useRef<Set<string>>(new Set());
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [validationError, setValidationError] = useState<any>(null);
   
@@ -2286,21 +2295,38 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
         </div>
       )}
 
-      {/* Alerta "hora de finalizar" */}
-      {finishAlert && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[96] w-[92%] max-w-md rounded-2xl bg-[var(--bg-secondary)] border border-amber-500/30 shadow-2xl overflow-hidden animate-modal-pop">
-          <div className="p-4 flex items-start gap-3">
-            <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 shrink-0"><AlertTriangle size={18} className="text-amber-400" /></div>
-            <div className="min-w-0 flex-1">
-              <div className="text-[10px] font-bold uppercase tracking-widest text-amber-400 mb-0.5">Hora de finalizar</div>
-              <div className="text-sm font-bold text-[var(--text-primary)] leading-snug font-display">{finishAlert.title}</div>
-              <div className="text-[11px] text-[var(--text-muted)] mt-0.5 truncate">O horário previsto já passou — pause o timer e conclua a demanda.</div>
+      {/* Alerta "hora de finalizar": lista persistente, mesmo padrão visual do Alerta de Limite */}
+      {pendingFinishAlerts.length > 0 && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center px-4 pt-4 pb-24 sm:p-4 z-[89] fade-in" onClick={() => setDismissedFinishAlerts((prev: any) => new Set([...prev, ...pendingFinishAlerts.map((t: any) => `${t.id}|${t.scheduledStart}`)]))}>
+          <div className="w-full max-w-md rounded-[32px] bg-[var(--bg-secondary)] border border-amber-500/30 flex flex-col shadow-2xl overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
+            <div className="px-5 sm:px-8 py-5 sm:py-6 border-b border-[var(--border-primary)] flex items-center gap-3">
+              <div className="p-3 bg-amber-500/10 rounded-2xl shadow-inner text-amber-500"><AlertTriangle size={24} /></div>
+              <h3 className="font-display font-bold text-xl text-[var(--text-primary)] tracking-tight">Hora de finalizar</h3>
             </div>
-            <button onClick={() => setFinishAlert(null)} className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors shrink-0"><X size={16} /></button>
-          </div>
-          <div className="px-4 pb-4 flex items-center gap-2">
-            <button onClick={() => { handleRequestMove(finishAlert.id, null, 'done'); setFinishAlert(null); }} className="flex-1 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold uppercase tracking-widest transition-colors flex items-center justify-center gap-2"><CheckCircle2 size={14} /> Finalizar agora</button>
-            <button onClick={() => setFinishAlert(null)} className="px-4 py-2.5 rounded-xl bg-[var(--bg-overlay)] border border-[var(--border-overlay)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] text-xs font-bold uppercase tracking-widest transition-colors">Adiar</button>
+            <div className="p-5 sm:p-8 flex flex-col gap-4">
+              <p className="text-sm text-[var(--text-secondary)]">O horário previsto das demandas abaixo já passou — pause o timer (se estiver rodando) e conclua, ou reagende:</p>
+              <div className="flex flex-col gap-3 max-h-64 overflow-y-auto kp-scroll pr-2">
+                {pendingFinishAlerts.map((t: any) => {
+                  const s = new Date(t.scheduledStart);
+                  const timeStr = `${String(s.getHours()).padStart(2, '0')}:${String(s.getMinutes()).padStart(2, '0')}`;
+                  return (
+                    <div key={t.id} className="flex items-center justify-between gap-3 bg-[var(--bg-primary)] border border-[var(--border-primary)] p-4 rounded-xl">
+                      <div className="min-w-0">
+                        <div className="text-sm font-bold text-[var(--text-primary)] truncate">{t.title}</div>
+                        <div className="text-[11px] text-[var(--text-muted)] mt-0.5">Previsto para {timeStr}{t.timerRunning ? ' · timer rodando' : ''}</div>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button onClick={() => { handleRequestMove(t.id, null, 'done'); setDismissedFinishAlerts((prev: any) => new Set([...prev, `${t.id}|${t.scheduledStart}`])); }} className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-colors" title="Finalizar agora"><CheckCircle2 size={16} /></button>
+                        <button onClick={() => setDismissedFinishAlerts((prev: any) => new Set([...prev, `${t.id}|${t.scheduledStart}`]))} className="p-2 rounded-lg bg-[var(--bg-overlay)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors" title="Adiar"><X size={16} /></button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="px-5 sm:px-8 py-5 border-t border-[var(--border-primary)] bg-[var(--bg-scrim)] flex justify-end">
+              <button onClick={() => setDismissedFinishAlerts((prev: any) => new Set([...prev, ...pendingFinishAlerts.map((t: any) => `${t.id}|${t.scheduledStart}`)]))} className="w-full sm:w-auto text-sm px-8 py-3.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold transition-all shadow-lg shadow-amber-600/20">Ciente do Aviso</button>
+            </div>
           </div>
         </div>
       )}

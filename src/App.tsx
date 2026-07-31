@@ -624,7 +624,16 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
   const lastSyncedNotesRef = useRef<Record<string, string>>({});
 
   // Estado do alerta "hora de finalizar" (declarado cedo pois é usado por um efeito no topo do componente)
-  const [dismissedFinishAlerts, setDismissedFinishAlerts] = useState<Set<string>>(new Set());
+  // Persistido em localStorage: sem isso, o Set voltava vazio a cada reload e o aviso reaparecia
+  // mesmo depois do usuário clicar em "Ciente do Aviso".
+  const [dismissedFinishAlerts, setDismissedFinishAlerts] = useState<Set<string>>(() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem('lumina_dismissed_finish_alerts') || '[]'));
+    } catch { return new Set(); }
+  });
+  useEffect(() => {
+    localStorage.setItem('lumina_dismissed_finish_alerts', JSON.stringify([...dismissedFinishAlerts]));
+  }, [dismissedFinishAlerts]);
   const notifiedLateRef = useRef<Set<string>>(new Set());
 
   // Monitora se está em Mobile
@@ -2530,48 +2539,23 @@ const NOTE_COLORS = [
   { id: 'pink', bg: 'bg-pink-500/10', border: 'border-pink-500/30', swatch: 'bg-pink-500' },
 ];
 
-function NoteCard({ note, onUpdate, onDelete }: any) {
-  const [editing, setEditing] = useState(false);
-  const [title, setTitle] = useState(note.title);
-  const [content, setContent] = useState(note.content);
+function NoteCard({ note, onOpen, onUpdate, onDelete }: any) {
   const [pickerOpen, setPickerOpen] = useState(false);
-
-  useEffect(() => {
-    if (!editing) { setTitle(note.title); setContent(note.content); }
-  }, [note.title, note.content, editing]);
-
-  const commit = () => {
-    setEditing(false);
-    if (title !== note.title || content !== note.content) {
-      onUpdate({ title, content });
-    }
-  };
-
   const style = NOTE_COLORS.find(c => c.id === note.color) || NOTE_COLORS[0];
 
   return (
-    <div className={`rounded-2xl border p-4 flex flex-col gap-2 relative group transition-colors shadow-sm ${style.bg} ${style.border}`}>
-      {editing ? (
-        <>
-          <input autoFocus value={title} onChange={e => setTitle(e.target.value)} placeholder="Título" className="w-full bg-transparent outline-none font-bold text-sm placeholder:text-[var(--text-muted)]" style={{ color: 'var(--text-primary)' }} />
-          <textarea value={content} onChange={e => setContent(e.target.value)} placeholder="Nota..." rows={5} className="w-full bg-transparent outline-none text-sm placeholder:text-[var(--text-muted)] resize-none" style={{ color: 'var(--text-secondary)' }} />
-          <div className="flex justify-end">
-            <button onClick={commit} className="text-[10px] font-black uppercase tracking-widest text-teal-400 hover:text-teal-300 px-3 py-1.5 transition-colors">Concluído</button>
-          </div>
-        </>
-      ) : (
-        <div onClick={() => setEditing(true)} className="cursor-text flex flex-col gap-2 min-h-[60px]">
-          {note.pinned && <Pin size={12} className="absolute top-3 right-3 text-amber-400 fill-amber-400" />}
-          {note.title && <h4 className="font-bold text-sm break-words pr-4" style={{ color: 'var(--text-primary)' }}>{note.title}</h4>}
-          {note.content ? (
-            <p className="text-sm whitespace-pre-wrap break-words line-clamp-6" style={{ color: 'var(--text-secondary)' }}>{note.content}</p>
-          ) : (
-            <p className="text-sm italic" style={{ color: 'var(--text-muted)' }}>Nota vazia</p>
-          )}
-        </div>
-      )}
+    <div onClick={onOpen} className={`rounded-2xl border p-4 flex flex-col gap-2 relative group transition-colors shadow-sm cursor-pointer ${style.bg} ${style.border}`}>
+      <div className="flex flex-col gap-2 min-h-[60px]">
+        {note.pinned && <Pin size={12} className="absolute top-3 right-3 text-amber-400 fill-amber-400" />}
+        {note.title && <h4 className="font-bold text-sm break-words pr-4" style={{ color: 'var(--text-primary)' }}>{note.title}</h4>}
+        {note.content ? (
+          <p className="text-sm whitespace-pre-wrap break-words line-clamp-6" style={{ color: 'var(--text-secondary)' }}>{note.content}</p>
+        ) : (
+          <p className="text-sm italic" style={{ color: 'var(--text-muted)' }}>Nota vazia</p>
+        )}
+      </div>
 
-      <div className="flex items-center justify-between mt-1 pt-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+      <div onClick={e => e.stopPropagation()} className="flex items-center justify-between mt-1 pt-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
         <div className="relative">
           <button onClick={() => setPickerOpen(v => !v)} title="Cor" className="p-1.5 rounded-lg hover:bg-[var(--bg-overlay-strong)] transition-colors" style={{ color: 'var(--text-secondary)' }}><Palette size={13} /></button>
           {pickerOpen && (
@@ -2593,10 +2577,47 @@ function NoteCard({ note, onUpdate, onDelete }: any) {
   );
 }
 
+function NoteEditorModal({ note, onSave, onDiscard, onDelete }: any) {
+  const isNew = !note;
+  const [title, setTitle] = useState(note?.title || '');
+  const [content, setContent] = useState(note?.content || '');
+  const [color, setColor] = useState(note?.color || 'default');
+  const [pinned, setPinned] = useState(note?.pinned || false);
+
+  const handleSave = () => {
+    if (!title.trim() && !content.trim()) { onDiscard(); return; }
+    onSave({ title: title.trim(), content: content.trim(), color, pinned });
+  };
+
+  return (
+    <OverlayModal title={isNew ? 'Nova Nota' : 'Editar Nota'} icon={<StickyNote size={20} className="text-amber-400"/>} onClose={onDiscard}>
+      <div className="flex flex-col gap-4 h-full">
+        <input autoFocus value={title} onChange={e => setTitle(e.target.value)} placeholder="Título" className="w-full bg-transparent outline-none font-bold text-lg placeholder:text-[var(--text-muted)]" style={{ color: 'var(--text-primary)' }} />
+        <textarea value={content} onChange={e => setContent(e.target.value)} placeholder="Escreva sua nota..." className="w-full flex-1 min-h-[45vh] bg-transparent outline-none text-sm leading-relaxed placeholder:text-[var(--text-muted)] resize-none" style={{ color: 'var(--text-secondary)' }} />
+        <div className="flex items-center justify-between pt-4 border-t flex-wrap gap-3" style={{ borderColor: 'var(--border-primary)' }}>
+          <div className="flex items-center gap-2">
+            {NOTE_COLORS.map(c => (
+              <button key={c.id} onClick={() => setColor(c.id)} className={`w-6 h-6 rounded-full ${c.swatch}`} style={color === c.id ? { boxShadow: '0 0 0 2px var(--bg-secondary), 0 0 0 4px var(--text-primary)' } : undefined} title={c.id} />
+            ))}
+            <button onClick={() => setPinned((p: boolean) => !p)} title={pinned ? 'Desafixar' : 'Fixar'} className="p-2 rounded-lg hover:bg-[var(--bg-overlay-strong)] transition-colors ml-2" style={{ color: pinned ? undefined : 'var(--text-secondary)' }}>
+              <Pin size={16} className={pinned ? 'text-amber-400 fill-amber-400' : ''} />
+            </button>
+            {!isNew && (
+              <button onClick={onDelete} title="Excluir" className="p-2 rounded-lg hover:bg-red-500/10 hover:text-red-400 transition-colors" style={{ color: 'var(--text-secondary)' }}><Trash2 size={16} /></button>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <button onClick={onDiscard} className="text-[11px] font-bold uppercase tracking-widest px-4 py-2.5 rounded-lg transition-colors hover:text-[var(--text-primary)]" style={{ color: 'var(--text-muted)' }}>Cancelar</button>
+            <button onClick={handleSave} className="text-[11px] font-black uppercase tracking-widest text-white bg-indigo-600 hover:bg-indigo-500 px-6 py-2.5 rounded-lg transition-colors">{isNew ? 'Criar' : 'Salvar'}</button>
+          </div>
+        </div>
+      </div>
+    </OverlayModal>
+  );
+}
+
 function NotesPanelContent({ notes, setNotes, user, onDeleteNote }: any) {
-  const [quickOpen, setQuickOpen] = useState(false);
-  const [quickTitle, setQuickTitle] = useState('');
-  const [quickContent, setQuickContent] = useState('');
+  const [editingNote, setEditingNote] = useState<any>(null); // null | 'new' | note
 
   const sorted = useMemo(() => [...notes].sort((a: any, b: any) => {
     if (!!b.pinned !== !!a.pinned) return (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0);
@@ -2610,37 +2631,40 @@ function NotesPanelContent({ notes, setNotes, user, onDeleteNote }: any) {
     setNotes((prev: any) => prev.map((n: any) => n.id === id ? { ...n, ...patch, updatedAt: new Date().toISOString() } : n));
   };
 
-  const createQuickNote = () => {
-    if (!quickTitle.trim() && !quickContent.trim()) { setQuickOpen(false); return; }
-    const now = new Date().toISOString();
-    setNotes((prev: any) => [{ id: nextId(), title: quickTitle.trim(), content: quickContent.trim(), color: 'default', ownerId: user.id, pinned: false, createdAt: now, updatedAt: now }, ...prev]);
-    setQuickTitle(''); setQuickContent(''); setQuickOpen(false);
+  const closeEditor = () => setEditingNote(null);
+
+  const saveNote = (patch: any) => {
+    if (editingNote === 'new') {
+      const now = new Date().toISOString();
+      setNotes((prev: any) => [{ id: nextId(), ...patch, ownerId: user.id, createdAt: now, updatedAt: now }, ...prev]);
+    } else {
+      updateNote(editingNote.id, patch);
+    }
+    closeEditor();
+  };
+
+  const deleteEditingNote = () => {
+    if (editingNote && editingNote !== 'new') onDeleteNote(editingNote.id);
+    closeEditor();
   };
 
   return (
     <div className="flex flex-col h-full fade-in">
       <div className="max-w-xl mx-auto w-full mb-8">
-        <div className="rounded-2xl p-4 shadow-sm" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }}>
-          {quickOpen && (
-            <input autoFocus value={quickTitle} onChange={e => setQuickTitle(e.target.value)} placeholder="Título" className="w-full bg-transparent outline-none font-bold text-sm placeholder:text-[var(--text-muted)] mb-2" style={{ color: 'var(--text-primary)' }} />
-          )}
-          <textarea
-            value={quickContent}
-            onChange={e => setQuickContent(e.target.value)}
-            onFocus={() => setQuickOpen(true)}
-            placeholder="Criar nota..."
-            rows={quickOpen ? 3 : 1}
-            className="w-full bg-transparent outline-none text-sm placeholder:text-[var(--text-muted)] resize-none"
-            style={{ color: 'var(--text-secondary)' }}
-          />
-          {quickOpen && (
-            <div className="flex justify-end gap-2 mt-2">
-              <button onClick={() => { setQuickTitle(''); setQuickContent(''); setQuickOpen(false); }} className="text-[11px] font-bold uppercase tracking-widest px-4 py-2 rounded-lg transition-colors hover:text-[var(--text-primary)]" style={{ color: 'var(--text-muted)' }}>Cancelar</button>
-              <button onClick={createQuickNote} className="text-[11px] font-black uppercase tracking-widest text-white bg-indigo-600 hover:bg-indigo-500 px-5 py-2 rounded-lg transition-colors">Criar</button>
-            </div>
-          )}
-        </div>
+        <button onClick={() => setEditingNote('new')} className="w-full text-left rounded-2xl p-4 shadow-sm text-sm transition-colors hover:brightness-110" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)', color: 'var(--text-muted)' }}>
+          Criar nota...
+        </button>
       </div>
+
+      {editingNote && createPortal(
+        <NoteEditorModal
+          note={editingNote === 'new' ? null : editingNote}
+          onSave={saveNote}
+          onDiscard={closeEditor}
+          onDelete={deleteEditingNote}
+        />,
+        document.body
+      )}
 
       {sorted.length === 0 ? (
         <div className="py-16 text-center text-sm border border-dashed rounded-3xl max-w-xl mx-auto w-full" style={{ color: 'var(--text-muted)', borderColor: 'var(--border-primary)' }}>
@@ -2652,7 +2676,7 @@ function NotesPanelContent({ notes, setNotes, user, onDeleteNote }: any) {
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest mb-3 ml-1" style={{ color: 'var(--text-muted)' }}>Fixadas</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {pinned.map((n: any) => <NoteCard key={n.id} note={n} onUpdate={(patch: any) => updateNote(n.id, patch)} onDelete={() => onDeleteNote(n.id)} />)}
+                {pinned.map((n: any) => <NoteCard key={n.id} note={n} onOpen={() => setEditingNote(n)} onUpdate={(patch: any) => updateNote(n.id, patch)} onDelete={() => onDeleteNote(n.id)} />)}
               </div>
             </div>
           )}
@@ -2660,7 +2684,7 @@ function NotesPanelContent({ notes, setNotes, user, onDeleteNote }: any) {
             <div>
               {pinned.length > 0 && <p className="text-[10px] font-bold uppercase tracking-widest mb-3 ml-1" style={{ color: 'var(--text-muted)' }}>Outras</p>}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {others.map((n: any) => <NoteCard key={n.id} note={n} onUpdate={(patch: any) => updateNote(n.id, patch)} onDelete={() => onDeleteNote(n.id)} />)}
+                {others.map((n: any) => <NoteCard key={n.id} note={n} onOpen={() => setEditingNote(n)} onUpdate={(patch: any) => updateNote(n.id, patch)} onDelete={() => onDeleteNote(n.id)} />)}
               </div>
             </div>
           )}

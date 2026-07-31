@@ -1775,51 +1775,27 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
       <div className={`flex-1 flex flex-col min-w-0 relative pb-[72px] md:pb-0`} style={{ background: 'linear-gradient(to bottom right, var(--gradient-from), var(--gradient-to))' }}>
         
         {/* HEADER TOP (Desktop & Mobile) */}
-        <div className="shrink-0 flex items-center justify-between p-4 md:px-8 md:py-6 relative z-20 gap-4" style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-primary)' }}>
+        <div className="shrink-0 flex items-center justify-between p-4 md:px-8 md:py-6 relative z-20 gap-3" style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-primary)' }}>
 
-          {/* Mobile Title & Profile */}
-          <div className="md:hidden flex items-center justify-between w-full">
-             <div className="flex items-center gap-3 relative min-w-0">
-                <button onClick={(e) => { e.stopPropagation(); setShowProfileMenu(!showProfileMenu); }} className="w-10 h-10 shrink-0 rounded-full flex items-center justify-center text-indigo-400 font-bold uppercase shadow-sm overflow-hidden hover:border-indigo-500 transition-colors" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-primary)' }}>
-                  <UserAvatar url={activeAvatar} name={user.name} />
-                </button>
-                <h1 className="font-bold text-lg tracking-tight truncate" style={{ color: 'var(--text-primary)' }}>
-                  Olá, {user.name.split(' ')[0]}
-                </h1>
-
-                {showProfileMenu && (
-                   <div className="absolute top-12 left-0 mt-2 w-48 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-2xl shadow-xl z-50 py-2 flex flex-col animate-modal-pop" onClick={e => e.stopPropagation()}>
-                      <button onClick={() => { setProfileModal(true); setShowProfileMenu(false); }} className="w-full text-left px-5 py-3 text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-overlay)] flex items-center gap-3 font-medium"><UserCog size={16}/> Editar Perfil</button>
-                      <div className="h-px w-full bg-[var(--border-primary)] my-1"></div>
-                      <button onClick={toggleTheme} className="w-full text-left px-5 py-3 text-sm text-[var(--text-secondary)] flex items-center justify-between gap-3 font-medium">
-                         <span className="flex items-center gap-3">{theme === 'dark' ? <Moon size={16}/> : <Sun size={16}/>} {theme === 'dark' ? 'Tema Escuro' : 'Tema Claro'}</span>
-                         <span className={`w-10 h-6 rounded-full transition-colors relative shrink-0 ml-3 ${theme === 'dark' ? 'bg-indigo-500' : 'bg-[var(--border-primary)]'}`}><span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${theme === 'dark' ? 'left-[18px]' : 'left-0.5'}`} /></span>
-                      </button>
-                      <div className="h-px w-full bg-[var(--border-primary)] my-1"></div>
-                      <button onClick={onLogout} className="w-full text-left px-5 py-3 text-sm text-red-400 hover:bg-red-500/10 flex items-center gap-3 font-medium"><LogOut size={16}/> Sair</button>
-                   </div>
-                )}
-             </div>
-
-             <div className="flex items-center gap-2 shrink-0">
-                <TopWidgets />
-             </div>
-          </div>
-
-          {/* Desktop Title */}
-          <div className="hidden md:flex flex-col">
-            <div className="flex items-center gap-3">
-              <h1 className="font-display font-bold text-2xl tracking-tight" style={{ color: 'var(--text-primary)' }}>Kanban & Analytics</h1>
-              {isCloudSynced && (
-                <span className="text-[9px] text-emerald-400 font-bold uppercase tracking-widest bg-emerald-500/10 border border-emerald-500/20 px-2 py-1 rounded-md flex items-center gap-1">
-                  <Cloud size={10} /> Sincronizado
-                </span>
-              )}
+          {/* Title (logo só no mobile — no desktop ela já está na sidebar esquerda) */}
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="md:hidden w-10 h-10 shrink-0 rounded-[12px] bg-black flex items-center justify-center overflow-hidden border border-[var(--border-overlay)] shadow-[0_0_20px_rgba(79,70,229,0.15)]">
+              <img src="/apple-icon.png" alt="Lumina" className="w-full h-full object-cover" />
             </div>
-            <span className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Bem-vindo(a) de volta, {user.name}</span>
+            <div className="flex flex-col min-w-0">
+              <div className="flex items-center gap-3">
+                <h1 className="font-display font-bold text-lg md:text-2xl tracking-tight truncate" style={{ color: 'var(--text-primary)' }}>Lumina</h1>
+                {isCloudSynced && (
+                  <span className="hidden md:flex text-[9px] text-emerald-400 font-bold uppercase tracking-widest bg-emerald-500/10 border border-emerald-500/20 px-2 py-1 rounded-md items-center gap-1 shrink-0">
+                    <Cloud size={10} /> Sincronizado
+                  </span>
+                )}
+              </div>
+              <span className="text-xs mt-0.5 md:mt-1 truncate" style={{ color: 'var(--text-muted)' }}>Bem-vindo(a), {user.name.split(' ')[0]}!</span>
+            </div>
           </div>
 
-          <div className="hidden md:block">
+          <div className="flex items-center gap-2 md:gap-4 shrink-0">
             <TopWidgets />
           </div>
         </div>
@@ -2167,8 +2143,17 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
          <MobileNavBtn icon={<LayoutDashboard size={20} />} label="Board" active={activeTab === 'board' && !isClosingModal} onClick={() => {if(activeTab !== 'board') handleCloseTab()}} />
          <MobileNavBtn icon={<Sun size={20} />} label="Hoje" active={activeTab === 'today' && !isClosingModal} onClick={() => setActiveTab('today')} count={todayCount} />
          <MobileNavBtn icon={<StickyNote size={20} />} label="Notas" active={activeTab === 'notes' && !isClosingModal} onClick={() => setActiveTab('notes')} />
+         <MobileProfileNavBtn url={activeAvatar} name={user.name} open={showProfileMenu} onClick={(e: any) => { e.stopPropagation(); setShowProfileMenu(!showProfileMenu); }}>
+            <button onClick={() => { setProfileModal(true); setShowProfileMenu(false); }} className="w-full text-left px-5 py-3 text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-overlay)] flex items-center gap-3 font-medium"><UserCog size={16}/> Editar Perfil</button>
+            <div className="h-px w-full bg-[var(--border-primary)] my-1"></div>
+            <button onClick={toggleTheme} className="w-full text-left px-5 py-3 text-sm text-[var(--text-secondary)] flex items-center justify-between gap-3 font-medium">
+               <span className="flex items-center gap-3">{theme === 'dark' ? <Moon size={16}/> : <Sun size={16}/>} {theme === 'dark' ? 'Tema Escuro' : 'Tema Claro'}</span>
+               <span className={`w-10 h-6 rounded-full transition-colors relative shrink-0 ml-3 ${theme === 'dark' ? 'bg-indigo-500' : 'bg-[var(--border-primary)]'}`}><span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${theme === 'dark' ? 'left-[18px]' : 'left-0.5'}`} /></span>
+            </button>
+            <div className="h-px w-full bg-[var(--border-primary)] my-1"></div>
+            <button onClick={onLogout} className="w-full text-left px-5 py-3 text-sm text-red-400 hover:bg-red-500/10 flex items-center gap-3 font-medium"><LogOut size={16}/> Sair</button>
+         </MobileProfileNavBtn>
          <MobileNavBtn icon={<CalendarDays size={20} />} label="Agenda" active={activeTab === 'agenda' && !isClosingModal} onClick={() => setActiveTab('agenda')} />
-         <MobileNavBtn icon={<Users size={20} />} label="Equipe" active={activeTab === 'responsibles' && !isClosingModal} onClick={() => setActiveTab('responsibles')} />
          <MobileNavBtn icon={<Building2 size={20} />} label="Clientes" active={activeTab === 'clients' && !isClosingModal} onClick={() => setActiveTab('clients')} alert={clientsNearLimit.length > 0} />
          <MobileNavBtn icon={<BarChart3 size={20} />} label="Relatórios" active={activeTab === 'reports' && !isClosingModal} onClick={() => setActiveTab('reports')} />
       </div>
@@ -2467,6 +2452,22 @@ function MobileNavBtn({ icon, label, active, onClick, alert, count }: any) {
         <span className="absolute top-0 right-[22%] min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[8px] font-black flex items-center justify-center shadow-[0_0_8px_rgba(239,68,68,0.8)]">{count}</span>
       ) : alert && <span className="absolute top-1 right-[25%] w-2 h-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]" />}
     </button>
+  );
+}
+
+function MobileProfileNavBtn({ url, name, open, onClick, children }: any) {
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center relative">
+      <button onClick={onClick} title="Meu Perfil" className={`w-14 h-14 -mt-6 rounded-full flex items-center justify-center text-indigo-400 font-bold uppercase overflow-hidden transition-all shrink-0 ${open ? 'ring-4 ring-indigo-500/40' : ''}`} style={{ background: 'var(--bg-tertiary)', border: '3px solid var(--bg-secondary)', boxShadow: '0 8px 20px rgba(0,0,0,0.35)' }}>
+        <UserAvatar url={url} name={name} />
+      </button>
+
+      {open && (
+        <div className="absolute bottom-full mb-3 left-1/2 -translate-x-1/2 w-48 rounded-2xl shadow-xl z-50 py-2 flex flex-col animate-modal-pop" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }} onClick={e => e.stopPropagation()}>
+          {children}
+        </div>
+      )}
+    </div>
   );
 }
 

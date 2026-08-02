@@ -30,6 +30,19 @@ function histEntry(type: string, from?: string, to?: string) {
   return { at: new Date().toISOString(), type, from: from || '', to: to || '' };
 }
 
+// Mês seguinte ao de uma data 'YYYY-MM-DD', no formato 'YYYY-MM'. Usado pela continuidade
+// mensal: uma demanda encerrada em julho com "continua no mês seguinte" mira agosto.
+function nextMonthOf(dateStr: string) {
+  const [y, m] = dateStr.split('-').map(Number);
+  const d = new Date(y, m, 1); // m já é o mês seguinte (0-indexed = mês atual + 1)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+// Mês atual no fuso de Brasília, no formato 'YYYY-MM'.
+function currentMonthBrasilia() {
+  return getBrasiliaDate().slice(0, 7);
+}
+
 function formatTime(totalSeconds: number) {
   const s = Math.floor(totalSeconds);
   const h = String(Math.floor(s / 3600)).padStart(2, "0");
@@ -138,7 +151,14 @@ function normalizeTask(t: any) {
     timerElapsed: t.timerElapsed || 0,
     durationMin: t.durationMin || 0,
     createdAt: t.createdAt || t.dueDate || getBrasiliaDate(),
-    completedAt: t.completedAt || ((t.status === 'done' || t.status === 'formalize') ? (t.dueDate || getBrasiliaDate()) : '')
+    completedAt: t.completedAt || ((t.status === 'done' || t.status === 'formalize') ? (t.dueDate || getBrasiliaDate()) : ''),
+    // Continuidade mensal: demanda encerrada num mês mas que segue sendo executada no seguinte.
+    // continueNextMonthFor guarda o mês-alvo ('YYYY-MM') pra saber quando gerar o card sucessor;
+    // continueNextMonthDone evita gerar duas vezes o mesmo sucessor.
+    continueNextMonth: !!t.continueNextMonth,
+    continueNextMonthFor: t.continueNextMonthFor || '',
+    continueNextMonthDone: !!t.continueNextMonthDone,
+    continuedFromId: t.continuedFromId || ''
   };
   if (norm.timerRunning && norm.timerStart && (Date.now() - norm.timerStart) > MAX_TIMER_SESSION_MS) {
     norm.timerRunning = false;
@@ -795,6 +815,70 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
     return () => clearInterval(gid);
   }, [tasks, user]);
 
+  // Continuidade mensal: uma demanda encerrada com "continua no mês seguinte" marcado gera,
+  // a partir do dia 1 do mês-alvo (continueNextMonthFor), um novo card em "A Fazer" com só o
+  // essencial do card original (título, descrição, cliente, responsável, prioridade) — sem
+  // checklist, tempo ou datas. Roda num intervalo (como a recorrência da Agenda acima) porque
+  // é um app client-side: se ninguém abrir o app exatamente no dia 1, ainda assim materializa
+  // na próxima vez que o app for aberto naquele mês ou depois (não trava esperando o dia exato).
+  useEffect(() => {
+    const gen = () => {
+      const nowMonth = currentMonthBrasilia();
+      // Restrito ao próprio responsável, no mesmo padrão da recorrência da Agenda acima: evita
+      // que duas sessões abertas ao mesmo tempo (ex: admin vendo tudo + o responsável real)
+      // corram pra gerar o mesmo sucessor em duplicidade.
+      const pending = tasks.filter((t: any) =>
+        t.continueNextMonth && !t.continueNextMonthDone && t.continueNextMonthFor && t.continueNextMonthFor <= nowMonth && t.responsibleId === user.id
+      );
+      if (pending.length === 0) return;
+
+      setTasks((prev: any) => {
+        // Dedup pelo mesmo princípio do existingKeys da recorrência acima: além de checar a flag,
+        // confirma que ainda não existe nenhum sucessor com continuedFromId apontando pra esse
+        // original — protege contra duas rodadas do intervalo (ou duas abas) gerando duplicata.
+        const alreadyContinuedIds = new Set(prev.map((t: any) => t.continuedFromId).filter(Boolean));
+        const stillPending = pending.filter(p =>
+          !alreadyContinuedIds.has(p.id) &&
+          prev.some((t: any) => t.id === p.id && t.continueNextMonth && !t.continueNextMonthDone)
+        );
+        if (stillPending.length === 0) return prev;
+
+        const successorIdByOriginal: Record<string, string> = {};
+        stillPending.forEach((t: any) => { successorIdByOriginal[t.id] = nextId(); });
+
+        const successors = stillPending.map((t: any) => ({
+          id: successorIdByOriginal[t.id],
+          title: t.title,
+          description: t.description || '',
+          priority: t.priority || 'Média',
+          durationMin: 0,
+          clientId: t.clientId || '',
+          responsibleId: t.responsibleId || '',
+          startDate: '', dueDate: '', status: 'todo', waitingFor: '',
+          checklist: [],
+          timerRunning: false, timerStart: null, timerElapsed: 0,
+          createdAt: getBrasiliaDate(), completedAt: '',
+          scheduledStart: '', recurrence: 'none', agendaOnly: false, generatesCards: false, isMeeting: false,
+          templateId: '', occurrenceKey: '',
+          continueNextMonth: false, continueNextMonthFor: '', continueNextMonthDone: false,
+          continuedFromId: t.id,
+          history: [histEntry('created'), histEntry('created_from_continuation', t.id, '')],
+        }));
+
+        const originalIds = new Set(stillPending.map((t: any) => t.id));
+        const updated = prev.map((t: any) => {
+          if (!originalIds.has(t.id)) return t;
+          return { ...t, continueNextMonth: false, continueNextMonthDone: true, history: [...(Array.isArray(t.history) ? t.history : []), histEntry('month_continuation_created', '', successorIdByOriginal[t.id])] };
+        });
+
+        return [...updated, ...successors];
+      });
+    };
+    gen();
+    const gid = setInterval(gen, 60000);
+    return () => clearInterval(gid);
+  }, [tasks, user]);
+
   // Expiração de reuniões soltas: quando o horário (scheduledStart + duração) de uma demanda
   // isMeeting=true passa, ela volta para "A Agendar" (scheduledStart e isMeeting limpos),
   // preservando o rastro no histórico (meeting_expired). Não se aplica a instâncias de
@@ -837,18 +921,26 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
         ]);
 
         if (resTasks.data) {
-          setTasks(resTasks.data.map(normalizeTask));
+          const normalized = resTasks.data.map(normalizeTask);
+          setTasks(normalized);
+          // Marca tudo como "já sincronizado" logo após o load inicial. Sem isso, a ref de
+          // sincronização começa vazia e o primeiro efeito de sync reenvia o board inteiro
+          // pro banco a cada reload — desnecessário e um risco de corrida com edições feitas
+          // em outra aba/dispositivo entre o fetch e esse primeiro reenvio.
+          normalized.forEach((t: any) => { lastSyncedTasksRef.current[t.id] = stableStringify(t); });
         }
 
         if (resClients.data) {
-          setClients(resClients.data.map((c: any) => ({
+          const normalizedClients = resClients.data.map((c: any) => ({
             ...c,
             name: c.name || '',
             lookerUrl: c.lookerUrl || '',
             ownerId: c.ownerId || '',
             emails: Array.isArray(c.emails) ? c.emails : (typeof c.email === 'string' && c.email ? c.email.split(',').map(e => e.trim()) : []),
             contractedHours: parseFloat(c.contractedHours) || 0
-          })));
+          }));
+          setClients(normalizedClients);
+          normalizedClients.forEach((c: any) => { lastSyncedClientsRef.current[c.id] = stableStringify(c); });
         }
 
         if (resResp.data) {
@@ -858,13 +950,15 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
             avatar: r.avatar || ''
           })));
         }
-        
+
         if (resSettings.data) {
             setGlobalLookerUrl(resSettings.data.looker_global_url || '');
         }
 
         if (resNotes.data) {
-          setNotes(resNotes.data.map(normalizeNote));
+          const normalizedNotes = resNotes.data.map(normalizeNote);
+          setNotes(normalizedNotes);
+          normalizedNotes.forEach((n: any) => { lastSyncedNotesRef.current[n.id] = stableStringify(n); });
         }
 
       } catch (error) {
@@ -1175,6 +1269,19 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
 
   function saveModal() {
     const f = modal.form;
+
+    // Trava contra sobrescrita por aba/dispositivo desatualizado: se essa demanda avançou pra
+    // Formalizar/Cancelada em outro lugar (outra aba, outro dispositivo, ou o Realtime) enquanto
+    // este modal ficou aberto com o status antigo, salvar aqui poderia "regredir" a demanda sem
+    // ninguém perceber. Bloqueia e pede pra reabrir o card com o estado atual.
+    if (modal.mode === 'edit') {
+      const liveTask = tasks.find((t: any) => t.id === modal.task.id);
+      if (liveTask && liveTask.status !== modal.task.status && ['formalize', 'cancelled'].includes(liveTask.status)) {
+        setValidationError([`Esta demanda foi movida para "${COLUMNS.find(c => c.id === liveTask.status)?.name || liveTask.status}" em outro lugar enquanto você editava. Feche e reabra o card para ver o estado atual antes de salvar.`]);
+        return;
+      }
+    }
+
     const missing = [];
     if (!f.title.trim()) missing.push("Título");
     if (!f.description.trim()) missing.push("Descrição");
@@ -1203,7 +1310,8 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
             taskId: modal.task ? modal.task.id : nextId(),
             targetId: null,
             date: getBrasiliaDate(),
-            durationMin: parseInt(f.durationMin) || ""
+            durationMin: parseInt(f.durationMin) || "",
+            continueNextMonth: false
         });
         return;
     }
@@ -1339,7 +1447,8 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
         taskId,
         targetId,
         date: localDateStr,
-        durationMin: Math.round(task.timerElapsed / 60) || task.durationMin || ""
+        durationMin: Math.round(task.timerElapsed / 60) || task.durationMin || "",
+        continueNextMonth: false
       });
       return;
     }
@@ -1354,9 +1463,13 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
     }
     setValidationError(null);
 
+    const targetMonth = donePrompt.continueNextMonth ? nextMonthOf(donePrompt.date) : '';
+
     if (donePrompt.isFromModal) {
       const isAdd = modal.mode === 'add';
       const prevHist = isAdd ? [histEntry('created')] : (Array.isArray(modal.task?.history) ? modal.task.history : []);
+      let hist = [...prevHist, histEntry('status', isAdd ? '' : (modal.task?.status || ''), 'done')];
+      if (donePrompt.continueNextMonth) hist = [...hist, histEntry('continues_next_month', '', targetMonth)];
       const finalTask = {
          ...donePrompt.draftData,
          id: donePrompt.taskId,
@@ -1367,12 +1480,15 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
          timerStart: null,
          status: 'done',
          completedAt: donePrompt.date,
-         history: [...prevHist, histEntry('status', isAdd ? '' : (modal.task?.status || ''), 'done')]
+         continueNextMonth: donePrompt.continueNextMonth,
+         continueNextMonthFor: targetMonth,
+         continueNextMonthDone: false,
+         history: hist
       };
-      
+
       if (modal.mode === 'add') setTasks(prev => [...prev, finalTask]);
       else setTasks(prev => prev.map(t => t.id === finalTask.id ? finalTask : t));
-      
+
       setDonePrompt(null);
       closeModal();
       return;
@@ -1390,7 +1506,11 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
       taskToMove.timerStart = null;
       taskToMove.status = 'done';
       taskToMove.completedAt = donePrompt.date;
+      taskToMove.continueNextMonth = donePrompt.continueNextMonth;
+      taskToMove.continueNextMonthFor = targetMonth;
+      taskToMove.continueNextMonthDone = false;
       taskToMove.history = [...(Array.isArray(taskToMove.history) ? taskToMove.history : []), histEntry('status', prev[fromIndex].status, 'done')];
+      if (donePrompt.continueNextMonth) taskToMove.history = [...taskToMove.history, histEntry('continues_next_month', '', targetMonth)];
 
       const originalToIndex = donePrompt.targetId ? prev.findIndex(t => t.id.toString() === donePrompt.targetId.toString()) : -1;
 
@@ -2009,6 +2129,12 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                                   </span>
                                   {t.isMeeting && t.scheduledStart && <span className="flex items-center gap-1 text-[9px] uppercase tracking-wider px-2 py-1 rounded-md bg-teal-500/10 text-teal-400 border border-teal-500/20 font-bold" title="Reunião agendada"><CalendarDays size={10} /> Reunião</span>}
                                   {t.templateId && <span className="flex items-center gap-1 text-[9px] uppercase tracking-wider px-2 py-1 rounded-md bg-purple-500/10 text-purple-300 border border-purple-500/20 font-bold" title="Gerado por uma recorrência da Agenda"><RotateCcw size={10} /> Recorrente</span>}
+                                  {t.continueNextMonth && !t.continueNextMonthDone && (() => {
+                                    const [my, mm] = String(t.continueNextMonthFor || '').split('-');
+                                    const monthLabel = mm ? `${MONTH_ABBR[parseInt(mm) - 1]}/${my}` : '';
+                                    return <span className="flex items-center gap-1 text-[9px] uppercase tracking-wider px-2 py-1 rounded-md bg-teal-500/10 text-teal-300 border border-teal-500/20 font-bold" title={`Vai gerar uma nova demanda em "A Fazer" em ${monthLabel}`}><RotateCcw size={10} /> Continua {monthLabel}</span>;
+                                  })()}
+                                  {t.continuedFromId && <span className="flex items-center gap-1 text-[9px] uppercase tracking-wider px-2 py-1 rounded-md bg-teal-500/10 text-teal-300 border border-teal-500/20 font-bold" title="Gerada pela continuidade mensal de uma demanda encerrada"><RotateCcw size={10} /> Continuação</span>}
                                   {alertBadge}
                                 </div>
                                 
@@ -2197,6 +2323,13 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                 <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Tempo Total Gasto (Minutos) *</label>
                 <input type="number" value={donePrompt.durationMin ?? ''} onChange={e => { setDonePrompt({...donePrompt, durationMin: e.target.value}); setValidationError(null); }} className="w-full bg-[var(--bg-primary)] border border-[var(--border-primary)] rounded-xl px-4 py-4 text-sm text-[var(--text-primary)] outline-none focus:border-emerald-500" placeholder="Ex: 45" />
               </div>
+              <button type="button" onClick={() => setDonePrompt({...donePrompt, continueNextMonth: !donePrompt.continueNextMonth})} className={`w-full flex items-start gap-3 text-left p-4 rounded-xl border transition-colors ${donePrompt.continueNextMonth ? 'bg-teal-500/10 border-teal-500/40' : 'bg-[var(--bg-primary)] border-[var(--border-primary)] hover:border-[var(--border-hover)]'}`}>
+                <span className={`mt-0.5 w-4 h-4 rounded flex items-center justify-center shrink-0 border transition-colors ${donePrompt.continueNextMonth ? 'bg-teal-500 border-teal-500 text-white' : 'border-[var(--border-hover)] text-transparent'}`}><Check size={11} strokeWidth={3}/></span>
+                <span>
+                  <span className="block text-xs font-bold text-[var(--text-primary)]">Continua no mês seguinte</span>
+                  <span className="block text-[10px] text-[var(--text-muted)] mt-1 leading-relaxed">Encerra essa demanda neste mês (com essas horas), mas cria automaticamente uma nova em "A Fazer" a partir do dia 1, com o mesmo título/descrição/cliente — sem checklist, tempo ou datas.</span>
+                </span>
+              </button>
             </div>
             <div className="px-5 sm:px-8 py-5 border-t border-[var(--border-primary)] bg-[var(--bg-scrim)] flex items-center justify-end gap-3">
               <button onClick={() => { setDonePrompt(null); setValidationError(null); }} className="text-sm px-5 py-3 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors font-bold">Cancelar</button>
@@ -4778,6 +4911,13 @@ function TaskModal({ modal, setModal, clients, responsibles, closeModal, saveMod
                     const tStr = !isNaN(td.getTime()) ? `${p2(td.getDate())}/${p2(td.getMonth() + 1)}/${td.getFullYear()} · ${p2(td.getHours())}:${p2(td.getMinutes())}` : h.to;
                     label = `Reunião marcada para ${tStr}`;
                   }
+                  else if (h.type === 'continues_next_month') {
+                    const [my, mm] = String(h.to || '').split('-');
+                    const monthLabel = mm ? `${MONTH_ABBR[parseInt(mm) - 1]}/${my}` : h.to;
+                    label = `Marcada para continuar em ${monthLabel} (nova demanda gerada em "A Fazer")`;
+                  }
+                  else if (h.type === 'month_continuation_created') label = 'Continuidade mensal: nova demanda criada em "A Fazer"';
+                  else if (h.type === 'created_from_continuation') label = 'Criada automaticamente pela continuidade mensal de uma demanda encerrada';
                   const isLast = i === modal.task.history.length - 1;
                   return (
                     <div key={i} className="flex gap-3">

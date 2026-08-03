@@ -158,7 +158,10 @@ function normalizeTask(t: any) {
     continueNextMonth: !!t.continueNextMonth,
     continueNextMonthFor: t.continueNextMonthFor || '',
     continueNextMonthDone: !!t.continueNextMonthDone,
-    continuedFromId: t.continuedFromId || ''
+    continuedFromId: t.continuedFromId || '',
+    // Aproveitamento manual de card: copia de uma demanda formalizada pra uma nova em "A Fazer".
+    // copiedFromId guarda o id do card original só pra exibir o badge de origem no sucessor.
+    copiedFromId: t.copiedFromId || ''
   };
   if (norm.timerRunning && norm.timerStart && (Date.now() - norm.timerStart) > MAX_TIMER_SESSION_MS) {
     norm.timerRunning = false;
@@ -1456,6 +1459,37 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
     moveTask(taskId, targetId, newStatus);
   };
 
+  // Aproveitamento manual de card: duplica uma demanda formalizada numa nova em "A Fazer",
+  // reaproveitando título/descrição/cliente/responsável/prioridade — sem horas, checklist,
+  // criado/concluído ou histórico do original. O "criado em" do novo card é a data da cópia.
+  // Mesmo padrão de campos zerados da continuidade mensal automática (useEffect acima).
+  const copyTaskToTodo = (task: any) => {
+    const newTask = {
+      id: nextId(),
+      title: task.title,
+      description: task.description || '',
+      priority: task.priority || 'Média',
+      durationMin: 0,
+      clientId: task.clientId || '',
+      responsibleId: task.responsibleId || '',
+      startDate: '', dueDate: '', status: 'todo', waitingFor: '',
+      checklist: [],
+      timerRunning: false, timerStart: null, timerElapsed: 0,
+      createdAt: getBrasiliaDate(), completedAt: '',
+      scheduledStart: '', recurrence: 'none', agendaOnly: false, generatesCards: false, isMeeting: false,
+      templateId: '', occurrenceKey: '',
+      continueNextMonth: false, continueNextMonthFor: '', continueNextMonthDone: false,
+      continuedFromId: '', copiedFromId: task.id,
+      history: [histEntry('created'), histEntry('created_from_copy', task.id, '')],
+    };
+    setTasks((prev: any) => [
+      ...prev.map((t: any) => t.id === task.id
+        ? { ...t, history: [...(Array.isArray(t.history) ? t.history : []), histEntry('copied_to_todo', '', newTask.id)] }
+        : t),
+      newTask,
+    ]);
+  };
+
   const confirmDoneMove = () => {
     if (!donePrompt.date || donePrompt.durationMin === "") {
       setValidationError(["Data de Entrega e Tempo são obrigatórios."]);
@@ -2135,6 +2169,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                                     return <span className="flex items-center gap-1 text-[9px] uppercase tracking-wider px-2 py-1 rounded-md bg-teal-500/10 text-teal-300 border border-teal-500/20 font-bold" title={`Vai gerar uma nova demanda em "A Fazer" em ${monthLabel}`}><RotateCcw size={10} /> Continua {monthLabel}</span>;
                                   })()}
                                   {t.continuedFromId && <span className="flex items-center gap-1 text-[9px] uppercase tracking-wider px-2 py-1 rounded-md bg-teal-500/10 text-teal-300 border border-teal-500/20 font-bold" title="Gerada pela continuidade mensal de uma demanda encerrada"><RotateCcw size={10} /> Continuação</span>}
+                                  {t.copiedFromId && <span className="flex items-center gap-1 text-[9px] uppercase tracking-wider px-2 py-1 rounded-md bg-teal-500/10 text-teal-300 border border-teal-500/20 font-bold" title="Gerada pelo aproveitamento manual de uma demanda formalizada"><Copy size={10} /> Aproveitada</span>}
                                   {alertBadge}
                                 </div>
                                 
@@ -2220,6 +2255,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                                     {isEditable && (
                                       <>
                                         <button onClick={() => openEditModal(t)} className="p-1.5 bg-[var(--bg-overlay)] hover:bg-[var(--bg-overlay-strong)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded-lg transition-colors border border-transparent hover:border-[var(--border-overlay)]" title="Editar"><Pencil size={12}/></button>
+                                        {t.status === 'formalize' && <button onClick={() => copyTaskToTodo(t)} className="p-1.5 bg-teal-500/10 hover:bg-teal-500/20 text-teal-400 rounded-lg transition-colors border border-transparent hover:border-teal-500/20" title='Aproveitar dados: copiar para "A Fazer" (sem horas, checklist, criado/concluído)'><Copy size={12}/></button>}
                                         {!isDoneOrCancelled && <button onClick={() => toggleTimer(t.id)} className={`p-1.5 rounded-lg transition-colors border ${t.timerRunning ? 'text-amber-400 bg-amber-400/10 border-amber-400/20' : 'text-[var(--text-secondary)] bg-[var(--bg-overlay)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-overlay-strong)] border-transparent hover:border-[var(--border-overlay)]'}`} title={t.timerRunning ? "Pausar" : "Iniciar Timer"}>{t.timerRunning ? <Pause size={12}/> : <Play size={12}/>}</button>}
                                       </>
                                     )}
@@ -4918,6 +4954,8 @@ function TaskModal({ modal, setModal, clients, responsibles, closeModal, saveMod
                   }
                   else if (h.type === 'month_continuation_created') label = 'Continuidade mensal: nova demanda criada em "A Fazer"';
                   else if (h.type === 'created_from_continuation') label = 'Criada automaticamente pela continuidade mensal de uma demanda encerrada';
+                  else if (h.type === 'copied_to_todo') label = 'Dados aproveitados: nova demanda criada em "A Fazer"';
+                  else if (h.type === 'created_from_copy') label = 'Criada pelo aproveitamento manual de uma demanda formalizada';
                   const isLast = i === modal.task.history.length - 1;
                   return (
                     <div key={i} className="flex gap-3">

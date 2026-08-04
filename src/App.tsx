@@ -1267,10 +1267,31 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
       filterByPeriod(t.completedAt, filterCompletedStart, filterCompletedEnd)
   );
 
-  const activeTasksCount = visibleTasks.filter((t) => t.status !== "cancelled" && !t.agendaOnly).length;
-  const doneCount = visibleTasks.filter((t) => (t.status === "done" || t.status === "formalize") && !t.agendaOnly).length;
+  // Últimos 12 meses (mês corrente primeiro) para o filtro de mês da barra de Progresso.
+  const progressMonthOptions = useMemo(() => {
+    const [cy, cm] = currentMonthBrasilia().split('-').map(Number);
+    const list: string[] = [];
+    let y = cy, m = cm;
+    for (let i = 0; i < 12; i++) {
+      list.push(`${y}-${String(m).padStart(2, '0')}`);
+      m--; if (m < 1) { m = 12; y--; }
+    }
+    return list;
+  }, []);
+  const [progressMonth, setProgressMonth] = useState(currentMonthBrasilia());
+
+  // Progresso do mês: demandas com entrega prevista (dueDate) no mês selecionado, mais as sem
+  // data nenhuma — essas contam como pendentes do mês corrente (ainda não agendadas, mas "pra agora"),
+  // senão elas ficariam invisíveis pro cálculo e o % pareceria melhor do que a realidade.
+  const monthTasks = visibleTasks.filter((t) => {
+    if (t.agendaOnly) return false;
+    if (t.dueDate) return t.dueDate.slice(0, 7) === progressMonth;
+    return progressMonth === currentMonthBrasilia();
+  });
+  const activeTasksCount = monthTasks.filter((t) => t.status !== "cancelled").length;
+  const doneCount = monthTasks.filter((t) => t.status === "done" || t.status === "formalize").length;
   const overallProgress = activeTasksCount ? Math.round((doneCount / activeTasksCount) * 100) : 0;
-  
+
   const tasksForClosure = visibleTasks.filter(t => !t.agendaOnly && ['inprogress', 'paused', 'waiting', 'review', 'done'].includes(t.status));
 
   const emptyForm = { title: "", description: "", priority: "Média", durationMin: "", clientId: "", responsibleId: user.id, startDate: "", dueDate: "", status: "", waitingFor: "", checklist: [] };
@@ -2003,10 +2024,21 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                      <Search size={16} /> <span>Buscar</span>
                    </button>
 
-                   <div className="glass-panel h-11 w-full order-last sm:w-auto sm:flex-1 sm:order-none flex items-center px-4 rounded-xl gap-3 shadow-sm min-w-0">
-                     <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)]">Progresso</span>
+                   <div className="glass-panel h-11 w-full order-last sm:w-auto sm:flex-1 sm:order-none flex items-center px-4 rounded-xl gap-2 shadow-sm min-w-0">
+                     <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] shrink-0">Progresso</span>
+                     <select value={progressMonth} onChange={(e) => setProgressMonth(e.target.value)} title="Mês de referência (data de entrega)" className="bg-transparent text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)] outline-none cursor-pointer shrink-0 hover:text-[var(--text-primary)] transition-colors">
+                       {progressMonthOptions.map(key => {
+                         const [y, m] = key.split('-');
+                         return <option key={key} value={key} className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">{MONTH_ABBR[parseInt(m, 10) - 1]}/{y.slice(2)}</option>;
+                       })}
+                     </select>
+                     {progressMonth === currentMonthBrasilia() ? (
+                       <span className="shrink-0 text-[9px] font-black uppercase tracking-widest text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded" title="Olhando o mês atual">Atual</span>
+                     ) : (
+                       <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-amber-400" title="Olhando um mês anterior" />
+                     )}
                      <div className="flex-1 h-1.5 rounded-full overflow-hidden border" style={{ background: 'var(--bg-scrim)', borderColor: 'var(--border-overlay)' }}>
-                        <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${overallProgress}%` }} />
+                        <div className="h-full bg-indigo-500 rounded-full transition-all" style={{ width: `${overallProgress}%` }} />
                      </div>
                      <span className="text-xs font-bold shrink-0" style={{ color: 'var(--text-primary)' }}>{overallProgress}%</span>
                    </div>
@@ -2808,19 +2840,23 @@ function NoteEditorModal({ note, onSave, onDiscard, onDelete }: any) {
       <div className="flex flex-col gap-4 h-full">
         <input autoFocus value={title} onChange={e => setTitle(e.target.value)} placeholder="Título" className="w-full bg-transparent outline-none font-bold text-lg placeholder:text-[var(--text-muted)]" style={{ color: 'var(--text-primary)' }} />
         <textarea value={content} onChange={e => setContent(e.target.value)} placeholder="Escreva sua nota..." className="w-full flex-1 min-h-[45vh] bg-transparent outline-none text-sm leading-relaxed placeholder:text-[var(--text-muted)] resize-none" style={{ color: 'var(--text-secondary)' }} />
-        <div className="flex items-center justify-between pt-4 border-t flex-wrap gap-3" style={{ borderColor: 'var(--border-primary)' }}>
-          <div className="flex items-center gap-2">
-            {NOTE_COLORS.map(c => (
-              <button key={c.id} onClick={() => setColor(c.id)} className={`w-6 h-6 rounded-full ${c.swatch}`} style={color === c.id ? { boxShadow: '0 0 0 2px var(--bg-secondary), 0 0 0 4px var(--text-primary)' } : undefined} title={c.id} />
-            ))}
-            <button onClick={() => setPinned((p: boolean) => !p)} title={pinned ? 'Desafixar' : 'Fixar'} className="p-2 rounded-lg hover:bg-[var(--bg-overlay-strong)] transition-colors ml-2" style={{ color: pinned ? undefined : 'var(--text-secondary)' }}>
-              <Pin size={16} className={pinned ? 'text-amber-400 fill-amber-400' : ''} />
-            </button>
-            {!isNew && (
-              <button onClick={onDelete} title="Excluir" className="p-2 rounded-lg hover:bg-red-500/10 hover:text-red-400 transition-colors" style={{ color: 'var(--text-secondary)' }}><Trash2 size={16} /></button>
-            )}
+        <div className="flex flex-col gap-3 pt-4 border-t" style={{ borderColor: 'var(--border-primary)' }}>
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center flex-wrap gap-2">
+              {NOTE_COLORS.map(c => (
+                <button key={c.id} onClick={() => setColor(c.id)} className={`w-6 h-6 rounded-full ${c.swatch}`} style={color === c.id ? { boxShadow: '0 0 0 2px var(--bg-secondary), 0 0 0 4px var(--text-primary)' } : undefined} title={c.id} />
+              ))}
+            </div>
+            <div className="flex items-center gap-1 shrink-0">
+              <button onClick={() => setPinned((p: boolean) => !p)} title={pinned ? 'Desafixar' : 'Fixar'} className="p-2 rounded-lg hover:bg-[var(--bg-overlay-strong)] transition-colors" style={{ color: pinned ? undefined : 'var(--text-secondary)' }}>
+                <Pin size={16} className={pinned ? 'text-amber-400 fill-amber-400' : ''} />
+              </button>
+              {!isNew && (
+                <button onClick={onDelete} title="Excluir" className="p-2 rounded-lg hover:bg-red-500/10 hover:text-red-400 transition-colors" style={{ color: 'var(--text-secondary)' }}><Trash2 size={16} /></button>
+              )}
+            </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex justify-end gap-2">
             <button onClick={onDiscard} className="text-[11px] font-bold uppercase tracking-widest px-4 py-2.5 rounded-lg transition-colors hover:text-[var(--text-primary)]" style={{ color: 'var(--text-muted)' }}>Cancelar</button>
             <button onClick={handleSave} className="text-[11px] font-black uppercase tracking-widest text-white bg-indigo-600 hover:bg-indigo-500 px-6 py-2.5 rounded-lg transition-colors">{isNew ? 'Criar' : 'Salvar'}</button>
           </div>
@@ -3086,10 +3122,10 @@ function ClientDetailModal({ client, tasks, getElapsed, user, theme, onClose, on
 
           {/* Banco de horas */}
           <div className="rounded-2xl border border-[var(--border-primary)] bg-[var(--bg-secondary)] p-5 sm:p-6">
-            <div className="flex items-center justify-between gap-3 mb-4">
-              <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--text-secondary)] shrink-0">Banco de Horas</h4>
-              <div className="flex items-center gap-2 shrink-0">
-                <select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} className="appearance-none bg-[var(--bg-primary)] border border-[var(--border-primary)] rounded-lg pl-3 pr-7 py-1.5 text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)] outline-none cursor-pointer hover:text-[var(--text-primary)] transition-colors">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-3 mb-4">
+              <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--text-secondary)]">Banco de Horas</h4>
+              <div className="flex items-center gap-2 flex-wrap">
+                <select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} className="appearance-none min-w-0 bg-[var(--bg-primary)] border border-[var(--border-primary)] rounded-lg pl-3 pr-7 py-1.5 text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)] outline-none cursor-pointer hover:text-[var(--text-primary)] transition-colors">
                   {monthOptions.map(key => {
                     const [y, m] = key.split('-');
                     return <option key={key} value={key}>{MONTH_ABBR[parseInt(m, 10) - 1]}/{y} {key === nowMonth ? '(atual)' : ''}</option>;
@@ -3280,7 +3316,7 @@ function ClientsPanelContent({ clients, setClients, tasks, setTasks, user, getEl
               
               <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto gap-3 mt-4 sm:mt-0">
                 {isNearLimit && remaining !== null && (
-                  <a href={generateLimitEmailLink(c, hours)} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="flex-1 sm:flex-none justify-center flex items-center gap-2 px-5 py-3.5 sm:py-3 bg-red-500/10 text-red-400 border border-red-500/20 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-red-500/20 transition-colors shrink-0 shadow-sm">
+                  <a href={generateLimitEmailLink(c, hours)} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="flex-1 min-w-0 sm:flex-none justify-center flex items-center gap-2 px-5 py-3.5 sm:py-3 bg-red-500/10 text-red-400 border border-red-500/20 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-red-500/20 transition-colors shadow-sm">
                     <AlertTriangle size={14}/> Aviso ({remaining.toFixed(1)}h)
                   </a>
                 )}

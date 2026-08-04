@@ -43,6 +43,19 @@ function currentMonthBrasilia() {
   return getBrasiliaDate().slice(0, 7);
 }
 
+// Mês a que as horas trabalhadas de uma demanda pertencem, para efeito de banco de horas:
+// demandas fechadas contam no mês em que foram concluídas; demandas ainda ativas contam no
+// mês corrente, já que o tempo está sendo consumido agora. O banco de horas do cliente não
+// acumula de um mês para o outro — cada mês começa zerado.
+function taskHourMonth(t: any) {
+  return t.completedAt ? t.completedAt.slice(0, 7) : currentMonthBrasilia();
+}
+
+// Soma as horas trabalhadas (getElapsed) das demandas de um cliente que pertencem a um mês específico.
+function hoursInMonth(clientTasks: any[], monthKey: string, getElapsed: (t: any) => number) {
+  return clientTasks.reduce((acc: number, t: any) => taskHourMonth(t) === monthKey ? acc + getElapsed(t) / 3600 : acc, 0);
+}
+
 function formatTime(totalSeconds: number) {
   const s = Math.floor(totalSeconds);
   const h = String(Math.floor(s / 3600)).padStart(2, "0");
@@ -1138,6 +1151,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
   const [dueAlert, setDueAlert] = useState<any>(null);
   const dueAlertedRef = useRef<Set<string>>(new Set());
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [confirmCopyTask, setConfirmCopyTask] = useState<any>(null);
   const [validationError, setValidationError] = useState<any>(null);
   
   const [waitingPrompt, setWaitingPrompt] = useState<string | null>(null);
@@ -1199,10 +1213,11 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
   const [dismissedLimits, setDismissedLimits] = useState(new Set());
 
   const clientsNearLimit = useMemo(() => {
+    const nowMonth = currentMonthBrasilia();
     return visibleClients.filter(c => {
       if (!c.contractedHours) return false;
       const cTasks = tasks.filter(t => t.clientId === c.id);
-      const hours = cTasks.reduce((acc, t) => acc + (getElapsed(t) / 3600), 0);
+      const hours = hoursInMonth(cTasks, nowMonth, getElapsed);
       return (c.contractedHours - hours) <= 5;
     });
   }, [visibleClients, tasks]);
@@ -1961,7 +1976,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
         {activeTab === 'today' && <OverlayModal title="Meu Dia" icon={<Sun size={20} className="text-amber-400"/>} isClosing={isClosingModal} onClose={handleCloseTab}><TodayView tasks={tasks} clients={clients} user={user} getElapsed={getElapsed} onOpen={openEditModal} onToggleTimer={toggleTimer} onComplete={(t) => handleRequestMove(t.id, null, 'done')} onOpenAgenda={() => setActiveTab('agenda')} /></OverlayModal>}
         {activeTab === 'notes' && <OverlayModal title="Notas" icon={<StickyNote size={20} className="text-amber-400"/>} isClosing={isClosingModal} onClose={handleCloseTab}><NotesPanelContent notes={visibleNotes} setNotes={setNotes} user={user} onDeleteNote={deleteNoteById} /></OverlayModal>}
         {activeTab === 'responsibles' && <OverlayModal title="Equipe (Contas)" icon={<Users size={20} className="text-indigo-400"/>} isClosing={isClosingModal} onClose={handleCloseTab}><ResponsiblesPanelContent responsibles={responsibles} tasks={tasks} user={user} /></OverlayModal>}
-        {activeTab === 'clients' && <OverlayModal title="Gestão de Clientes" icon={<Building2 size={20} className="text-purple-400"/>} isClosing={isClosingModal} onClose={handleCloseTab}><ClientsPanelContent clients={visibleClients} setClients={setClients} tasks={tasks} setTasks={setTasks} user={user} getElapsed={getElapsed} /></OverlayModal>}
+        {activeTab === 'clients' && <OverlayModal title="Gestão de Clientes" icon={<Building2 size={20} className="text-purple-400"/>} isClosing={isClosingModal} onClose={handleCloseTab}><ClientsPanelContent clients={visibleClients} setClients={setClients} tasks={tasks} setTasks={setTasks} user={user} getElapsed={getElapsed} theme={theme} /></OverlayModal>}
         {activeTab === 'reports' && <AnalyticsModal isClosing={isClosingModal} onClose={handleCloseTab} tasks={filteredTasks} clients={visibleClients} responsibles={responsibles} getElapsed={getElapsed} globalLookerUrl={globalLookerUrl} setGlobalLookerUrl={setGlobalLookerUrl} user={user} theme={theme} />}
         {activeTab === 'agenda' && <OverlayModal title="Agenda" icon={<CalendarDays size={20} className="text-teal-400"/>} isClosing={isClosingModal} onClose={handleCloseTab} fullWidth><CalendarView tasks={visibleTasks} setTasks={setTasks} clients={clients} handleRequestMove={handleRequestMove} user={user} onCreateCard={(prefill: any) => setModal({ mode: 'add', form: { ...emptyForm, ...prefill } })} onDeleteTask={deleteTaskById} /></OverlayModal>}
 
@@ -2258,7 +2273,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                                     {isEditable && (
                                       <>
                                         <button onClick={() => openEditModal(t)} className="p-1.5 bg-[var(--bg-overlay)] hover:bg-[var(--bg-overlay-strong)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded-lg transition-colors border border-transparent hover:border-[var(--border-overlay)]" title="Editar"><Pencil size={12}/></button>
-                                        {(t.status === 'done' || t.status === 'formalize') && <button onClick={() => copyTaskToTodo(t)} className="p-1.5 bg-teal-500/10 hover:bg-teal-500/20 text-teal-400 rounded-lg transition-colors border border-transparent hover:border-teal-500/20" title='Aproveitar demanda em "A Fazer"'><Copy size={12}/></button>}
+                                        {(t.status === 'done' || t.status === 'formalize') && <button onClick={() => setConfirmCopyTask(t)} className="p-1.5 bg-teal-500/10 hover:bg-teal-500/20 text-teal-400 rounded-lg transition-colors border border-transparent hover:border-teal-500/20" title='Aproveitar demanda em "A Fazer"'><Copy size={12}/></button>}
                                         {!isDoneOrCancelled && <button onClick={() => toggleTimer(t.id)} className={`p-1.5 rounded-lg transition-colors border ${t.timerRunning ? 'text-amber-400 bg-amber-400/10 border-amber-400/20' : 'text-[var(--text-secondary)] bg-[var(--bg-overlay)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-overlay-strong)] border-transparent hover:border-[var(--border-overlay)]'}`} title={t.timerRunning ? "Pausar" : "Iniciar Timer"}>{t.timerRunning ? <Pause size={12}/> : <Play size={12}/>}</button>}
                                       </>
                                     )}
@@ -2366,7 +2381,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                 <span className={`mt-0.5 w-4 h-4 rounded flex items-center justify-center shrink-0 border transition-colors ${donePrompt.continueNextMonth ? 'bg-teal-500 border-teal-500 text-white' : 'border-[var(--border-hover)] text-transparent'}`}><Check size={11} strokeWidth={3}/></span>
                 <span>
                   <span className="block text-xs font-bold text-[var(--text-primary)]">Continua no mês seguinte</span>
-                  <span className="block text-[10px] text-[var(--text-muted)] mt-1 leading-relaxed">Encerra essa demanda neste mês (com essas horas), mas cria automaticamente uma nova em "A Fazer" a partir do dia 1, com o mesmo título/descrição/cliente — sem checklist, tempo ou datas.</span>
+                  <span className="block text-[10px] text-[var(--text-muted)] mt-1 leading-relaxed">Cria automaticamente uma cópia em "A Fazer" no dia 1 do próximo mês.</span>
                 </span>
               </button>
             </div>
@@ -2391,7 +2406,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
               <div className="flex flex-col gap-3 max-h-40 overflow-y-auto kp-scroll pr-2">
                 {pendingLimitAlerts.map(c => {
                   const cTasks = tasks.filter((t: any) => t.clientId === c.id);
-                  const hours = cTasks.reduce((acc: number, t: any) => acc + (getElapsed(t) / 3600), 0);
+                  const hours = hoursInMonth(cTasks, currentMonthBrasilia(), getElapsed);
                   const remaining = (c.contractedHours || 0) - hours;
                   return (
                     <div key={c.id} className="flex justify-between items-center bg-[var(--bg-primary)] border border-[var(--border-primary)] p-4 rounded-xl">
@@ -2431,6 +2446,32 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                 className="w-full sm:flex-1 py-3.5 sm:py-3 rounded-2xl bg-red-600 hover:bg-red-500 text-white font-bold transition-all text-sm shadow-lg shadow-red-600/10"
               >
                 Apagar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmar Aproveitamento de Card em "A Fazer" */}
+      {confirmCopyTask && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center px-4 pt-4 pb-24 sm:p-4 z-[110] fade-in" onClick={() => setConfirmCopyTask(null)}>
+          <div className="w-full max-w-sm rounded-[32px] bg-[var(--bg-secondary)] border border-[var(--border-primary)] p-5 sm:p-8 shadow-2xl relative animate-modal-pop" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-3 mb-4 text-teal-400">
+              <div className="p-3 bg-teal-500/10 rounded-2xl shadow-inner"><Copy size={24} /></div>
+              <h3 className="font-bold text-xl tracking-tight">Aproveitar Demanda</h3>
+            </div>
+            <p className="text-sm text-[var(--text-secondary)] mb-8 leading-relaxed">
+              Criar uma nova demanda em "A Fazer" com o mesmo título, descrição e cliente de <span className="font-bold text-[var(--text-primary)]">"{confirmCopyTask.title}"</span>?
+            </p>
+            <div className="flex flex-col sm:flex-row items-center gap-3">
+              <button onClick={() => setConfirmCopyTask(null)} className="w-full sm:flex-1 py-3.5 sm:py-3 rounded-2xl border border-[var(--border-primary)] hover:bg-[var(--bg-overlay)] text-[var(--text-primary)] font-bold transition-all text-sm">Cancelar</button>
+              <button onClick={() => {
+                  copyTaskToTodo(confirmCopyTask);
+                  setConfirmCopyTask(null);
+                }}
+                className="w-full sm:flex-1 py-3.5 sm:py-3 rounded-2xl bg-teal-600 hover:bg-teal-500 text-white font-bold transition-all text-sm shadow-lg shadow-teal-600/10"
+              >
+                Aproveitar
               </button>
             </div>
           </div>
@@ -2987,9 +3028,31 @@ function ClientModal({ modal, setModal, setClients, user }: any) {
   );
 }
 
-function ClientDetailModal({ client, tasks, getElapsed, user, onClose, onEdit, onRemove }: any) {
+function ClientDetailModal({ client, tasks, getElapsed, user, theme, onClose, onEdit, onRemove }: any) {
   const cTasks = tasks.filter((t: any) => t.clientId === client.id);
-  const worked = cTasks.reduce((acc: number, t: any) => acc + (getElapsed(t) / 3600), 0);
+  const nowMonth = currentMonthBrasilia();
+
+  // Últimos 12 meses (mês corrente primeiro) para o filtro e o gráfico do banco de horas.
+  const monthOptions = useMemo(() => {
+    const [cy, cm] = nowMonth.split('-').map(Number);
+    const list: string[] = [];
+    let y = cy, m = cm;
+    for (let i = 0; i < 12; i++) {
+      list.push(`${y}-${String(m).padStart(2, '0')}`);
+      m--; if (m < 1) { m = 12; y--; }
+    }
+    return list;
+  }, [nowMonth]);
+
+  const [selectedMonth, setSelectedMonth] = useState(nowMonth);
+
+  const monthlyChartData = useMemo(() => [...monthOptions].reverse().map(key => {
+    const [y, m] = key.split('-');
+    return { key, label: `${MONTH_ABBR[parseInt(m, 10) - 1]}/${y.slice(2)}`, hours: Math.round(hoursInMonth(cTasks, key, getElapsed) * 10) / 10 };
+  }), [cTasks, monthOptions, getElapsed]);
+
+  // Banco de horas não acumula: cada mês é calculado isoladamente a partir das demandas do cliente.
+  const worked = hoursInMonth(cTasks, selectedMonth, getElapsed);
   const teto = client.contractedHours || 0;
   const remaining = teto ? teto - worked : null;
   const pct = teto ? Math.min(100, (worked / teto) * 100) : 0;
@@ -2999,6 +3062,9 @@ function ClientDetailModal({ client, tasks, getElapsed, user, onClose, onEdit, o
   const near = remaining !== null && remaining >= 0 && remaining <= 5;
   const barColor = over ? 'bg-red-500' : near ? 'bg-amber-500' : 'bg-emerald-500';
   const accentText = over ? 'text-red-400' : near ? 'text-amber-400' : 'text-emerald-400';
+
+  const chartGrid = theme === 'light' ? '#d4d4d8' : '#27272a';
+  const chartTick = theme === 'light' ? '#a1a1aa' : '#71717a';
 
   const doneCount = cTasks.filter((t: any) => t.status === 'done' || t.status === 'formalize').length;
   const activeCount = cTasks.filter((t: any) => !['done', 'cancelled', 'formalize'].includes(t.status)).length;
@@ -3020,14 +3086,23 @@ function ClientDetailModal({ client, tasks, getElapsed, user, onClose, onEdit, o
 
           {/* Banco de horas */}
           <div className="rounded-2xl border border-[var(--border-primary)] bg-[var(--bg-secondary)] p-5 sm:p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--text-secondary)]">Banco de Horas</h4>
-              {teto > 0 && (
-                <span className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-md border ${over ? 'bg-red-500/10 text-red-400 border-red-500/20' : near ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'}`}>
-                  {over ? `${Math.abs(remaining as number).toFixed(1)}h acima` : `${(remaining as number).toFixed(1)}h restam`}
-                </span>
-              )}
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--text-secondary)] shrink-0">Banco de Horas</h4>
+              <div className="flex items-center gap-2 shrink-0">
+                <select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} className="appearance-none bg-[var(--bg-primary)] border border-[var(--border-primary)] rounded-lg pl-3 pr-7 py-1.5 text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)] outline-none cursor-pointer hover:text-[var(--text-primary)] transition-colors">
+                  {monthOptions.map(key => {
+                    const [y, m] = key.split('-');
+                    return <option key={key} value={key}>{MONTH_ABBR[parseInt(m, 10) - 1]}/{y} {key === nowMonth ? '(atual)' : ''}</option>;
+                  })}
+                </select>
+                {teto > 0 && (
+                  <span className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-md border whitespace-nowrap ${over ? 'bg-red-500/10 text-red-400 border-red-500/20' : near ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'}`}>
+                    {over ? `${Math.abs(remaining as number).toFixed(1)}h acima` : `${(remaining as number).toFixed(1)}h restam`}
+                  </span>
+                )}
+              </div>
             </div>
+            <p className="text-[10px] text-[var(--text-muted)] mb-4 -mt-2">O banco de horas não acumula: cada mês é contabilizado de forma independente.</p>
             {teto > 0 ? (
               <>
                 <div className="flex items-end justify-between mb-3">
@@ -3037,7 +3112,7 @@ function ClientDetailModal({ client, tasks, getElapsed, user, onClose, onEdit, o
                 <div className="h-2.5 rounded-full bg-[var(--bg-scrim)] overflow-hidden border border-[var(--border-overlay)]">
                   <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${pct}%` }} />
                 </div>
-                {(over || near) && (
+                {(over || near) && selectedMonth === nowMonth && (
                   <a href={generateLimitEmailLink(client, worked)} target="_blank" rel="noreferrer" className="mt-4 inline-flex items-center gap-2 px-4 py-2.5 bg-red-500/10 text-red-400 border border-red-500/20 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-red-500/20 transition-colors">
                     <AlertTriangle size={14} /> Enviar aviso de horas
                   </a>
@@ -3050,6 +3125,23 @@ function ClientDetailModal({ client, tasks, getElapsed, user, onClose, onEdit, o
               </div>
             )}
           </div>
+
+          {/* Histórico mensal de horas trabalhadas */}
+          <ChartSection title="Horas Trabalhadas por Mês" height={220}>
+            {monthlyChartData.every((m: any) => m.hours === 0) ? <ChartEmpty /> : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={monthlyChartData} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={chartGrid} vertical={false} />
+                  <XAxis dataKey="label" tick={{ fill: chartTick, fontSize: 11 }} axisLine={{ stroke: chartGrid }} tickLine={false} />
+                  <YAxis allowDecimals={false} tick={{ fill: chartTick, fontSize: 11 }} axisLine={{ stroke: chartGrid }} tickLine={false} />
+                  <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
+                  <Bar dataKey="hours" name="Horas" radius={[6, 6, 0, 0]}>
+                    {monthlyChartData.map((entry: any) => <Cell key={entry.key} fill={entry.key === selectedMonth ? CHART_COLORS.teal : CHART_COLORS.indigo} fillOpacity={entry.key === selectedMonth ? 1 : 0.55} />)}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </ChartSection>
 
           {/* Mini-stats */}
           <div className="grid grid-cols-3 gap-3">
@@ -3125,7 +3217,7 @@ function ClientDetailModal({ client, tasks, getElapsed, user, onClose, onEdit, o
   );
 }
 
-function ClientsPanelContent({ clients, setClients, tasks, setTasks, user, getElapsed }: any) {
+function ClientsPanelContent({ clients, setClients, tasks, setTasks, user, getElapsed, theme }: any) {
   const [clientModal, setClientModal] = useState<any>(null);
 
   const openAdd = () => setClientModal({ mode: 'add', form: { name: '', emails: [], contractedHours: '' } });
@@ -3170,7 +3262,7 @@ function ClientsPanelContent({ clients, setClients, tasks, setTasks, user, getEl
           const emailsArray = Array.isArray(c.emails) ? c.emails : [];
           
           const cTasks = tasks.filter((t: any) => t.clientId === c.id);
-          const hours = cTasks.reduce((acc: number, t: any) => acc + (getElapsed(t) / 3600), 0);
+          const hours = hoursInMonth(cTasks, currentMonthBrasilia(), getElapsed);
           const remaining = c.contractedHours ? c.contractedHours - hours : null;
           const isNearLimit = remaining !== null && remaining <= 5;
           
@@ -3181,7 +3273,7 @@ function ClientsPanelContent({ clients, setClients, tasks, setTasks, user, getEl
                 <div className="flex flex-col">
                   <span className="text-lg font-bold text-[var(--text-primary)] group-hover:text-purple-400 transition-colors">{c.name}</span>
                   <span className="text-xs text-[var(--text-muted)] mt-1 uppercase tracking-widest font-bold">
-                    {c.contractedHours ? <span className="text-indigo-400">Teto: {c.contractedHours}h | </span> : ''} {emailsArray.length === 0 ? "0 E-mails" : `${emailsArray.length} Contato(s)`} • {count} Demandas
+                    {c.contractedHours ? <span className="text-indigo-400">Teto: {c.contractedHours}h/mês | </span> : ''} {emailsArray.length === 0 ? "0 E-mails" : `${emailsArray.length} Contato(s)`} • {count} Demandas
                   </span>
                 </div>
               </div>
@@ -3203,7 +3295,7 @@ function ClientsPanelContent({ clients, setClients, tasks, setTasks, user, getEl
         })}
       </div>
       {clientModal && createPortal(<ClientModal modal={clientModal} setModal={setClientModal} setClients={setClients} user={user} />, document.body)}
-      {detailClient && createPortal(<ClientDetailModal client={detailClient} tasks={tasks} getElapsed={getElapsed} user={user} onClose={() => setDetailClient(null)} onEdit={(c: any) => { setDetailClient(null); setClientModal({ mode: 'edit', form: { ...c, emails: Array.isArray(c.emails) ? c.emails : [] } }); }} onRemove={(id: string) => { setDetailClient(null); remove(id); }} />, document.body)}
+      {detailClient && createPortal(<ClientDetailModal client={detailClient} tasks={tasks} getElapsed={getElapsed} user={user} theme={theme} onClose={() => setDetailClient(null)} onEdit={(c: any) => { setDetailClient(null); setClientModal({ mode: 'edit', form: { ...c, emails: Array.isArray(c.emails) ? c.emails : [] } }); }} onRemove={(id: string) => { setDetailClient(null); remove(id); }} />, document.body)}
     </div>
   );
 }

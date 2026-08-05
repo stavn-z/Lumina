@@ -5036,6 +5036,43 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
 function TaskModal({ modal, setModal, clients, responsibles, closeModal, saveModal, validationError, setValidationError }: any) {
   const updateForm = (patch: any) => { setModal((m: any) => ({ ...m, form: { ...m.form, ...patch } })); if (validationError) setValidationError(null); };
   const addChecklistRow = () => { setModal((m: any) => ({ ...m, form: { ...m.form, checklist: [...(m.form.checklist || []), { id: nextId(), text: "", done: false }] } })); };
+
+  // Reordenação por arraste do checklist: pointer capture no "grip" mantém os eventos de
+  // move/up chegando nele mesmo se o dedo/cursor sair da linha (mesmo padrão usado no drag
+  // dos cards do quadro e do agendamento). A cada linha sobrevoada, troca de posição na hora.
+  const checklistDragRef = useRef<{ id: string } | null>(null);
+  const [draggingChecklistId, setDraggingChecklistId] = useState<string | null>(null);
+
+  const beginChecklistDrag = (e: React.PointerEvent, id: string) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    e.preventDefault();
+    checklistDragRef.current = { id };
+    setDraggingChecklistId(id);
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+  };
+
+  const onChecklistPointerMove = (e: React.PointerEvent) => {
+    const d = checklistDragRef.current;
+    if (!d) return;
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const row = el ? (el as Element).closest('[data-checklist-id]') : null;
+    const overId = row ? row.getAttribute('data-checklist-id') : null;
+    if (!overId || overId === d.id) return;
+    setModal((m: any) => {
+      const list = [...(m.form.checklist || [])];
+      const fromIdx = list.findIndex((ci: any) => ci.id === d.id);
+      const toIdx = list.findIndex((ci: any) => ci.id === overId);
+      if (fromIdx === -1 || toIdx === -1) return m;
+      const [moved] = list.splice(fromIdx, 1);
+      list.splice(toIdx, 0, moved);
+      return { ...m, form: { ...m.form, checklist: list } };
+    });
+  };
+
+  const endChecklistDrag = () => {
+    checklistDragRef.current = null;
+    setDraggingChecklistId(null);
+  };
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center px-3 pt-3 pb-24 sm:p-4 z-[85] fade-in" onClick={closeModal}>
       <div className="w-full max-w-xl rounded-[32px] bg-[var(--bg-secondary)] border border-[var(--border-primary)] flex flex-col max-h-[80dvh] sm:max-h-[85dvh] shadow-2xl overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
@@ -5056,7 +5093,22 @@ function TaskModal({ modal, setModal, clients, responsibles, closeModal, saveMod
              {modal.form.status === 'waiting' && <div className="animate-fade-in"><CustomSelect label="Dependência *" required hasError={validationError && String(validationError).includes("Dependência")} value={modal.form.waitingFor || ''} onChange={(e: any) => updateForm({ waitingFor: e.target.value })} options={<><option value="" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Pendente de quem?</option><option value="Cliente" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Cliente</option><option value="Reunião" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Reunião</option><option value="Time Interno" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Time Interno</option></>} /></div>}
           </div>
           
-          <div className="mt-2"><div className="flex items-center justify-between mb-3"><label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] ml-1">Checklist de Passos</label><button onClick={addChecklistRow} className="text-[10px] font-black uppercase text-indigo-400 hover:text-indigo-300 transition-colors p-1 flex items-center gap-1"><Plus size={12}/> Adicionar Passo</button></div><div className="flex flex-col gap-3 pb-safe">{(modal.form.checklist || []).map((c: any) => (<div key={c.id} className="flex items-center gap-3"><button onClick={() => { setModal((m: any) => ({ ...m, form: { ...m.form, checklist: m.form.checklist.map((ci: any) => ci.id === c.id ? { ...ci, done: !ci.done } : ci) } })); }} className={`p-2.5 border rounded-xl transition-all shrink-0 ${c.done ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-400 shadow-[0_0_10px_rgba(99,102,241,0.2)]' : 'bg-[var(--bg-secondary)] border-[var(--border-primary)] text-[var(--text-muted)] hover:text-[var(--text-muted)] hover:bg-[var(--bg-overlay)]'}`}><Check size={16}/></button><input value={c.text || ''} onChange={(e) => { setModal((m: any) => ({ ...m, form: { ...m.form, checklist: m.form.checklist.map((ci: any) => ci.id === c.id ? { ...ci, text: e.target.value } : ci) } })); }} className="flex-1 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 transition-all shadow-sm" placeholder="O que precisa ser feito?" /><button onClick={() => setModal((m: any) => ({ ...m, form: { ...m.form, checklist: m.form.checklist.filter((ci: any) => ci.id !== c.id) } }))} className="p-2.5 text-[var(--text-muted)] hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-colors"><X size={18} /></button></div>))}</div></div>
+          <div className="mt-2">
+            <div className="flex items-center justify-between mb-3">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] ml-1">Checklist de Passos</label>
+              <button onClick={addChecklistRow} className="text-[10px] font-black uppercase text-indigo-400 hover:text-indigo-300 transition-colors p-1 flex items-center gap-1"><Plus size={12}/> Adicionar Passo</button>
+            </div>
+            <div className="flex flex-col gap-3 pb-safe" onPointerMove={onChecklistPointerMove} onPointerUp={endChecklistDrag} onPointerCancel={endChecklistDrag}>
+              {(modal.form.checklist || []).map((c: any) => (
+                <div key={c.id} data-checklist-id={c.id} className={`flex items-center gap-2 transition-opacity ${draggingChecklistId === c.id ? 'opacity-40' : ''}`}>
+                  <button onPointerDown={(e) => beginChecklistDrag(e, c.id)} style={{ touchAction: 'none' }} className="p-1.5 text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-grab active:cursor-grabbing shrink-0" title="Arrastar para reordenar"><GripVertical size={16}/></button>
+                  <button onClick={() => { setModal((m: any) => ({ ...m, form: { ...m.form, checklist: m.form.checklist.map((ci: any) => ci.id === c.id ? { ...ci, done: !ci.done } : ci) } })); }} className={`p-2.5 border rounded-xl transition-all shrink-0 ${c.done ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-400 shadow-[0_0_10px_rgba(99,102,241,0.2)]' : 'bg-[var(--bg-secondary)] border-[var(--border-primary)] text-[var(--text-muted)] hover:text-[var(--text-muted)] hover:bg-[var(--bg-overlay)]'}`}><Check size={16}/></button>
+                  <input value={c.text || ''} onChange={(e) => { setModal((m: any) => ({ ...m, form: { ...m.form, checklist: m.form.checklist.map((ci: any) => ci.id === c.id ? { ...ci, text: e.target.value } : ci) } })); }} className="flex-1 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 transition-all shadow-sm" placeholder="O que precisa ser feito?" />
+                  <button onClick={() => setModal((m: any) => ({ ...m, form: { ...m.form, checklist: m.form.checklist.filter((ci: any) => ci.id !== c.id) } }))} className="p-2.5 text-[var(--text-muted)] hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-colors"><X size={18} /></button>
+                </div>
+              ))}
+            </div>
+          </div>
           {modal.mode === 'edit' && Array.isArray(modal.task?.history) && modal.task.history.length > 0 && (
             <div className="mt-2">
               <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-3 block ml-1">Histórico</label>

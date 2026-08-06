@@ -162,6 +162,19 @@ function isScheduleWindowOver(t: any) {
   return Date.now() > start.getTime() + dur * 60000;
 }
 
+// Folga maior que a janela do alerta "Hora de finalizar" (5min após o término previsto), pra dar
+// tempo real do alerta aparecer e ser visto antes da reunião expirar sozinha — sem essa folga, a
+// expiração automática (que roda a cada 60s, ver useEffect de "meeting_expired") corria bem na
+// frente e limpava o scheduledStart quase na hora, e o alerta nunca chegava a disparar de fato
+// pra demandas isMeeting=true.
+function isMeetingReadyToExpire(t: any) {
+  if (!t.scheduledStart) return false;
+  const start = new Date(t.scheduledStart);
+  if (isNaN(start.getTime())) return false;
+  const dur = t.scheduledDurationMin > 0 ? t.scheduledDurationMin : (t.durationMin > 0 ? t.durationMin : 60);
+  return Date.now() - (start.getTime() + dur * 60000) >= 10 * 60000;
+}
+
 // Verifica se a data do item está dentro do período (início e fim)
 function filterByPeriod(itemDateStr: string, startDateStr: string, endDateStr: string) {
   if (!startDateStr && !endDateStr) return true;
@@ -974,11 +987,11 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
   // recorrência (templateId) nem a modelos (generatesCards) — tratado à parte.
   useEffect(() => {
     const check = () => {
-      const hasExpired = tasks.some((t: any) => t.isMeeting && t.scheduledStart && !t.templateId && !t.generatesCards && t.responsibleId === user.id && isScheduleWindowOver(t));
+      const hasExpired = tasks.some((t: any) => t.isMeeting && t.scheduledStart && !t.templateId && !t.generatesCards && t.responsibleId === user.id && isMeetingReadyToExpire(t));
       if (!hasExpired) return;
       setTasks((prev: any) => prev.map((t: any) => {
         if (!t.isMeeting || !t.scheduledStart || t.templateId || t.generatesCards || t.responsibleId !== user.id) return t;
-        if (!isScheduleWindowOver(t)) return t;
+        if (!isMeetingReadyToExpire(t)) return t;
         const oldStart = t.scheduledStart;
         // Limpa também a Data de Início se ela só estava lá por causa da própria reunião (setada pelo
         // "Marcar reunião"), pra não deixar a flag/alerta de "Iniciar Hoje" pendurada sozinha.

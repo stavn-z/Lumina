@@ -51,9 +51,82 @@ function taskHourMonth(t: any) {
   return t.completedAt ? t.completedAt.slice(0, 7) : currentMonthBrasilia();
 }
 
-// Soma as horas trabalhadas (getElapsed) das demandas de um cliente que pertencem a um mês específico.
+// Horas de uma demanda para efeito de banco de horas: usa o tempo real rodado no timer;
+// se o timer nunca foi iniciado (nem uma vez), cai para a estimativa (Est. Minutos) informada
+// na criação/edição do card — nem toda demanda tem o timer rodado, mas a maioria tem uma estimativa.
+function billableHours(t: any, getElapsed: (t: any) => number) {
+  const tracked = getElapsed(t) / 3600;
+  return tracked > 0 ? tracked : (t.durationMin || 0) / 60;
+}
+
+// Soma as horas (billableHours) das demandas de um cliente que pertencem a um mês específico.
 function hoursInMonth(clientTasks: any[], monthKey: string, getElapsed: (t: any) => number) {
-  return clientTasks.reduce((acc: number, t: any) => taskHourMonth(t) === monthKey ? acc + getElapsed(t) / 3600 : acc, 0);
+  return clientTasks.reduce((acc: number, t: any) => taskHourMonth(t) === monthKey ? acc + billableHours(t, getElapsed) : acc, 0);
+}
+
+// Domingo de Páscoa (algoritmo de Meeus/Jones/Butcher) — base dos feriados móveis brasileiros.
+function easterDate(year: number) {
+  const a = year % 19;
+  const b = Math.floor(year / 100);
+  const c = year % 100;
+  const d = Math.floor(b / 4);
+  const e = b % 4;
+  const f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4);
+  const k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31);
+  const day = ((h + l - 7 * m + 114) % 31) + 1;
+  return { month, day };
+}
+
+// Feriados nacionais brasileiros: fixos + móveis (a partir da Páscoa). Carnaval (segunda e
+// terça) e Corpus Christi são "ponto facultativo" nacionalmente, mas tratados aqui como não
+// úteis porque a maioria dos clientes (escolas, universidades) emenda ou fecha nesses dias.
+const FIXED_HOLIDAYS_BR: [number, number][] = [
+  [1, 1], [4, 21], [5, 1], [9, 7], [10, 12], [11, 2], [11, 15], [11, 20], [12, 25],
+];
+function isBrazilianHoliday(dateStr: string) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  if (FIXED_HOLIDAYS_BR.some(([fm, fd]) => fm === m && fd === d)) return true;
+  const easter = easterDate(y);
+  const dayMs = 86400000;
+  const easterUTC = Date.UTC(y, easter.month - 1, easter.day);
+  const targetUTC = Date.UTC(y, m - 1, d);
+  const diffDays = Math.round((targetUTC - easterUTC) / dayMs);
+  // -48/-47: Carnaval (seg/ter) · -2: Sexta-feira Santa · +60: Corpus Christi
+  return [-48, -47, -2, 60].includes(diffDays);
+}
+
+// Dia útil = não é fim de semana, não é feriado nacional, e não está na lista de feriados
+// extras do próprio cliente (municipal/estadual ou emenda que só afeta aquele cliente).
+function isBusinessDay(dateStr: string, extraHolidays?: string[]) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dow = new Date(y, m - 1, d).getDay();
+  if (dow === 0 || dow === 6) return false;
+  if (isBrazilianHoliday(dateStr)) return false;
+  if (Array.isArray(extraHolidays) && extraHolidays.includes(dateStr)) return false;
+  return true;
+}
+
+// Horas "automáticas" de uma ação diária que não vira card (ex: acompanhamento de logs feito
+// direto no Notion). Só se aplica ao mês corrente — não retroage a meses passados, já que não
+// há histórico de quando a flag foi ligada — e conta só até hoje (dias futuros não contam).
+function autoLogHoursForMonth(client: any, monthKey: string) {
+  if (!client?.dailyLogEnabled) return 0;
+  const today = getBrasiliaDate();
+  if (monthKey !== today.slice(0, 7)) return 0;
+  const [y, m] = monthKey.split('-').map(Number);
+  const todayDay = parseInt(today.slice(8, 10), 10);
+  let count = 0;
+  for (let day = 1; day <= todayDay; day++) {
+    const dateStr = `${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    if (isBusinessDay(dateStr, client.extraHolidays)) count++;
+  }
+  return (count * (client.dailyLogMinutes || 60)) / 60;
 }
 
 function formatTime(totalSeconds: number) {
@@ -953,7 +1026,10 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
             lookerUrl: c.lookerUrl || '',
             ownerId: c.ownerId || '',
             emails: Array.isArray(c.emails) ? c.emails : (typeof c.email === 'string' && c.email ? c.email.split(',').map(e => e.trim()) : []),
-            contractedHours: parseFloat(c.contractedHours) || 0
+            contractedHours: parseFloat(c.contractedHours) || 0,
+            dailyLogEnabled: !!c.dailyLogEnabled,
+            dailyLogMinutes: c.dailyLogMinutes || 60,
+            extraHolidays: Array.isArray(c.extraHolidays) ? c.extraHolidays : [],
           }));
           setClients(normalizedClients);
           normalizedClients.forEach((c: any) => { lastSyncedClientsRef.current[c.id] = stableStringify(c); });
@@ -1217,7 +1293,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
     return visibleClients.filter(c => {
       if (!c.contractedHours) return false;
       const cTasks = tasks.filter(t => t.clientId === c.id);
-      const hours = hoursInMonth(cTasks, nowMonth, getElapsed);
+      const hours = hoursInMonth(cTasks, nowMonth, getElapsed) + autoLogHoursForMonth(c, nowMonth);
       return (c.contractedHours - hours) <= 5;
     });
   }, [visibleClients, tasks]);
@@ -1405,15 +1481,17 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
           }
 
           // Sincronização bidirecional entre "Est. Minutos" e o timer: quem foi editado por último manda.
-          // Se o campo foi alterado manualmente, esse valor vence e é aplicado ao timer.
-          // Se o campo ficou intocado, reflete de volta o tempo real acumulado no timer.
+          // Se o campo foi alterado manualmente, esse valor vence e é aplicado ao timer. Se o campo
+          // ficou intocado E o timer já tem tempo real rodado, reflete esse tempo de volta no campo.
+          // Sem o "timerElapsed > 0" aqui, salvar o formulário sem tocar em "Est. Minutos" enquanto o
+          // timer nunca rodou zerava a estimativa por engano (bug: elapsed=0 vencia um valor válido).
           const typedDurationMin = parseInt(f.durationMin) || 0;
           const previousDurationMin = t.durationMin || 0;
           let finalDurationMin = typedDurationMin;
 
           if (typedDurationMin !== previousDurationMin) {
             timerElapsed = typedDurationMin * 60;
-          } else {
+          } else if (timerElapsed > 0) {
             finalDurationMin = Math.round(timerElapsed / 60);
           }
 
@@ -1999,7 +2077,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
         {activeTab === 'responsibles' && <OverlayModal title="Equipe (Contas)" icon={<Users size={20} className="text-indigo-400"/>} isClosing={isClosingModal} onClose={handleCloseTab}><ResponsiblesPanelContent responsibles={responsibles} tasks={tasks} user={user} /></OverlayModal>}
         {activeTab === 'clients' && <OverlayModal title="Gestão de Clientes" icon={<Building2 size={20} className="text-purple-400"/>} isClosing={isClosingModal} onClose={handleCloseTab}><ClientsPanelContent clients={visibleClients} setClients={setClients} tasks={tasks} setTasks={setTasks} user={user} getElapsed={getElapsed} theme={theme} /></OverlayModal>}
         {activeTab === 'reports' && <AnalyticsModal isClosing={isClosingModal} onClose={handleCloseTab} tasks={filteredTasks} clients={visibleClients} responsibles={responsibles} getElapsed={getElapsed} globalLookerUrl={globalLookerUrl} setGlobalLookerUrl={setGlobalLookerUrl} user={user} theme={theme} />}
-        {activeTab === 'agenda' && <OverlayModal title="Agenda" icon={<CalendarDays size={20} className="text-teal-400"/>} isClosing={isClosingModal} onClose={handleCloseTab} fullWidth><CalendarView tasks={visibleTasks} setTasks={setTasks} clients={clients} handleRequestMove={handleRequestMove} user={user} onCreateCard={(prefill: any) => setModal({ mode: 'add', form: { ...emptyForm, ...prefill } })} onDeleteTask={deleteTaskById} /></OverlayModal>}
+        {activeTab === 'agenda' && <OverlayModal title="Agenda" icon={<CalendarDays size={20} className="text-teal-400"/>} isClosing={isClosingModal} onClose={handleCloseTab} fullWidth><CalendarView tasks={visibleTasks} setTasks={setTasks} clients={clients} handleRequestMove={handleRequestMove} user={user} onCreateCard={(prefill: any) => setModal({ mode: 'add', form: { ...emptyForm, ...prefill } })} onDeleteTask={deleteTaskById} onOpenTask={openEditModal} /></OverlayModal>}
 
         {/* BOARD VIEW */}
         <div className={`flex-1 flex flex-col min-h-0 ${activeTab !== 'board' ? 'hidden md:flex opacity-30 pointer-events-none transition-opacity duration-300' : 'fade-in'}`}>
@@ -2375,7 +2453,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
 
       {/* Pop-up: Aguardando Retorno */}
       {waitingPrompt && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center px-4 pt-4 pb-24 sm:p-4 z-[70] fade-in" onClick={() => setWaitingPrompt(null)}>
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center px-4 pt-4 pb-24 sm:p-4 z-[70] fade-in" onClick={() => setWaitingPrompt(null)}>
           <div className="w-full max-w-sm rounded-[32px] bg-[var(--bg-secondary)] border border-[var(--border-primary)] p-8 shadow-2xl relative animate-modal-pop" onClick={e => e.stopPropagation()}>
             <button onClick={() => setWaitingPrompt(null)} className="absolute top-6 right-6 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"><X size={20} /></button>
             <div className="flex items-center gap-3 mb-6 text-pink-500">
@@ -2394,7 +2472,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
 
       {/* Pop-up: Conclusão de Demanda */}
       {donePrompt && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center px-4 pt-4 pb-24 sm:p-4 z-[90] fade-in" onClick={() => { setDonePrompt(null); setValidationError(null); }}>
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center px-4 pt-4 pb-24 sm:p-4 z-[90] fade-in" onClick={() => { setDonePrompt(null); setValidationError(null); }}>
           <div className="w-full max-w-sm rounded-[32px] bg-[var(--bg-secondary)] border border-[var(--border-primary)] shadow-2xl relative overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
             <div className="px-5 sm:px-8 py-5 sm:py-6 border-b border-[var(--border-primary)] flex items-center gap-3 text-emerald-500">
               <CheckCircle2 size={24} />
@@ -2428,7 +2506,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
 
       {/* Alerta de Banco de Horas */}
       {pendingLimitAlerts.length > 0 && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center px-4 pt-4 pb-24 sm:p-4 z-[100] fade-in" onClick={() => setDismissedLimits(new Set([...dismissedLimits, ...pendingLimitAlerts.map(c => c.id)]))}>
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center px-4 pt-4 pb-24 sm:p-4 z-[100] fade-in" onClick={() => setDismissedLimits(new Set([...dismissedLimits, ...pendingLimitAlerts.map(c => c.id)]))}>
           <div className="w-full max-w-md rounded-[32px] bg-[var(--bg-secondary)] border border-red-500/30 flex flex-col shadow-2xl overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
             <div className="px-5 sm:px-8 py-5 sm:py-6 border-b border-[var(--border-primary)] flex items-center gap-3">
               <div className="p-3 bg-red-500/10 rounded-2xl shadow-inner text-red-500"><AlertTriangle size={24} /></div>
@@ -2439,7 +2517,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
               <div className="flex flex-col gap-3 max-h-40 overflow-y-auto kp-scroll pr-2">
                 {pendingLimitAlerts.map(c => {
                   const cTasks = tasks.filter((t: any) => t.clientId === c.id);
-                  const hours = hoursInMonth(cTasks, currentMonthBrasilia(), getElapsed);
+                  const hours = hoursInMonth(cTasks, currentMonthBrasilia(), getElapsed) + autoLogHoursForMonth(c, currentMonthBrasilia());
                   const remaining = (c.contractedHours || 0) - hours;
                   return (
                     <div key={c.id} className="flex justify-between items-center bg-[var(--bg-primary)] border border-[var(--border-primary)] p-4 rounded-xl">
@@ -2460,7 +2538,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
 
       {/* Confirmar Exclusão de Cartão */}
       {confirmDelete !== null && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center px-4 pt-4 pb-24 sm:p-4 z-[110] fade-in" onClick={() => setConfirmDelete(null)}>
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center px-4 pt-4 pb-24 sm:p-4 z-[110] fade-in" onClick={() => setConfirmDelete(null)}>
           <div className="w-full max-w-sm rounded-[32px] bg-[var(--bg-secondary)] border border-[var(--border-primary)] p-5 sm:p-8 shadow-2xl relative animate-modal-pop" onClick={e => e.stopPropagation()}>
             <div className="flex items-center gap-3 mb-4 text-red-500">
               <div className="p-3 bg-red-500/10 rounded-2xl shadow-inner"><Trash2 size={24} /></div>
@@ -2487,7 +2565,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
 
       {/* Confirmar Aproveitamento de Card em "A Fazer" */}
       {confirmCopyTask && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center px-4 pt-4 pb-24 sm:p-4 z-[110] fade-in" onClick={() => setConfirmCopyTask(null)}>
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center px-4 pt-4 pb-24 sm:p-4 z-[110] fade-in" onClick={() => setConfirmCopyTask(null)}>
           <div className="w-full max-w-sm rounded-[32px] bg-[var(--bg-secondary)] border border-[var(--border-primary)] p-5 sm:p-8 shadow-2xl relative animate-modal-pop" onClick={e => e.stopPropagation()}>
             <div className="flex items-center gap-3 mb-4 text-teal-400">
               <div className="p-3 bg-teal-500/10 rounded-2xl shadow-inner"><Copy size={24} /></div>
@@ -2537,7 +2615,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
 
       {/* Alerta "hora de finalizar": lista persistente, mesmo padrão visual do Alerta de Limite */}
       {pendingFinishAlerts.length > 0 && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center px-4 pt-4 pb-24 sm:p-4 z-[89] fade-in" onClick={() => setDismissedFinishAlerts((prev: any) => new Set([...prev, ...pendingFinishAlerts.map((t: any) => `${t.id}|${t.scheduledStart}`)]))}>
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center px-4 pt-4 pb-24 sm:p-4 z-[89] fade-in" onClick={() => setDismissedFinishAlerts((prev: any) => new Set([...prev, ...pendingFinishAlerts.map((t: any) => `${t.id}|${t.scheduledStart}`)]))}>
           <div className="w-full max-w-md rounded-[32px] bg-[var(--bg-secondary)] border border-amber-500/30 flex flex-col shadow-2xl overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
             <div className="px-5 sm:px-8 py-5 sm:py-6 border-b border-[var(--border-primary)] flex items-center gap-3">
               <div className="p-3 bg-amber-500/10 rounded-2xl shadow-inner text-amber-500"><AlertTriangle size={24} /></div>
@@ -2629,7 +2707,7 @@ function ProfileModal({ user, responsibles, onClose, onUpdate }: any) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center px-4 pt-4 pb-24 sm:p-4 z-[90] fade-in" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center px-4 pt-4 pb-24 sm:p-4 z-[90] fade-in" onClick={onClose}>
       <div className="w-full max-w-sm rounded-[32px] shadow-2xl relative overflow-hidden animate-modal-pop" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }} onClick={e => e.stopPropagation()}>
         <div className="px-5 sm:px-8 py-5 sm:py-6 border-b flex items-center justify-between" style={{ borderColor: 'var(--border-primary)', background: 'var(--bg-tertiary)' }}>
           <div className="flex items-center gap-3">
@@ -2719,7 +2797,7 @@ function MobileProfileNavBtn({ url, name, open, onClick, children }: any) {
 
 function OverlayModal({ title, icon, onClose, children, fullWidth, isClosing }: any) {
   return (
-    <div className={`fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center px-3 pt-3 pb-24 sm:p-4 z-[60] ${isClosing ? 'fade-out' : 'fade-in'}`} onClick={onClose}>
+    <div className={`fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center px-3 pt-3 pb-24 sm:p-4 z-[60] ${isClosing ? 'fade-out' : 'fade-in'}`} onClick={onClose}>
       <div className={`rounded-3xl sm:rounded-[32px] shadow-2xl flex flex-col overflow-hidden w-full ${isClosing ? 'animate-modal-out' : 'animate-modal-pop'} ${fullWidth ? 'max-w-7xl h-[80dvh] sm:h-[88dvh]' : 'max-w-4xl max-h-[80dvh] sm:max-h-[85dvh]'}`} style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }} onClick={(e) => e.stopPropagation()}>
         <div className="px-5 sm:px-8 py-5 sm:py-6 border-b flex items-center justify-between" style={{ borderColor: 'var(--border-primary)', background: 'var(--bg-tertiary)' }}>
            <div className="flex items-center gap-4">
@@ -2869,6 +2947,7 @@ function NoteEditorModal({ note, onSave, onDiscard, onDelete }: any) {
 
 function NotesPanelContent({ notes, setNotes, user, onDeleteNote }: any) {
   const [editingNote, setEditingNote] = useState<any>(null); // null | 'new' | note
+  const [confirmDeleteNote, setConfirmDeleteNote] = useState<any>(null);
 
   const sorted = useMemo(() => [...notes].sort((a: any, b: any) => {
     if (!!b.pinned !== !!a.pinned) return (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0);
@@ -2895,8 +2974,7 @@ function NotesPanelContent({ notes, setNotes, user, onDeleteNote }: any) {
   };
 
   const deleteEditingNote = () => {
-    if (editingNote && editingNote !== 'new') onDeleteNote(editingNote.id);
-    closeEditor();
+    if (editingNote && editingNote !== 'new') setConfirmDeleteNote(editingNote);
   };
 
   return (
@@ -2927,7 +3005,7 @@ function NotesPanelContent({ notes, setNotes, user, onDeleteNote }: any) {
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest mb-3 ml-1" style={{ color: 'var(--text-muted)' }}>Fixadas</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {pinned.map((n: any) => <NoteCard key={n.id} note={n} onOpen={() => setEditingNote(n)} onUpdate={(patch: any) => updateNote(n.id, patch)} onDelete={() => onDeleteNote(n.id)} />)}
+                {pinned.map((n: any) => <NoteCard key={n.id} note={n} onOpen={() => setEditingNote(n)} onUpdate={(patch: any) => updateNote(n.id, patch)} onDelete={() => setConfirmDeleteNote(n)} />)}
               </div>
             </div>
           )}
@@ -2935,11 +3013,30 @@ function NotesPanelContent({ notes, setNotes, user, onDeleteNote }: any) {
             <div>
               {pinned.length > 0 && <p className="text-[10px] font-bold uppercase tracking-widest mb-3 ml-1" style={{ color: 'var(--text-muted)' }}>Outras</p>}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {others.map((n: any) => <NoteCard key={n.id} note={n} onOpen={() => setEditingNote(n)} onUpdate={(patch: any) => updateNote(n.id, patch)} onDelete={() => onDeleteNote(n.id)} />)}
+                {others.map((n: any) => <NoteCard key={n.id} note={n} onOpen={() => setEditingNote(n)} onUpdate={(patch: any) => updateNote(n.id, patch)} onDelete={() => setConfirmDeleteNote(n)} />)}
               </div>
             </div>
           )}
         </div>
+      )}
+
+      {confirmDeleteNote && createPortal(
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center px-4 pt-4 pb-24 sm:p-4 z-[110] fade-in" onClick={() => setConfirmDeleteNote(null)}>
+          <div className="w-full max-w-sm rounded-[32px] bg-[var(--bg-secondary)] border border-[var(--border-primary)] p-5 sm:p-8 shadow-2xl relative animate-modal-pop" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-3 mb-4 text-red-500">
+              <div className="p-3 bg-red-500/10 rounded-2xl shadow-inner"><Trash2 size={24} /></div>
+              <h3 className="font-bold text-xl tracking-tight">Excluir Nota</h3>
+            </div>
+            <p className="text-sm text-[var(--text-secondary)] mb-8 leading-relaxed">
+              Apagar {confirmDeleteNote.title ? <span className="font-bold text-[var(--text-primary)]">"{confirmDeleteNote.title}"</span> : 'esta nota'} definitivamente? A ação não pode ser desfeita.
+            </p>
+            <div className="flex flex-col sm:flex-row items-center gap-3">
+              <button onClick={() => setConfirmDeleteNote(null)} className="w-full sm:flex-1 py-3.5 sm:py-3 rounded-2xl border border-[var(--border-primary)] hover:bg-[var(--bg-overlay)] text-[var(--text-primary)] font-bold transition-all text-sm">Cancelar</button>
+              <button onClick={() => { const id = confirmDeleteNote.id; setConfirmDeleteNote(null); onDeleteNote(id); closeEditor(); }} className="w-full sm:flex-1 py-3.5 sm:py-3 rounded-2xl bg-red-600 hover:bg-red-500 text-white font-bold transition-all text-sm shadow-lg shadow-red-600/10">Apagar</button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );
@@ -2983,6 +3080,7 @@ function ResponsiblesPanelContent({ responsibles, tasks, user }: any) {
 function ClientModal({ modal, setModal, setClients, user }: any) {
   const [form, setForm] = useState(modal.form);
   const [newEmail, setNewEmail] = useState("");
+  const [newHoliday, setNewHoliday] = useState("");
   const [validationError, setValidationError] = useState<string | null>(null);
 
   const handleAddEmail = () => {
@@ -2994,13 +3092,28 @@ function ClientModal({ modal, setModal, setClients, user }: any) {
 
   const handleRemoveEmail = (index: number) => { setForm((prev: any) => ({ ...prev, emails: (prev.emails || []).filter((_: any, i: number) => i !== index) })); };
 
+  const handleAddHoliday = () => {
+    if (!newHoliday) return;
+    setForm((prev: any) => {
+      const list = Array.isArray(prev.extraHolidays) ? prev.extraHolidays : [];
+      if (list.includes(newHoliday)) return prev;
+      return { ...prev, extraHolidays: [...list, newHoliday].sort() };
+    });
+    setNewHoliday("");
+  };
+
+  const handleRemoveHoliday = (date: string) => { setForm((prev: any) => ({ ...prev, extraHolidays: (prev.extraHolidays || []).filter((d: string) => d !== date) })); };
+
   const saveClient = () => {
     if (!form.name || !form.name.trim()) { setValidationError("O nome do cliente é obrigatório."); return; }
     
-    const finalForm = { 
-       ...form, 
+    const finalForm = {
+       ...form,
        name: (form.name || '').toUpperCase(),
-       contractedHours: form.contractedHours === '' ? 0 : parseFloat(form.contractedHours) || 0 
+       contractedHours: form.contractedHours === '' ? 0 : parseFloat(form.contractedHours) || 0,
+       dailyLogEnabled: !!form.dailyLogEnabled,
+       dailyLogMinutes: form.dailyLogMinutes === '' ? 60 : parseInt(form.dailyLogMinutes, 10) || 60,
+       extraHolidays: Array.isArray(form.extraHolidays) ? form.extraHolidays : [],
     };
 
     if (modal.mode === "add") { 
@@ -3048,8 +3161,45 @@ function ClientModal({ modal, setModal, setClients, user }: any) {
               ))}
             </div>
           </div>
+
+          <div className="rounded-2xl border border-[var(--border-primary)] p-4 sm:p-5 flex flex-col gap-4">
+            <button type="button" onClick={() => setForm((prev: any) => ({ ...prev, dailyLogEnabled: !prev.dailyLogEnabled }))} className="w-full flex items-start gap-3 text-left">
+              <span className={`mt-0.5 w-4 h-4 rounded flex items-center justify-center shrink-0 border transition-colors ${form.dailyLogEnabled ? 'bg-purple-500 border-purple-500 text-white' : 'border-[var(--border-hover)] text-transparent'}`}><Check size={11} strokeWidth={3}/></span>
+              <span>
+                <span className="block text-xs font-bold text-[var(--text-primary)]">Ação diária automática</span>
+                <span className="block text-[10px] text-[var(--text-muted)] mt-1 leading-relaxed">Para trabalho recorrente que não vira card no quadro.</span>
+              </span>
+            </button>
+
+            {form.dailyLogEnabled && (
+              <div className="flex flex-col gap-4 animate-fade-in">
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Minutos por Dia Útil</label>
+                  <input type="number" value={form.dailyLogMinutes ?? 60} onChange={(e) => setForm({ ...form, dailyLogMinutes: e.target.value })} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-purple-500 transition-colors" placeholder="Ex: 60" />
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Feriados Extras deste Cliente</label>
+                  <p className="text-[10px] text-[var(--text-muted)] mb-3 -mt-1">Além dos feriados nacionais.</p>
+                  <div className="flex flex-col sm:flex-row items-center gap-3 mb-3">
+                    <input type="date" value={newHoliday} onChange={e => setNewHoliday(e.target.value)} className="w-full sm:flex-1 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-purple-500 transition-colors [color-scheme:dark]" />
+                    <button onClick={handleAddHoliday} className="w-full sm:w-auto justify-center px-6 py-3.5 bg-[var(--bg-overlay)] border border-[var(--border-overlay)] hover:bg-[var(--bg-overlay-strong)] text-[var(--text-primary)] rounded-xl text-xs font-bold uppercase tracking-widest transition-colors flex items-center gap-2 shrink-0"><Plus size={16}/> Add</button>
+                  </div>
+                  <div className="flex flex-col gap-2 max-h-32 overflow-y-auto kp-scroll pr-1">
+                    {(!form.extraHolidays || form.extraHolidays.length === 0) && <div className="text-center text-xs text-[var(--text-muted)] py-4 border border-dashed border-[var(--border-primary)] rounded-2xl">Nenhum feriado extra adicionado.</div>}
+                    {form.extraHolidays && form.extraHolidays.map((date: string) => (
+                      <div key={date} className="flex items-center justify-between bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-3">
+                        <div className="flex items-center gap-3 text-sm text-[var(--text-secondary)]"><CalendarDays size={16} className="text-purple-400" /> {date.split('-').reverse().join('/')}</div>
+                        <button onClick={() => handleRemoveHoliday(date)} className="p-2 text-[var(--text-muted)] hover:text-red-500 transition-colors"><X size={16} /></button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
-        
+
         <div className="px-5 sm:px-8 py-5 border-t border-[var(--border-primary)] bg-[var(--bg-tertiary)] flex items-center justify-end gap-3 shrink-0">
           <button onClick={() => setModal(null)} className="flex-1 sm:flex-none text-xs font-bold uppercase tracking-widest px-5 py-4 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">Cancelar</button>
           <button onClick={saveClient} className="flex-1 sm:flex-none text-xs font-black uppercase tracking-[0.15em] px-8 py-4 rounded-xl bg-purple-600 hover:bg-purple-500 text-white transition-all shadow-[0_0_15px_rgba(147,51,234,0.3)]">Salvar Cliente</button>
@@ -3085,11 +3235,13 @@ function ClientDetailModal({ client, tasks, getElapsed, user, theme, onClose, on
 
   const monthlyChartData = useMemo(() => [...monthOptions].reverse().map(key => {
     const [y, m] = key.split('-');
-    return { key, label: `${MONTH_ABBR[parseInt(m, 10) - 1]}/${y.slice(2)}`, hours: Math.round(hoursInMonth(cTasks, key, getElapsed) * 10) / 10 };
-  }), [cTasks, monthOptions, getElapsed]);
+    const hours = hoursInMonth(cTasks, key, getElapsed) + autoLogHoursForMonth(client, key);
+    return { key, label: `${MONTH_ABBR[parseInt(m, 10) - 1]}/${y.slice(2)}`, hours: Math.round(hours * 10) / 10 };
+  }), [cTasks, monthOptions, getElapsed, client]);
 
   // Banco de horas não acumula: cada mês é calculado isoladamente a partir das demandas do cliente.
-  const worked = hoursInMonth(cTasks, selectedMonth, getElapsed);
+  // autoLogHoursForMonth soma a ação diária automática (ex: acompanhamento de logs no Notion, sem card).
+  const worked = hoursInMonth(cTasks, selectedMonth, getElapsed) + autoLogHoursForMonth(client, selectedMonth);
   const teto = client.contractedHours || 0;
   const remaining = teto ? teto - worked : null;
   const pct = teto ? Math.min(100, (worked / teto) * 100) : 0;
@@ -3139,7 +3291,11 @@ function ClientDetailModal({ client, tasks, getElapsed, user, theme, onClose, on
                 )}
               </div>
             </div>
-            <p className="text-[10px] text-[var(--text-muted)] mb-4 -mt-2">O banco de horas não acumula: cada mês é contabilizado de forma independente.</p>
+            <p className="text-[10px] text-[var(--text-muted)] mb-1 -mt-2">O banco de horas não acumula: cada mês é contabilizado de forma independente.</p>
+            {client.dailyLogEnabled && (
+              <p className="text-[10px] text-purple-400 mb-4 flex items-center gap-1.5"><CalendarDays size={11} className="shrink-0"/> Inclui ação diária automática ({client.dailyLogMinutes || 60}min/dia útil{selectedMonth === nowMonth ? `, +${autoLogHoursForMonth(client, selectedMonth).toFixed(1)}h até hoje` : ''}).</p>
+            )}
+            {!client.dailyLogEnabled && <div className="mb-4" />}
             {teto > 0 ? (
               <>
                 <div className="flex items-end justify-between mb-3">
@@ -3221,7 +3377,9 @@ function ClientDetailModal({ client, tasks, getElapsed, user, theme, onClose, on
               <div className="flex flex-col gap-2">
                 {sorted.map((t: any) => {
                   const col = COLUMNS.find(c => c.id === t.status);
-                  const tempo = getElapsed(t);
+                  const trackedSec = getElapsed(t);
+                  const tempo = trackedSec > 0 ? trackedSec : (t.durationMin || 0) * 60;
+                  const isEstimated = trackedSec === 0 && tempo > 0;
                   const closed = ['done', 'cancelled', 'formalize'].includes(t.status);
                   return (
                     <div key={t.id} className="flex items-center gap-3 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl p-3">
@@ -3230,7 +3388,7 @@ function ClientDetailModal({ client, tasks, getElapsed, user, theme, onClose, on
                         <div className={`text-[13px] font-bold leading-snug truncate ${closed ? 'text-[var(--text-muted)]' : 'text-[var(--text-primary)]'}`}>{t.title}</div>
                         <div className="text-[9px] font-bold uppercase tracking-widest text-[var(--text-muted)] mt-0.5">{col?.name || t.status}</div>
                       </div>
-                      {tempo > 0 && <span className="text-[10px] font-mono font-bold text-[var(--text-secondary)] shrink-0">{formatTime(tempo)}</span>}
+                      {tempo > 0 && <span className="text-[10px] font-mono font-bold text-[var(--text-secondary)] shrink-0" title={isEstimated ? 'Estimativa (Est. Minutos) — timer não foi rodado' : 'Tempo rodado no timer'}>{formatTime(tempo)}</span>}
                     </div>
                   );
                 })}
@@ -3257,11 +3415,12 @@ function ClientDetailModal({ client, tasks, getElapsed, user, theme, onClose, on
 function ClientsPanelContent({ clients, setClients, tasks, setTasks, user, getElapsed, theme }: any) {
   const [clientModal, setClientModal] = useState<any>(null);
 
-  const openAdd = () => setClientModal({ mode: 'add', form: { name: '', emails: [], contractedHours: '' } });
+  const openAdd = () => setClientModal({ mode: 'add', form: { name: '', emails: [], contractedHours: '', dailyLogEnabled: false, dailyLogMinutes: 60, extraHolidays: [] } });
   
   // Apenas admin edita clientes — o RLS já bloqueia a escrita dos demais no banco,
   // então a UI acompanha a regra para evitar salvamentos que falhariam em silêncio.
   const [detailClient, setDetailClient] = useState<any>(null);
+  const [confirmRemoveClient, setConfirmRemoveClient] = useState<any>(null);
 
   const openEdit = (client: any) => {
     if (!user.isAdmin) return;
@@ -3299,7 +3458,7 @@ function ClientsPanelContent({ clients, setClients, tasks, setTasks, user, getEl
           const emailsArray = Array.isArray(c.emails) ? c.emails : [];
           
           const cTasks = tasks.filter((t: any) => t.clientId === c.id);
-          const hours = hoursInMonth(cTasks, currentMonthBrasilia(), getElapsed);
+          const hours = hoursInMonth(cTasks, currentMonthBrasilia(), getElapsed) + autoLogHoursForMonth(c, currentMonthBrasilia());
           const remaining = c.contractedHours ? c.contractedHours - hours : null;
           const isNearLimit = remaining !== null && remaining <= 5;
           
@@ -3322,7 +3481,7 @@ function ClientsPanelContent({ clients, setClients, tasks, setTasks, user, getEl
                   </a>
                 )}
                 {user.isAdmin && (
-                   <button onClick={(e) => { e.stopPropagation(); remove(c.id); }} className="p-3.5 text-[var(--text-muted)] hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-colors sm:opacity-0 group-hover:opacity-100 z-10 relative">
+                   <button onClick={(e) => { e.stopPropagation(); setConfirmRemoveClient(c); }} className="p-3.5 text-[var(--text-muted)] hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-colors sm:opacity-0 group-hover:opacity-100 z-10 relative">
                      <Trash2 size={20} />
                    </button>
                 )}
@@ -3332,7 +3491,25 @@ function ClientsPanelContent({ clients, setClients, tasks, setTasks, user, getEl
         })}
       </div>
       {clientModal && createPortal(<ClientModal modal={clientModal} setModal={setClientModal} setClients={setClients} user={user} />, document.body)}
-      {detailClient && createPortal(<ClientDetailModal client={detailClient} tasks={tasks} getElapsed={getElapsed} user={user} theme={theme} onClose={() => setDetailClient(null)} onEdit={(c: any) => { setDetailClient(null); setClientModal({ mode: 'edit', form: { ...c, emails: Array.isArray(c.emails) ? c.emails : [] } }); }} onRemove={(id: string) => { setDetailClient(null); remove(id); }} />, document.body)}
+      {detailClient && createPortal(<ClientDetailModal client={detailClient} tasks={tasks} getElapsed={getElapsed} user={user} theme={theme} onClose={() => setDetailClient(null)} onEdit={(c: any) => { setDetailClient(null); setClientModal({ mode: 'edit', form: { ...c, emails: Array.isArray(c.emails) ? c.emails : [] } }); }} onRemove={(id: string) => { setDetailClient(null); setConfirmRemoveClient(clients.find((c: any) => c.id === id)); }} />, document.body)}
+      {confirmRemoveClient && createPortal(
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center px-4 pt-4 pb-24 sm:p-4 z-[110] fade-in" onClick={() => setConfirmRemoveClient(null)}>
+          <div className="w-full max-w-sm rounded-[32px] bg-[var(--bg-secondary)] border border-[var(--border-primary)] p-5 sm:p-8 shadow-2xl relative animate-modal-pop" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-3 mb-4 text-red-500">
+              <div className="p-3 bg-red-500/10 rounded-2xl shadow-inner"><Trash2 size={24} /></div>
+              <h3 className="font-bold text-xl tracking-tight">Excluir Cliente</h3>
+            </div>
+            <p className="text-sm text-[var(--text-secondary)] mb-8 leading-relaxed">
+              Remover <span className="font-bold text-[var(--text-primary)]">"{confirmRemoveClient.name}"</span> definitivamente? As demandas desse cliente não são apagadas, mas ficam sem cliente vinculado — e saem do relatório de banco de horas.
+            </p>
+            <div className="flex flex-col sm:flex-row items-center gap-3">
+              <button onClick={() => setConfirmRemoveClient(null)} className="w-full sm:flex-1 py-3.5 sm:py-3 rounded-2xl border border-[var(--border-primary)] hover:bg-[var(--bg-overlay)] text-[var(--text-primary)] font-bold transition-all text-sm">Cancelar</button>
+              <button onClick={() => { const id = confirmRemoveClient.id; setConfirmRemoveClient(null); remove(id); }} className="w-full sm:flex-1 py-3.5 sm:py-3 rounded-2xl bg-red-600 hover:bg-red-500 text-white font-bold transition-all text-sm shadow-lg shadow-red-600/10">Excluir</button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
@@ -3876,7 +4053,7 @@ function SearchModal({ tasks, clients, onOpen, onClose }: any) {
   }).slice(0, 40);
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-start justify-center px-3 pt-[12vh] pb-24 sm:p-4 sm:pt-[12vh] z-[95] fade-in" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-start justify-center px-3 pt-[12vh] pb-24 sm:p-4 sm:pt-[12vh] z-[95] fade-in" onClick={onClose}>
       <div className="w-full max-w-xl rounded-3xl bg-[var(--bg-secondary)] border border-[var(--border-primary)] shadow-2xl overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
         <div className="flex items-center gap-3 px-5 py-4 border-b border-[var(--border-primary)]">
           <Search size={18} className="text-[var(--text-muted)] shrink-0" />
@@ -3936,7 +4113,7 @@ function QuickAddModal({ clients, onCreate, onClose }: any) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center px-3 pt-3 pb-24 sm:p-4 z-[95] fade-in" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center px-3 pt-3 pb-24 sm:p-4 z-[95] fade-in" onClick={onClose}>
       <div className="w-full max-w-md rounded-3xl sm:rounded-[32px] bg-[var(--bg-secondary)] border border-[var(--border-primary)] shadow-2xl overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
         <div className="px-6 py-5 border-b border-[var(--border-primary)] flex items-center justify-between bg-[var(--bg-tertiary)]">
           <div className="flex items-center gap-3">
@@ -4121,7 +4298,47 @@ function TodayView({ tasks, clients, user, getElapsed, onOpen, onToggleTimer, on
   );
 }
 
-function CalendarView({ tasks, setTasks, clients, handleRequestMove, user, onCreateCard, onDeleteTask }: any) {
+// Distribui eventos que se sobrepõem em colunas lado a lado (mesmo princípio do Google Agenda):
+// cada grupo de eventos com horários conflitantes divide a largura da coluna do dia entre si,
+// em vez de ficar um por cima do outro. Não expande um evento pra preencher espaço vazio de um
+// vizinho mais curto (como o Google faz) — cada evento do grupo fica com a mesma largura.
+function layoutOverlappingEvents(events: { id: string, start: number, end: number }[]) {
+  const sorted = [...events].sort((a, b) => a.start - b.start || a.end - b.end);
+  const layout = new Map<string, { col: number, cols: number }>();
+  let cluster: typeof sorted = [];
+  let clusterEnd = -Infinity;
+
+  const flushCluster = () => {
+    if (cluster.length === 0) return;
+    const colEnds: number[] = [];
+    const colOf = new Map<string, number>();
+    for (const ev of cluster) {
+      let placed = false;
+      for (let c = 0; c < colEnds.length; c++) {
+        if (ev.start >= colEnds[c]) { colEnds[c] = ev.end; colOf.set(ev.id, c); placed = true; break; }
+      }
+      if (!placed) { colEnds.push(ev.end); colOf.set(ev.id, colEnds.length - 1); }
+    }
+    const cols = colEnds.length;
+    cluster.forEach(ev => layout.set(ev.id, { col: colOf.get(ev.id) as number, cols }));
+    cluster = [];
+  };
+
+  for (const ev of sorted) {
+    if (cluster.length === 0 || ev.start < clusterEnd) {
+      cluster.push(ev);
+      clusterEnd = Math.max(clusterEnd, ev.end);
+    } else {
+      flushCluster();
+      cluster = [ev];
+      clusterEnd = ev.end;
+    }
+  }
+  flushCluster();
+  return layout;
+}
+
+function CalendarView({ tasks, setTasks, clients, handleRequestMove, user, onCreateCard, onDeleteTask, onOpenTask }: any) {
   const ROW_H = 44; // pixels por hora
   const gridScrollRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -4245,6 +4462,8 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove, user, onCre
   const [scDuration, setScDuration] = useState(60);
   const [scLabel, setScLabel] = useState('reuniao');
   const [editSchedule, setEditSchedule] = useState<any>(null);
+  const [dayCardDetail, setDayCardDetail] = useState<any>(null);
+  const [confirmDeleteEvent, setConfirmDeleteEvent] = useState<any>(null);
   const [esDate, setEsDate] = useState('');
   const [esTime, setEsTime] = useState('');
   const [esDur, setEsDur] = useState(60);
@@ -4291,7 +4510,7 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove, user, onCre
   const beginDrag = (e: React.PointerEvent, task: any, mode: 'place' | 'move') => {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     e.preventDefault(); e.stopPropagation();
-    dragRef.current = { task, mode };
+    dragRef.current = { task, mode, startX: e.clientX, startY: e.clientY, moved: false };
     setGhost({ x: e.clientX, y: e.clientY, label: task.title });
     (e.target as Element).setPointerCapture?.(e.pointerId);
   };
@@ -4324,6 +4543,9 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove, user, onCre
       resizeRef.current = { id: d.task.id, dur: snapped };
       setResizePreview({ id: d.task.id, dur: snapped });
     } else {
+      // Só marca como "arrastando de verdade" depois de passar de um pequeno limiar de
+      // movimento — abaixo disso é um clique (ver onPointerUp), não um reagendamento.
+      if (Math.hypot(e.clientX - d.startX, e.clientY - d.startY) > 6) d.moved = true;
       setGhost({ x: e.clientX, y: e.clientY, label: d.task.title });
       const drop = resolveDrop(e.clientX, e.clientY);
       setDropHint(drop ? { dayIndex: drop.dayIndex, minutes: drop.minutes, dur: durationOf(d.task) } : null);
@@ -4342,6 +4564,13 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove, user, onCre
     setGhost(null);
     setDropHint(null);
     if (!d) return;
+    const isClosedTask = d.task.status === 'done' || d.task.status === 'formalize' || d.task.status === 'cancelled';
+    if (d.mode === 'move' && !d.moved) {
+      // Clique sem arraste real num card já agendado: abre o pop-up de detalhes em vez de reagendar.
+      setDayCardDetail(d.task);
+      return;
+    }
+    if (d.mode === 'move' && isClosedTask) return; // demanda fechada não é reagendável, só visualizável
     const drop = resolveDrop(e.clientX, e.clientY);
     if (!drop) return;
     const day = days[drop.dayIndex];
@@ -4425,6 +4654,12 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove, user, onCre
           {/* Colunas dos dias */}
           {visibleDays.map((day, i) => {
             const dayTasks = tasksOnDay(day);
+            const dayLayout = layoutOverlappingEvents(dayTasks.map((t: any) => {
+              const s = new Date(t.scheduledStart);
+              const startMin = s.getHours() * 60 + s.getMinutes();
+              const dur = (resizePreview && resizePreview.id === t.id) ? resizePreview.dur : durationOf(t);
+              return { id: t.id, start: startMin, end: startMin + Math.max(dur, 15) };
+            }));
             const isToday = new Date(day).setHours(0, 0, 0, 0) === todayKey;
             const showHint = dropHint && dropHint.dayIndex === i;
             return (
@@ -4455,9 +4690,12 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove, user, onCre
                     const isCancelled = t.status === 'cancelled';
                     const isClosed = isDone || isCancelled;
                     const blockColor = isDone ? 'bg-emerald-500/10 border-emerald-500/30' : isCancelled ? 'bg-neutral-500/10 border-neutral-500/30' : 'bg-teal-500/15 border-teal-500/40';
+                    const { col, cols } = dayLayout.get(t.id) || { col: 0, cols: 1 };
+                    const leftPct = (col / cols) * 100;
+                    const widthPct = (1 / cols) * 100;
                     return (
-                      <div key={t.id} onClick={(e) => e.stopPropagation()} className={`absolute left-1 right-1 rounded-lg ${blockColor} overflow-hidden group ${isDragging ? 'opacity-40' : ''} ${isClosed ? 'opacity-70' : ''}`} style={{ top, height: bh }}>
-                        <div onPointerDown={(e) => !isClosed && beginDrag(e, t, 'move')} style={{ touchAction: 'none' }} className={`h-full p-1.5 select-none ${isClosed ? 'cursor-default' : 'cursor-grab active:cursor-grabbing'}`}>
+                      <div key={t.id} onClick={(e) => e.stopPropagation()} className={`absolute rounded-lg ${blockColor} overflow-hidden group ${isDragging ? 'opacity-40' : ''} ${isClosed ? 'opacity-70' : ''}`} style={{ top, height: bh, left: `calc(${leftPct}% + 4px)`, width: `calc(${widthPct}% - 8px)`, zIndex: cols > 1 ? 10 + col : undefined }}>
+                        <div onPointerDown={(e) => beginDrag(e, t, 'move')} style={{ touchAction: 'none' }} className={`h-full p-1.5 select-none ${isClosed ? 'cursor-default' : 'cursor-grab active:cursor-grabbing'}`}>
                           <div className="text-[9px] font-mono font-bold leading-none mb-1 flex items-center gap-1" style={{ color: isDone ? 'var(--accent-strong-emerald)' : isCancelled ? 'var(--text-muted)' : 'var(--accent-strong-teal)' }}>
                             {isDone && <CheckCircle2 size={9} />}
                             {t.recurrence && t.recurrence !== 'none' && <span className="flex items-center gap-0.5"><RotateCcw size={8} />{recurLabel(t.recurrence)}</span>}
@@ -4491,7 +4729,7 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove, user, onCre
                             <button onPointerDown={(e) => e.stopPropagation()} onClick={() => cycleRecurrence(t.id)} className={`p-1 rounded hover:bg-black/60 ${t.recurrence && t.recurrence !== 'none' ? 'bg-teal-500/50 text-white' : 'bg-black/40 text-[var(--text-secondary)] hover:text-teal-300'}`} title={t.recurrence === 'daily' ? 'Repete todo dia (clique: semana)' : t.recurrence === 'weekly' ? 'Repete toda semana (clique: parar)' : 'Repetir (clique: dia → semana)'}><RotateCcw size={11} /></button>
                           )}
                           <a href={buildGCalLink(t, cn)} target="_blank" rel="noreferrer" onPointerDown={(e) => e.stopPropagation()} className="p-1 rounded bg-black/40 text-teal-300 hover:bg-black/60" title="Abrir no Google Agenda"><ExternalLink size={11} /></a>
-                          <button onPointerDown={(e) => e.stopPropagation()} onClick={() => { if (t.agendaOnly) { onDeleteTask(t.id); } else { setSchedule(t.id, ''); } }} className="p-1 rounded bg-black/40 text-[var(--text-secondary)] hover:text-red-400 hover:bg-black/60" title={t.agendaOnly ? 'Excluir evento' : 'Desagendar'}><X size={11} /></button>
+                          <button onPointerDown={(e) => e.stopPropagation()} onClick={() => { if (t.agendaOnly) { setConfirmDeleteEvent(t); } else { setSchedule(t.id, ''); } }} className="p-1 rounded bg-black/40 text-[var(--text-secondary)] hover:text-red-400 hover:bg-black/60" title={t.agendaOnly ? 'Excluir evento' : 'Desagendar'}><X size={11} /></button>
                         </div>
                         {!isClosed && <div onPointerDown={(e) => { const rect = (e.currentTarget.parentElement as Element).getBoundingClientRect(); beginResize(e, t, rect.top); }} style={{ touchAction: 'none' }} className="absolute bottom-0 left-0 right-0 h-2.5 cursor-ns-resize bg-teal-500/40 opacity-0 group-hover:opacity-100 transition-opacity" title="Ajustar duração" />}
                       </div>
@@ -4511,8 +4749,8 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove, user, onCre
         </div>
       )}
 
-      {scheduleChoice && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center px-3 pt-3 pb-24 sm:p-4 z-[95] fade-in" onClick={() => setScheduleChoice(null)}>
+      {scheduleChoice && createPortal(
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center px-3 pt-3 pb-24 sm:p-4 z-[95] fade-in" onClick={() => setScheduleChoice(null)}>
           <div className="w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden animate-modal-pop" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }} onClick={e => e.stopPropagation()}>
             <div className="px-6 py-5 border-b" style={{ borderColor: 'var(--border-primary)', background: 'var(--bg-tertiary)' }}>
               <h3 className="font-display font-bold text-lg" style={{ color: 'var(--text-primary)' }}>Como agendar?</h3>
@@ -4560,13 +4798,14 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove, user, onCre
               <button onClick={() => setScheduleChoice(null)} className="text-xs font-bold uppercase tracking-widest px-5 py-2.5 rounded-xl transition-colors hover:text-[var(--text-primary)]" style={{ color: 'var(--text-muted)' }}>Cancelar</button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {editSchedule && (() => {
         const isPastSchedule = editSchedule.scheduledStart && new Date(editSchedule.scheduledStart) < new Date();
-        return (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center px-3 pt-3 pb-24 sm:p-4 z-[95] fade-in" onClick={() => setEditSchedule(null)}>
+        return createPortal(
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center px-3 pt-3 pb-24 sm:p-4 z-[95] fade-in" onClick={() => setEditSchedule(null)}>
           <div className="w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden animate-modal-pop" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }} onClick={e => e.stopPropagation()}>
             <div className="px-6 py-5 border-b flex items-center justify-between" style={{ borderColor: 'var(--border-primary)', background: 'var(--bg-tertiary)' }}>
               <div>
@@ -4638,12 +4877,13 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove, user, onCre
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
         );
       })()}
 
-      {createSlot && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center px-3 pt-3 pb-24 sm:p-4 z-[95] fade-in" onClick={() => setCreateSlot(null)}>
+      {createSlot && createPortal(
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center px-3 pt-3 pb-24 sm:p-4 z-[95] fade-in" onClick={() => setCreateSlot(null)}>
           <div className="w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-modal-pop" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }} onClick={e => e.stopPropagation()}>
             <div className="px-6 py-5 border-b flex items-center justify-between" style={{ borderColor: 'var(--border-primary)', background: 'var(--bg-tertiary)' }}>
               <div className="flex items-center gap-3">
@@ -4710,7 +4950,74 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove, user, onCre
               <button onClick={createEvent} className="text-xs font-black uppercase tracking-widest px-8 py-3.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white transition-all shadow-[0_0_15px_rgba(20,184,166,0.3)]">{cShowBoard ? 'Detalhar' : 'Criar'}</button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Pop-up de detalhes ao clicar num card da Agenda — título, cliente e descrição, como no Google Agenda */}
+      {dayCardDetail && createPortal(
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center px-3 pt-3 pb-24 sm:p-4 z-[97] fade-in" onClick={() => setDayCardDetail(null)}>
+          <div className="w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden animate-modal-pop max-h-[80dvh] flex flex-col" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }} onClick={e => e.stopPropagation()}>
+            <div className="px-6 py-5 border-b flex items-start justify-between gap-3 shrink-0" style={{ borderColor: 'var(--border-primary)', background: 'var(--bg-tertiary)' }}>
+              <div className="min-w-0">
+                <h3 className="font-display font-bold text-lg leading-snug break-words" style={{ color: 'var(--text-primary)' }}>{dayCardDetail.title || 'Sem título'}</h3>
+                {(() => {
+                  const col = COLUMNS.find(c => c.id === dayCardDetail.status);
+                  return col && (
+                    <span className={`inline-flex items-center gap-1.5 mt-2 text-[9px] font-bold uppercase tracking-widest px-2 py-1 rounded-md ${col.bg}`} style={{ color: 'var(--text-secondary)' }}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${col.dot}`} />{col.name}
+                    </span>
+                  );
+                })()}
+              </div>
+              <button onClick={() => setDayCardDetail(null)} className="p-2 rounded-xl shrink-0 transition-colors hover:bg-[var(--bg-overlay)]" style={{ color: 'var(--text-muted)' }}><X size={18}/></button>
+            </div>
+            <div className="p-6 flex flex-col gap-4 overflow-y-auto kp-scroll" style={{ background: 'var(--bg-primary)' }}>
+              <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                <Clock size={15} className="text-teal-400 shrink-0" />
+                {(() => {
+                  const s = new Date(dayCardDetail.scheduledStart);
+                  return `${pad(s.getDate())}/${pad(s.getMonth() + 1)} · ${pad(s.getHours())}:${pad(s.getMinutes())} · ${durationOf(dayCardDetail)}min`;
+                })()}
+              </div>
+              {clientName(dayCardDetail.clientId) && (
+                <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                  <Building2 size={15} className="text-purple-400 shrink-0" /> {clientName(dayCardDetail.clientId)}
+                </div>
+              )}
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-widest mb-1.5 block" style={{ color: 'var(--text-muted)' }}>Descrição</label>
+                <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: dayCardDetail.description ? 'var(--text-secondary)' : 'var(--text-muted)' }}>{dayCardDetail.description || 'Sem descrição.'}</p>
+              </div>
+            </div>
+            {onOpenTask && !dayCardDetail.agendaOnly && (
+              <div className="px-6 py-4 border-t flex items-center justify-end gap-3 shrink-0" style={{ borderColor: 'var(--border-primary)', background: 'var(--bg-tertiary)' }}>
+                <button onClick={() => { const t = dayCardDetail; setDayCardDetail(null); onOpenTask(t); }} className="text-xs font-black uppercase tracking-widest px-6 py-3 rounded-xl bg-teal-600 hover:bg-teal-500 text-white transition-all shadow-[0_0_15px_rgba(20,184,166,0.3)]">Ver Card Completo</button>
+              </div>
+            )}
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Confirmar exclusão de evento (só existe na Agenda, não é um card do quadro) */}
+      {confirmDeleteEvent && createPortal(
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center px-3 pt-3 pb-24 sm:p-4 z-[98] fade-in" onClick={() => setConfirmDeleteEvent(null)}>
+          <div className="w-full max-w-sm rounded-3xl shadow-2xl p-6 sm:p-8 animate-modal-pop" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }} onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-3 mb-4 text-red-500">
+              <div className="p-3 bg-red-500/10 rounded-2xl shadow-inner"><Trash2 size={24} /></div>
+              <h3 className="font-bold text-xl tracking-tight">Excluir Evento</h3>
+            </div>
+            <p className="text-sm mb-8 leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+              Apagar <span className="font-bold" style={{ color: 'var(--text-primary)' }}>"{confirmDeleteEvent.title}"</span> da Agenda definitivamente? A ação não pode ser desfeita.
+            </p>
+            <div className="flex flex-col sm:flex-row items-center gap-3">
+              <button onClick={() => setConfirmDeleteEvent(null)} className="w-full sm:flex-1 py-3.5 sm:py-3 rounded-2xl border transition-all text-sm font-bold" style={{ borderColor: 'var(--border-primary)', color: 'var(--text-primary)' }}>Cancelar</button>
+              <button onClick={() => { const id = confirmDeleteEvent.id; setConfirmDeleteEvent(null); onDeleteTask(id); }} className="w-full sm:flex-1 py-3.5 sm:py-3 rounded-2xl bg-red-600 hover:bg-red-500 text-white font-bold transition-all text-sm shadow-lg shadow-red-600/10">Apagar</button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );
@@ -4834,7 +5141,7 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
   };
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center px-3 pt-3 pb-24 sm:p-4 z-[80] fade-in" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center px-3 pt-3 pb-24 sm:p-4 z-[80] fade-in" onClick={onClose}>
       <div className="w-full max-w-4xl rounded-3xl sm:rounded-[32px] bg-[var(--bg-secondary)] border border-[var(--border-primary)] flex flex-col max-h-[80dvh] sm:max-h-[88dvh] shadow-2xl overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
         
         <div className="px-5 sm:px-8 py-5 sm:py-6 border-b border-[var(--border-primary)] flex items-center justify-between bg-[var(--bg-tertiary)]">
@@ -4950,7 +5257,7 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
         };
 
         return (
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center px-3 pt-3 pb-24 sm:p-4 z-[95] fade-in" onClick={() => setEmailPopup(null)}>
+          <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center px-3 pt-3 pb-24 sm:p-4 z-[95] fade-in" onClick={() => setEmailPopup(null)}>
             <div className="w-full max-w-lg rounded-3xl sm:rounded-[32px] bg-[var(--bg-secondary)] border border-[var(--border-primary)] shadow-2xl overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
               <div className="px-6 py-5 border-b border-[var(--border-primary)] flex items-center justify-between bg-[var(--bg-tertiary)]">
                 <div className="flex items-center gap-3">
@@ -5074,7 +5381,7 @@ function TaskModal({ modal, setModal, clients, responsibles, closeModal, saveMod
     setDraggingChecklistId(null);
   };
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center px-3 pt-3 pb-24 sm:p-4 z-[85] fade-in" onClick={closeModal}>
+    <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center px-3 pt-3 pb-24 sm:p-4 z-[85] fade-in" onClick={closeModal}>
       <div className="w-full max-w-xl rounded-[32px] bg-[var(--bg-secondary)] border border-[var(--border-primary)] flex flex-col max-h-[80dvh] sm:max-h-[85dvh] shadow-2xl overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
         <div className="px-6 sm:px-8 py-5 border-b border-[var(--border-primary)] flex items-center justify-between bg-[var(--bg-tertiary)] shrink-0"><h3 className="font-display font-bold text-xl text-[var(--text-primary)] tracking-tight">{modal.mode === "add" ? "Nova Demanda" : "Editar Demanda"}</h3><button onClick={closeModal} className="p-2.5 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-overlay)] transition-colors"><X size={20} /></button></div>
         <div className="p-6 sm:p-8 overflow-y-auto kp-scroll flex flex-col gap-6 bg-[var(--bg-primary)] flex-1">

@@ -8,7 +8,7 @@ import {
   HelpCircle, ChevronDown, LayoutDashboard, Mail, Check, Copy, ClipboardList, Cloud, Lock,
   Eye, EyeOff, Settings, MonitorPlay, CloudRain, Sun, Moon, CloudLightning, Snowflake, CloudFog, UserCog, Calendar, ChevronUp,
   CalendarDays, ExternalLink, ChevronLeft, ChevronRight,
-  StickyNote, Pin, Palette
+  StickyNote, Pin, Palette, Upload, Camera
 } from "lucide-react";
 import { ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Cell } from "recharts";
 
@@ -737,6 +737,10 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
 
   const [isCloudSynced, setIsCloudSynced] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  // Erro de sincronização com a nuvem, visível na tela — antes só ia pro console do
+  // navegador, então uma falha de save passava despercebida até o próximo reload apagar
+  // silenciosamente o que não tinha sido gravado.
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   // "Fotografia" do último estado sincronizado de cada registro.
   // Permite salvar SÓ o que mudou (em vez de reenviar tudo) e
@@ -1068,6 +1072,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
 
       } catch (error) {
         console.error("Erro ao buscar dados:", error);
+        setSyncError("Não foi possível carregar os dados da nuvem. Verifique sua conexão e recarregue a página.");
       } finally {
         setIsLoading(false);
         setIsCloudSynced(true);
@@ -1098,8 +1103,9 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
     // linha sem uma chave presente em outra vira NULL explícito nela — e colunas NOT NULL como
     // "skippedOccurrences" rejeitam a linha, derrubando o lote inteiro (nenhum card é salvo).
     (window as any).supabaseClient.from('tasks').upsert(changed.map(normalizeTask)).then(({ error }: any) => {
-      if (error) { console.error("Erro ao sincronizar tarefas:", error); return; }
+      if (error) { console.error("Erro ao sincronizar tarefas:", error); setSyncError(`Falha ao salvar demanda${changed.length > 1 ? 's' : ''} na nuvem: ${error.message || 'erro desconhecido'}. As alterações continuam só nesta aba — não recarregue a página até resolver.`); return; }
       changed.forEach(t => { lastSyncedTasksRef.current[t.id] = stableStringify(normalizeTask(t)); });
+      setSyncError(null);
     });
   }, [tasks, isCloudSynced]);
 
@@ -1111,7 +1117,8 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
     if (changed.length === 0) return;
     changed.forEach(c => { lastSyncedClientsRef.current[c.id] = stableStringify(c); });
     (window as any).supabaseClient.from('clients').upsert(changed).then(({ error }: any) => {
-      if (error) console.error("Erro ao sincronizar clientes:", error);
+      if (error) { console.error("Erro ao sincronizar clientes:", error); setSyncError(`Falha ao salvar cliente${changed.length > 1 ? 's' : ''} na nuvem: ${error.message || 'erro desconhecido'}.`); }
+      else setSyncError(null);
     });
   }, [clients, isCloudSynced, user.isAdmin]);
 
@@ -1122,7 +1129,8 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
     if (changed.length === 0) return;
     changed.forEach(n => { lastSyncedNotesRef.current[n.id] = stableStringify(n); });
     (window as any).supabaseClient.from('notes').upsert(changed).then(({ error }: any) => {
-      if (error) console.error("Erro ao sincronizar notas:", error);
+      if (error) { console.error("Erro ao sincronizar notas:", error); setSyncError(`Falha ao salvar nota${changed.length > 1 ? 's' : ''} na nuvem: ${error.message || 'erro desconhecido'}.`); }
+      else setSyncError(null);
     });
   }, [notes, isCloudSynced]);
 
@@ -2116,7 +2124,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
         {/* MODAIS Overlay */}
         {activeTab === 'today' && <OverlayModal title="Meu Dia" icon={<Sun size={20} className="text-amber-400"/>} isClosing={isClosingModal} onClose={handleCloseTab}><TodayView tasks={tasks} clients={clients} user={user} getElapsed={getElapsed} onOpen={openEditModal} onToggleTimer={toggleTimer} onComplete={(t) => handleRequestMove(t.id, null, 'done')} onOpenAgenda={() => setActiveTab('agenda')} /></OverlayModal>}
         {activeTab === 'notes' && <OverlayModal title="Notas" icon={<StickyNote size={20} className="text-amber-400"/>} isClosing={isClosingModal} onClose={handleCloseTab}><NotesPanelContent notes={visibleNotes} setNotes={setNotes} user={user} onDeleteNote={deleteNoteById} /></OverlayModal>}
-        {activeTab === 'responsibles' && <OverlayModal title="Equipe (Contas)" icon={<Users size={20} className="text-indigo-400"/>} isClosing={isClosingModal} onClose={handleCloseTab}><ResponsiblesPanelContent responsibles={responsibles} tasks={tasks} user={user} /></OverlayModal>}
+        {activeTab === 'responsibles' && <OverlayModal title="Equipe (Contas)" icon={<Users size={20} className="text-indigo-400"/>} isClosing={isClosingModal} onClose={handleCloseTab}><ResponsiblesPanelContent responsibles={responsibles} setResponsibles={setResponsibles} tasks={tasks} user={user} /></OverlayModal>}
         {activeTab === 'clients' && <OverlayModal title="Gestão de Clientes" icon={<Building2 size={20} className="text-purple-400"/>} isClosing={isClosingModal} onClose={handleCloseTab}><ClientsPanelContent clients={visibleClients} setClients={setClients} tasks={tasks} setTasks={setTasks} user={user} getElapsed={getElapsed} theme={theme} /></OverlayModal>}
         {activeTab === 'reports' && <AnalyticsModal isClosing={isClosingModal} onClose={handleCloseTab} tasks={filteredTasks} clients={visibleClients} responsibles={responsibles} getElapsed={getElapsed} globalLookerUrl={globalLookerUrl} setGlobalLookerUrl={setGlobalLookerUrl} user={user} theme={theme} />}
         {activeTab === 'agenda' && <OverlayModal title="Agenda" icon={<CalendarDays size={20} className="text-teal-400"/>} isClosing={isClosingModal} onClose={handleCloseTab} fullWidth><CalendarView tasks={visibleTasks} setTasks={setTasks} clients={clients} handleRequestMove={handleRequestMove} user={user} onCreateCard={(prefill: any) => setModal({ mode: 'add', form: { ...emptyForm, ...prefill } })} onDeleteTask={deleteTaskById} onOpenTask={openEditModal} /></OverlayModal>}
@@ -2631,6 +2639,21 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
         </div>
       )}
 
+      {/* Erro de sincronização com a nuvem — visível na tela em vez de só no console,
+          pra não descobrir uma falha de save somente depois de recarregar e perder o card. */}
+      {syncError && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[200] w-[92%] max-w-lg rounded-2xl bg-[var(--bg-secondary)] border border-red-500/40 shadow-2xl overflow-hidden animate-modal-pop">
+          <div className="p-4 flex items-start gap-3">
+            <div className="p-2 rounded-xl bg-red-500/10 border border-red-500/20 shrink-0 text-red-400"><AlertTriangle size={18} /></div>
+            <div className="min-w-0 flex-1">
+              <div className="text-[10px] font-bold uppercase tracking-widest text-red-400 mb-0.5">Erro ao salvar</div>
+              <div className="text-sm text-[var(--text-primary)] leading-snug">{syncError}</div>
+            </div>
+            <button onClick={() => setSyncError(null)} className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors shrink-0"><X size={16} /></button>
+          </div>
+        </div>
+      )}
+
       {/* Alerta "hora de começar" */}
       {dueAlert && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[96] w-[92%] max-w-md rounded-2xl bg-[var(--bg-secondary)] border border-teal-500/30 shadow-2xl overflow-hidden animate-modal-pop">
@@ -2707,25 +2730,73 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
 
 // --- Sub-Componentes UI Reutilizáveis (Lumina 2.0 Estilo) ---
 
+const MAX_AVATAR_BYTES = 5 * 1024 * 1024; // 5MB — limite generoso pra foto de perfil, sem pesar o upload
+
 function ProfileModal({ user, responsibles, onClose, onUpdate }: any) {
   const currentUserDB = responsibles.find((r: any) => r.id === user.id) || responsibles.find((r: any) => r.name.toLowerCase() === user.name.toLowerCase());
   const activeAvatar = currentUserDB?.avatar || user.avatar || '';
 
   const [password, setPassword] = useState('');
-  const [avatarInput, setAvatarInput] = useState(activeAvatar);
+  // avatarPreview é o que aparece no círculo (foto atual, preview local do arquivo escolhido,
+  // ou vazio se removida). avatarFile só é setado quando o usuário escolhe/tira uma foto nova —
+  // é o que de fato sobe pro Storage no save. avatarRemoved marca remoção explícita (some no save).
+  const [avatarPreview, setAvatarPreview] = useState(activeAvatar);
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarRemoved, setAvatarRemoved] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [feedback, setFeedback] = useState('');
+  const [showPhotoMenu, setShowPhotoMenu] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const objectUrlRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    // Libera o object URL anterior sempre que trocar de foto ou fechar o modal, pra não vazar memória.
+    return () => { if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current); };
+  }, []);
+
+  const handlePickFile = (file: File | undefined) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { setFeedback("Selecione um arquivo de imagem."); return; }
+    if (file.size > MAX_AVATAR_BYTES) { setFeedback("Imagem muito grande (máx. 5MB)."); return; }
+    setFeedback('');
+    if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
+    const url = URL.createObjectURL(file);
+    objectUrlRef.current = url;
+    setAvatarFile(file);
+    setAvatarRemoved(false);
+    setAvatarPreview(url);
+  };
+
+  const handleRemoveAvatar = () => {
+    if (objectUrlRef.current) { URL.revokeObjectURL(objectUrlRef.current); objectUrlRef.current = null; }
+    setAvatarFile(null);
+    setAvatarRemoved(true);
+    setAvatarPreview('');
+  };
 
   const handleSave = async () => {
     setIsLoading(true);
     setFeedback('');
     let updatedUser = { ...user };
     const supa = (window as any).supabaseClient;
+    const targetId = currentUserDB?.id || user.id;
 
     try {
-      if (avatarInput.trim() !== activeAvatar) {
-        await supa.from('responsibles').update({ avatar: avatarInput.trim() }).eq('id', currentUserDB?.id || user.id);
-        updatedUser.avatar = avatarInput.trim();
+      if (avatarFile) {
+        const ext = (avatarFile.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
+        const path = `${targetId}/avatar.${ext}`;
+        const { error: upErr } = await supa.storage.from('avatars').upload(path, avatarFile, { upsert: true, contentType: avatarFile.type });
+        if (upErr) throw upErr;
+        const { data: pub } = supa.storage.from('avatars').getPublicUrl(path);
+        // Cache-busting: como o arquivo é sobrescrito sempre com o mesmo nome (upsert), sem isso o
+        // navegador/CDN podem continuar servindo a foto antiga em cache pra mesma URL.
+        const newUrl = `${pub.publicUrl}?t=${Date.now()}`;
+        await supa.from('responsibles').update({ avatar: newUrl }).eq('id', targetId);
+        updatedUser.avatar = newUrl;
+      } else if (avatarRemoved && activeAvatar) {
+        await supa.from('responsibles').update({ avatar: '' }).eq('id', targetId);
+        updatedUser.avatar = '';
       }
 
       if (password.trim()) {
@@ -2741,9 +2812,9 @@ function ProfileModal({ user, responsibles, onClose, onUpdate }: any) {
 
       onUpdate(updatedUser);
       onClose();
-    } catch (e) {
+    } catch (e: any) {
       console.error("Erro ao alterar dados", e);
-      setFeedback("Não foi possível salvar. Tente novamente.");
+      setFeedback(e?.message ? `Não foi possível salvar: ${e.message}` : "Não foi possível salvar. Tente novamente.");
     }
     setIsLoading(false);
   };
@@ -2761,10 +2832,50 @@ function ProfileModal({ user, responsibles, onClose, onUpdate }: any) {
 
         <div className="p-5 sm:p-8 flex flex-col gap-6">
           <div className="flex flex-col items-center gap-4 mb-2">
-             <div className="w-24 h-24 rounded-[20px] flex items-center justify-center text-3xl font-bold text-indigo-400 shadow-xl overflow-hidden relative group" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-primary)' }}>
-                <UserAvatar url={avatarInput} name={user.name} />
+             <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={e => { handlePickFile(e.target.files?.[0]); e.target.value = ''; }} />
+             <input ref={cameraInputRef} type="file" accept="image/*" capture="user" className="hidden" onChange={e => { handlePickFile(e.target.files?.[0]); e.target.value = ''; }} />
+             <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setShowPhotoMenu(v => !v)}
+                  className="w-24 h-24 rounded-[20px] flex items-center justify-center text-3xl font-bold text-indigo-400 shadow-xl overflow-hidden relative group cursor-pointer"
+                  style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-primary)' }}
+                >
+                   <UserAvatar url={avatarPreview} name={user.name} />
+                   <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                      <Camera size={22} className="text-white" />
+                   </div>
+                </button>
+
+                {showPhotoMenu && (
+                  <>
+                    <div className="fixed inset-0 z-[95]" onClick={e => { e.stopPropagation(); setShowPhotoMenu(false); }} />
+                    <div
+                      className="absolute top-full mt-2 left-1/2 -translate-x-1/2 z-[96] w-60 rounded-2xl shadow-2xl overflow-hidden animate-modal-pop"
+                      style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }}
+                      onClick={e => e.stopPropagation()}
+                    >
+                      <div className="flex items-center justify-between pl-4 pr-2 py-2.5 border-b" style={{ borderColor: 'var(--border-primary)' }}>
+                        <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: 'var(--text-muted)' }}>Foto de Perfil</span>
+                        <button type="button" onClick={() => setShowPhotoMenu(false)} className="p-1.5 rounded-lg hover:bg-[var(--bg-overlay)] transition-colors" style={{ color: 'var(--text-muted)' }}><X size={14} /></button>
+                      </div>
+                      <button type="button" onClick={() => { setShowPhotoMenu(false); cameraInputRef.current?.click(); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm hover:bg-[var(--bg-overlay)] transition-colors text-left" style={{ color: 'var(--text-primary)' }}>
+                        <Camera size={16} className="text-indigo-400 shrink-0" /> Tirar Foto
+                      </button>
+                      <button type="button" onClick={() => { setShowPhotoMenu(false); fileInputRef.current?.click(); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm hover:bg-[var(--bg-overlay)] transition-colors text-left" style={{ color: 'var(--text-primary)' }}>
+                        <Upload size={16} className="text-indigo-400 shrink-0" /> Escolher da Galeria
+                      </button>
+                      {avatarPreview && (
+                        <button type="button" onClick={() => { setShowPhotoMenu(false); handleRemoveAvatar(); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm text-red-400 hover:bg-red-500/10 transition-colors text-left border-t" style={{ borderColor: 'var(--border-primary)' }}>
+                          <Trash2 size={16} className="shrink-0" /> Remover Foto
+                        </button>
+                      )}
+                    </div>
+                  </>
+                )}
              </div>
              <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{user.name}</p>
+             <p className="text-[10px] -mt-3 leading-relaxed" style={{ color: 'var(--text-muted)' }}>Toque na foto para trocar</p>
           </div>
 
           {feedback && (
@@ -2772,12 +2883,6 @@ function ProfileModal({ user, responsibles, onClose, onUpdate }: any) {
               <AlertTriangle size={14} className="shrink-0" /> {feedback}
             </div>
           )}
-
-          <div>
-            <label className="text-[10px] font-bold uppercase tracking-widest mb-2 block ml-1" style={{ color: 'var(--text-muted)' }}>URL da Fotografia de Perfil</label>
-            <input value={avatarInput} onChange={e => setAvatarInput(e.target.value)} className="w-full rounded-xl px-4 py-3.5 text-sm outline-none focus:border-indigo-500 transition-colors" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-primary)', color: 'var(--text-primary)' }} placeholder="https://site.com/sua-foto.jpg" />
-            <p className="text-[10px] mt-1.5 ml-1 leading-relaxed" style={{ color: 'var(--text-muted)' }}>Cole o link (URL) direto de uma imagem online. Ele será guardado no banco de dados para acesso em qualquer dispositivo.</p>
-          </div>
 
           <div>
             <label className="text-[10px] font-bold uppercase tracking-widest mb-2 block ml-1" style={{ color: 'var(--text-muted)' }}>Nova Senha</label>
@@ -3087,30 +3192,109 @@ function NotesPanelContent({ notes, setNotes, user, onDeleteNote }: any) {
 // A criação de contas agora acontece pela tela de login ("Criar Conta"), via Supabase Auth.
 // Este painel é apenas de visualização da equipe — criar conta por aqui digitando
 // nome+senha deixou de existir (não gerava mais um login funcional e era inseguro).
-function ResponsiblesPanelContent({ responsibles, tasks, user }: any) {
+function ResponsiblesPanelContent({ responsibles, setResponsibles, tasks, user }: any) {
+  const [feedback, setFeedback] = useState('');
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const adminCount = responsibles.filter((r: any) => r.is_admin).length;
+
+  const startEdit = (r: any) => { setFeedback(''); setEditingId(r.id); setEditName(r.name); };
+  const cancelEdit = () => setEditingId(null);
+
+  const saveEdit = async (r: any) => {
+    const name = editName.trim();
+    if (!name || name === r.name) { setEditingId(null); return; }
+    setBusyId(r.id);
+    setFeedback('');
+    const supa = (window as any).supabaseClient;
+    const { error } = await supa.from('responsibles').update({ name }).eq('id', r.id);
+    setBusyId(null);
+    if (error) { setFeedback(`Não foi possível renomear: ${error.message || 'erro desconhecido'}.`); return; }
+    setResponsibles((prev: any) => prev.map((x: any) => x.id === r.id ? { ...x, name } : x));
+    setEditingId(null);
+  };
+
+  const toggleAdmin = async (r: any) => {
+    if (r.is_admin && r.id === user.id && adminCount <= 1) {
+      setFeedback("Você é o único admin — promova outra pessoa antes de remover seu próprio acesso.");
+      return;
+    }
+    setBusyId(r.id);
+    setFeedback('');
+    const supa = (window as any).supabaseClient;
+    const { error } = await supa.from('responsibles').update({ is_admin: !r.is_admin }).eq('id', r.id);
+    setBusyId(null);
+    if (error) { setFeedback(`Não foi possível alterar o acesso: ${error.message || 'erro desconhecido'}.`); return; }
+    setResponsibles((prev: any) => prev.map((x: any) => x.id === r.id ? { ...x, is_admin: !r.is_admin } : x));
+  };
+
   return (
     <div className="flex flex-col h-full fade-in">
       {user.isAdmin && (
-        <div className="bg-indigo-500/5 border border-indigo-500/20 text-indigo-300 text-xs px-5 py-4 rounded-2xl mb-8 leading-relaxed">
+        <div className="bg-indigo-500/5 border border-indigo-500/20 text-indigo-300 text-xs px-5 py-4 rounded-2xl mb-6 leading-relaxed">
           Novos consultores criam a própria conta pela tela de login, na aba "Criar Conta".
           Assim que criarem, aparecem automaticamente nesta lista.
+        </div>
+      )}
+
+      {feedback && (
+        <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs px-4 py-3 rounded-xl mb-6 flex items-center gap-2">
+          <AlertTriangle size={14} className="shrink-0" /> {feedback}
         </div>
       )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {responsibles.map((r: any) => {
           const count = tasks.filter((t: any) => t.responsibleId === r.id).length;
+          const isEditing = editingId === r.id;
+          const isBusy = busyId === r.id;
           return (
-            <div key={r.id} className="flex items-center justify-between gap-4 rounded-2xl p-5 group hover:border-indigo-500/50 transition-all shadow-sm" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }}>
+            <div key={r.id} className="flex flex-col gap-4 rounded-2xl p-5 group hover:border-indigo-500/50 transition-all shadow-sm" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }}>
               <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-xl flex items-center justify-center overflow-hidden" style={{ background: 'var(--bg-overlay)', border: '1px solid var(--border-overlay)', color: 'var(--text-primary)' }}>
+                <div className="w-12 h-12 rounded-xl flex items-center justify-center overflow-hidden shrink-0" style={{ background: 'var(--bg-overlay)', border: '1px solid var(--border-overlay)', color: 'var(--text-primary)' }}>
                   <UserAvatar url={r.avatar} name={r.name} />
                 </div>
-                <div className="flex flex-col">
-                  <span className="text-base font-bold" style={{ color: 'var(--text-primary)' }}>{r.name}{r.is_admin ? ' (Admin)' : ''}</span>
+                <div className="flex flex-col min-w-0 flex-1">
+                  {isEditing ? (
+                    <input
+                      autoFocus
+                      value={editName}
+                      onChange={e => setEditName(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') saveEdit(r); if (e.key === 'Escape') cancelEdit(); }}
+                      className="text-sm font-bold rounded-lg px-2.5 py-1.5 outline-none focus:border-indigo-500 transition-colors -ml-2.5"
+                      style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-primary)', color: 'var(--text-primary)' }}
+                    />
+                  ) : (
+                    <span className="text-base font-bold truncate" style={{ color: 'var(--text-primary)' }}>{r.name}{r.is_admin ? ' (Admin)' : ''}</span>
+                  )}
                   <span className="text-[10px] font-bold uppercase tracking-widest mt-0.5" style={{ color: 'var(--text-muted)' }}>{count} Demandas</span>
                 </div>
               </div>
+
+              {user.isAdmin && (
+                <div className="flex items-center gap-2 pt-3 border-t" style={{ borderColor: 'var(--border-primary)' }}>
+                  {isEditing ? (
+                    <>
+                      <button onClick={() => saveEdit(r)} disabled={isBusy} className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[11px] font-bold uppercase tracking-widest bg-indigo-600 hover:bg-indigo-500 text-white transition-colors disabled:opacity-50">
+                        <Check size={12} /> Salvar
+                      </button>
+                      <button onClick={cancelEdit} disabled={isBusy} className="px-3 py-2 rounded-lg text-[11px] font-bold uppercase tracking-widest transition-colors disabled:opacity-50" style={{ border: '1px solid var(--border-primary)', color: 'var(--text-secondary)' }}>
+                        <X size={12} />
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button onClick={() => startEdit(r)} disabled={isBusy} className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[11px] font-bold uppercase tracking-widest transition-colors disabled:opacity-50 hover:bg-[var(--bg-overlay)]" style={{ border: '1px solid var(--border-primary)', color: 'var(--text-secondary)' }}>
+                        <Pencil size={12} /> Renomear
+                      </button>
+                      <button onClick={() => toggleAdmin(r)} disabled={isBusy} className={`flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[11px] font-bold uppercase tracking-widest transition-colors disabled:opacity-50 ${r.is_admin ? 'text-amber-400 hover:bg-amber-500/10' : 'text-indigo-400 hover:bg-indigo-500/10'}`} style={{ border: '1px solid var(--border-primary)' }}>
+                        <UserCog size={12} /> {r.is_admin ? 'Remover Admin' : 'Tornar Admin'}
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           )
         })}
@@ -5081,6 +5265,9 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
   const [copiedNotionId, setCopiedNotionId] = useState<string | null>(null);
   const [meetingData, setMeetingData] = useState<any>({});
   const [emailPopup, setEmailPopup] = useState<any>(null);
+  // Confirmação antes de formalizar: a ação move cards de "Concluído" pra "Formalizar" de
+  // uma vez (um cliente ou o sistema inteiro) e não tinha nenhuma trava contra clique acidental.
+  const [confirmFormalize, setConfirmFormalize] = useState<{ clientId: string | null, clientName: string, count: number } | null>(null);
 
   const formatWorkedTime = (seconds: number) => {
     const totalMin = Math.round((seconds || 0) / 60);
@@ -5261,8 +5448,8 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
                   </div>
 
                   {clientTasks.done.length > 0 && (
-                    <button 
-                      onClick={() => onFormalize(clientId)}
+                    <button
+                      onClick={() => setConfirmFormalize({ clientId, clientName, count: clientTasks.done.length })}
                       className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3.5 sm:py-3 bg-transparent border border-[var(--border-primary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-emerald-500/50 hover:bg-emerald-500/10 rounded-xl text-xs font-bold uppercase tracking-widest transition-all"
                     >
                       <CheckCircle2 size={16} /> Formalizar ({clientTasks.done.length})
@@ -5273,17 +5460,44 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
             );
           })}
         </div>
-        
+
         <div className="px-5 sm:px-8 py-5 border-t border-[var(--border-primary)] flex flex-col sm:flex-row items-center justify-between gap-4 bg-[var(--bg-tertiary)]">
           <span className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-widest">Ação em lote (Formaliza tudo do sistema)</span>
-          <button 
-            onClick={() => onFormalize(null)} 
+          <button
+            onClick={() => setConfirmFormalize({ clientId: null, clientName: '', count: tasks.filter((t: any) => t.status === 'done').length })}
             className="w-full sm:w-auto flex items-center justify-center gap-2 px-8 py-4 sm:py-3.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold uppercase tracking-widest text-xs transition-all shadow-[0_0_15px_rgba(13,148,136,0.3)]"
           >
             <Check size={18} /> Formalizar Todos
           </button>
         </div>
       </div>
+
+      {confirmFormalize && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center px-4 pt-4 pb-24 sm:p-4 z-[110] fade-in" onClick={() => setConfirmFormalize(null)}>
+          <div className="w-full max-w-sm rounded-[32px] bg-[var(--bg-secondary)] border border-[var(--border-primary)] p-5 sm:p-8 shadow-2xl relative animate-modal-pop" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-3 mb-4 text-teal-400">
+              <div className="p-3 bg-teal-500/10 rounded-2xl shadow-inner"><CheckCircle2 size={24} /></div>
+              <h3 className="font-bold text-xl tracking-tight">Formalizar Demandas</h3>
+            </div>
+            <p className="text-sm text-[var(--text-secondary)] mb-8 leading-relaxed">
+              {confirmFormalize.clientId
+                ? <>Mover <span className="font-bold text-[var(--text-primary)]">{confirmFormalize.count} demanda{confirmFormalize.count > 1 ? 's' : ''}</span> de <span className="font-bold text-[var(--text-primary)]">"{confirmFormalize.clientName}"</span> de "Concluído" para "Formalizar"?</>
+                : <>Mover <span className="font-bold text-[var(--text-primary)]">todas as {confirmFormalize.count} demandas</span> de "Concluído" para "Formalizar" — de todos os clientes do sistema?</>}
+            </p>
+            <div className="flex flex-col sm:flex-row items-center gap-3">
+              <button onClick={() => setConfirmFormalize(null)} className="w-full sm:flex-1 py-3.5 sm:py-3 rounded-2xl border border-[var(--border-primary)] hover:bg-[var(--bg-overlay)] text-[var(--text-primary)] font-bold transition-all text-sm">Cancelar</button>
+              <button onClick={() => {
+                  onFormalize(confirmFormalize.clientId);
+                  setConfirmFormalize(null);
+                }}
+                className="w-full sm:flex-1 py-3.5 sm:py-3 rounded-2xl bg-teal-600 hover:bg-teal-500 text-white font-bold transition-all text-sm shadow-lg shadow-teal-600/10"
+              >
+                Formalizar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {emailPopup && (() => {
         const clientData = clients.find((c: any) => c.id === emailPopup.clientId);

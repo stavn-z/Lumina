@@ -1081,14 +1081,25 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
   // de um usuário sobrescrever alterações simultâneas de outro.
   useEffect(() => {
     if (!isCloudSynced) return;
-    const changed = tasks.filter(t => lastSyncedTasksRef.current[t.id] !== stableStringify(t));
+    // Compara e marca como sincronizado usando a versão NORMALIZADA (mesma forma que é
+    // realmente enviada ao banco, e a mesma que fetchCloudData/Realtime usam pra povoar essa
+    // ref). Comparar contra o objeto local cru causava descompasso: o card recém-criado não
+    // tem os mesmos campos opcionais que a versão normalizada guardada no banco, então o
+    // eco do Realtime (linha ~1139) nunca reconhecia o próprio save e reenviava o card de novo
+    // num loop de resync — inofensivo no dado final, mas mascarava o estado real de "salvo".
+    const changed = tasks.filter(t => lastSyncedTasksRef.current[t.id] !== stableStringify(normalizeTask(t)));
     if (changed.length === 0) return;
     // Só marca como sincronizado DEPOIS de confirmar sucesso do upsert. Marcar antes (como
     // era) escondia falhas de gravação pra sempre: a alteração parecia salva na tela, mas
     // nunca chegava no banco, e voltava ao estado antigo no próximo reload sem nenhum aviso.
-    (window as any).supabaseClient.from('tasks').upsert(changed).then(({ error }: any) => {
+    // Normaliza antes de enviar: várias rotinas de criação de card (cópia, recorrência,
+    // continuidade mensal, agenda) montam o objeto sem todo campo opcional preenchido. Como o
+    // upsert em lote do PostgREST usa a união das chaves de todas as linhas como colunas, uma
+    // linha sem uma chave presente em outra vira NULL explícito nela — e colunas NOT NULL como
+    // "skippedOccurrences" rejeitam a linha, derrubando o lote inteiro (nenhum card é salvo).
+    (window as any).supabaseClient.from('tasks').upsert(changed.map(normalizeTask)).then(({ error }: any) => {
       if (error) { console.error("Erro ao sincronizar tarefas:", error); return; }
-      changed.forEach(t => { lastSyncedTasksRef.current[t.id] = stableStringify(t); });
+      changed.forEach(t => { lastSyncedTasksRef.current[t.id] = stableStringify(normalizeTask(t)); });
     });
   }, [tasks, isCloudSynced]);
 
@@ -1114,6 +1125,24 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
       if (error) console.error("Erro ao sincronizar notas:", error);
     });
   }, [notes, isCloudSynced]);
+
+  // Protege contra perda de dados: os saves acima são assíncronos e disparados em segundo
+  // plano (sem await). Se a página for recarregada/fechada antes de um upsert terminar, o
+  // navegador aborta a requisição no meio do caminho — o card/nota nunca chega a ser gravado
+  // e some silenciosamente no próximo load, sem nenhum erro visível. Avisa o usuário nesse caso.
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      const hasUnsynced =
+        tasks.some((t: any) => lastSyncedTasksRef.current[t.id] !== stableStringify(normalizeTask(t))) ||
+        clients.some((c: any) => lastSyncedClientsRef.current[c.id] !== stableStringify(c)) ||
+        notes.some((n: any) => lastSyncedNotesRef.current[n.id] !== stableStringify(n));
+      if (!hasUnsynced) return;
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [tasks, clients, notes]);
 
   // Realtime: quando outro usuário (ex: o admin) altera uma tarefa sua,
   // o seu quadro atualiza sozinho, sem precisar recarregar a página.

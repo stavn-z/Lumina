@@ -1688,6 +1688,19 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
     );
   }
 
+  // Ajuste manual do tempo de um item do checklist (ex.: esqueceu de rodar o cronômetro e quer
+  // lançar o tempo direto). Sempre para o cronômetro do item ao ajustar, pra não ficar somando
+  // em cima de um valor editado à mão enquanto ele segue rodando.
+  function setChecklistItemElapsed(taskId: string, itemId: string, seconds: number) {
+    setTasks((prev) =>
+      prev.map((t) => {
+        if (t.id !== taskId) return t;
+        const checklist = Array.isArray(t.checklist) ? t.checklist : [];
+        return { ...t, checklist: checklist.map((c: any) => c.id === itemId ? { ...c, timerRunning: false, timerStart: null, timerElapsed: seconds } : c) };
+      })
+    );
+  }
+
   const handleRequestMove = (taskId: string, targetId: string | null, newStatus: string) => {
     const task = tasks.find(t => t.id.toString() === taskId.toString());
     if (!task) return;
@@ -2506,7 +2519,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                                         <span className="leading-snug flex-1" style={{ color: c.done ? 'var(--text-muted)' : 'var(--text-secondary)', textDecoration: c.done ? 'line-through' : 'none' }}>{c.text || ''}</span>
                                         {itemTimers && isEditable && !isDoneOrCancelled && (
                                           <>
-                                            <ChecklistItemElapsed item={c} />
+                                            <ChecklistItemElapsed item={c} onSetElapsed={(sec) => setChecklistItemElapsed(t.id, c.id, sec)} />
                                             <ChecklistItemTimerButton item={c} onToggle={() => toggleChecklistItemTimer(t.id, c.id)} />
                                           </>
                                         )}
@@ -3129,16 +3142,57 @@ function ChecklistItemTimerButton({ item, onToggle }: { item: any, onToggle: () 
   );
 }
 
-// Tempo acumulado de um item do checklist, atualizando ao vivo enquanto está rodando.
-function ChecklistItemElapsed({ item }: { item: any }) {
+// Tempo acumulado de um item do checklist, atualizando ao vivo enquanto está rodando. Se
+// onSetElapsed for passado, o próprio texto vira um campo editável ao clicar (só quando o item
+// não está rodando) — permite lançar o tempo manualmente em minutos, sem precisar do play/pause.
+function ChecklistItemElapsed({ item, onSetElapsed }: { item: any, onSetElapsed?: (seconds: number) => void }) {
   const [, force] = useState(0);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
   useEffect(() => {
     if (!item.timerRunning) return;
     const id = setInterval(() => force((x: number) => x + 1), 1000);
     return () => clearInterval(id);
   }, [item.timerRunning]);
   const elapsed = item.timerRunning && item.timerStart ? (item.timerElapsed || 0) + (Date.now() - item.timerStart) / 1000 : (item.timerElapsed || 0);
-  return <span className="font-mono text-[10px] tabular-nums shrink-0" style={{ color: 'var(--text-muted)' }}>{formatTime(elapsed)}</span>;
+
+  const commit = () => {
+    const min = parseFloat(draft.replace(',', '.'));
+    if (!isNaN(min) && min >= 0 && onSetElapsed) onSetElapsed(Math.round(min * 60));
+    setEditing(false);
+  };
+
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        type="number"
+        min="0"
+        inputMode="decimal"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') setEditing(false); }}
+        onClick={(e) => e.stopPropagation()}
+        className="w-12 bg-[var(--bg-primary)] border border-indigo-500 rounded-md px-1 py-0.5 text-[10px] font-mono text-[var(--text-primary)] outline-none shrink-0"
+        placeholder="min"
+      />
+    );
+  }
+
+  const editable = !!onSetElapsed && !item.timerRunning;
+  return (
+    <span
+      role={editable ? 'button' : undefined}
+      tabIndex={editable ? 0 : undefined}
+      onClick={(e) => { if (!editable) return; e.stopPropagation(); setDraft(String(Math.round(elapsed / 60))); setEditing(true); }}
+      title={editable ? 'Clique para lançar o tempo manualmente (minutos)' : undefined}
+      className={`font-mono text-[10px] tabular-nums shrink-0 ${editable ? 'cursor-pointer hover:text-indigo-400 hover:underline decoration-dotted underline-offset-2' : ''} transition-colors`}
+      style={{ color: 'var(--text-muted)' }}
+    >
+      {formatTime(elapsed)}
+    </span>
+  );
 }
 
 const NOTE_COLORS = [
@@ -5435,7 +5489,7 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
     }, {});
   }, [tasks]);
 
-  const generateEmailText = (clientTasks: any, mData: any, includeTime?: boolean) => {
+  const generateEmailText = (clientTasks: any, mData: any, includeTime?: boolean, splitTimeByItem?: boolean) => {
     let body = `Prezados(as),\n\nEspero que se encontrem bem.\n\n`;
 
     let dateStr = "";
@@ -5456,7 +5510,20 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
     const appendTask = (t: any) => {
       body += `- ${t.title}\n`;
       if (t.description) body += `  ${t.description}\n`;
-      if (includeTime) body += `  Tempo dedicado: ${formatWorkedTime(getElapsed(t))}\n`;
+      if (includeTime) {
+        // Horas separadas só existem pras demandas do modelo novo (cronômetro por item). Sem
+        // itens pra detalhar, cai de volta no tempo único de sempre.
+        const items = splitTimeByItem && hasItemTimers(t) ? (t.checklist || []).filter((c: any) => c.text && c.text.trim()) : [];
+        if (items.length > 0) {
+          items.forEach((c: any) => {
+            const sec = c.timerRunning && c.timerStart ? (c.timerElapsed || 0) + (Date.now() - c.timerStart) / 1000 : (c.timerElapsed || 0);
+            body += `  - ${c.text}: ${formatWorkedTime(sec)}\n`;
+          });
+          body += `  Tempo total: ${formatWorkedTime(getElapsed(t))}\n`;
+        } else {
+          body += `  Tempo dedicado: ${formatWorkedTime(getElapsed(t))}\n`;
+        }
+      }
       body += `\n`;
     };
 
@@ -5474,17 +5541,17 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
     return body;
   };
 
-  const generateEmailLink = (clientTasks: any, clientData: any, mData: any, includeTime?: boolean) => {
+  const generateEmailLink = (clientTasks: any, clientData: any, mData: any, includeTime?: boolean, splitTimeByItem?: boolean) => {
     const emails = Array.isArray(clientData?.emails) ? clientData.emails : [];
     const emailTo = emails.join(',');
     const subject = `Atualização Semanal de Demandas - ${clientData ? clientData.name : 'Cliente'}`;
-    const body = generateEmailText(clientTasks, mData, includeTime);
+    const body = generateEmailText(clientTasks, mData, includeTime, splitTimeByItem);
 
     return `https://mail.google.com/mail/?view=cm&fs=1&to=${emailTo}&bcc=analistasrubeus@rubeus.com.br&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   };
 
-  const handleCopyText = (clientTasks: any, clientId: string, mData: any, includeTime?: boolean) => {
-    const text = generateEmailText(clientTasks, mData, includeTime);
+  const handleCopyText = (clientTasks: any, clientId: string, mData: any, includeTime?: boolean, splitTimeByItem?: boolean) => {
+    const text = generateEmailText(clientTasks, mData, includeTime, splitTimeByItem);
     navigator.clipboard.writeText(text);
     setCopiedId(clientId);
     setTimeout(() => setCopiedId(null), 2000);
@@ -5584,7 +5651,7 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-t border-[var(--border-primary)] pt-6">
                   <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
                     <button
-                      onClick={() => setEmailPopup({ clientId, date: mData.date || '', link: mData.link || '', includeTime: false })}
+                      onClick={() => setEmailPopup({ clientId, date: mData.date || '', link: mData.link || '', includeTime: false, splitTimeByItem: false })}
                       className="flex-1 sm:flex-none justify-center inline-flex items-center gap-2 px-5 py-3.5 sm:py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold uppercase tracking-widest transition-all shadow-[0_0_15px_rgba(79,70,229,0.3)]"
                     >
                       <Mail size={16} /> Preparar E-mail
@@ -5694,7 +5761,7 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
                 </div>
 
                 <label className="flex items-center justify-between gap-3 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-3.5 cursor-pointer">
-                  <span className="text-xs font-bold text-[var(--text-secondary)]">Incluir horas trabalhadas de cada demanda</span>
+                  <span className="text-xs font-bold text-[var(--text-secondary)] min-w-0 flex-1">Incluir horas trabalhadas de cada demanda</span>
                   <button
                     type="button"
                     onClick={() => setEmailPopup({ ...emailPopup, includeTime: !emailPopup.includeTime })}
@@ -5703,11 +5770,24 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
                     <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${emailPopup.includeTime ? 'translate-x-5' : ''}`} />
                   </button>
                 </label>
+
+                {emailPopup.includeTime && (
+                  <label className="flex items-center justify-between gap-3 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-3.5 cursor-pointer animate-fade-in">
+                    <span className="text-xs font-bold text-[var(--text-secondary)] min-w-0 flex-1">Detalhar horas por item do checklist <span className="block sm:inline text-[10px] font-medium text-[var(--text-muted)] normal-case">(quando a demanda tiver cronômetro por item)</span></span>
+                    <button
+                      type="button"
+                      onClick={() => setEmailPopup({ ...emailPopup, splitTimeByItem: !emailPopup.splitTimeByItem })}
+                      className={`w-11 h-6 rounded-full relative transition-colors shrink-0 ${emailPopup.splitTimeByItem ? 'bg-indigo-600' : 'bg-[var(--bg-overlay-strong)]'}`}
+                    >
+                      <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${emailPopup.splitTimeByItem ? 'translate-x-5' : ''}`} />
+                    </button>
+                  </label>
+                )}
               </div>
 
               <div className="px-6 py-5 border-t border-[var(--border-primary)] bg-[var(--bg-tertiary)] flex flex-wrap items-center gap-3">
                 <a
-                  href={generateEmailLink(clientTasks, clientData, mData, emailPopup.includeTime)}
+                  href={generateEmailLink(clientTasks, clientData, mData, emailPopup.includeTime, emailPopup.splitTimeByItem)}
                   target="_blank"
                   rel="noopener noreferrer"
                   onClick={() => setEmailPopup(null)}
@@ -5717,7 +5797,7 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
                 </a>
 
                 <button
-                  onClick={() => handleCopyText(clientTasks, emailPopup.clientId, mData, emailPopup.includeTime)}
+                  onClick={() => handleCopyText(clientTasks, emailPopup.clientId, mData, emailPopup.includeTime, emailPopup.splitTimeByItem)}
                   className="flex-1 justify-center inline-flex items-center gap-2 px-5 py-3.5 bg-[var(--bg-overlay)] text-[var(--text-secondary)] border border-[var(--border-overlay)] hover:bg-[var(--bg-overlay-strong)] rounded-xl text-xs font-bold uppercase tracking-widest transition-colors"
                 >
                   {copiedId === emailPopup.clientId ? <Check size={16} className="text-emerald-400" /> : <Copy size={16} />}
@@ -5769,6 +5849,11 @@ function TaskModal({ modal, setModal, clients, responsibles, closeModal, saveMod
       });
       return { ...m, form: { ...m.form, checklist: nextChecklist, status: (!wasRunning && m.form.status !== 'inprogress') ? 'inprogress' : m.form.status } };
     });
+  };
+
+  // Ajuste manual do tempo de um item, no rascunho — mesmo padrão de setChecklistItemElapsed.
+  const setItemElapsedDraft = (itemId: string, seconds: number) => {
+    setModal((m: any) => ({ ...m, form: { ...m.form, checklist: (m.form.checklist || []).map((c: any) => c.id === itemId ? { ...c, timerRunning: false, timerStart: null, timerElapsed: seconds } : c) } }));
   };
 
   // Reordenação por arraste do checklist: pointer capture no "grip" mantém os eventos de
@@ -5862,7 +5947,7 @@ function TaskModal({ modal, setModal, clients, responsibles, closeModal, saveMod
                   <input value={c.text || ''} onChange={(e) => { setModal((m: any) => ({ ...m, form: { ...m.form, checklist: m.form.checklist.map((ci: any) => ci.id === c.id ? { ...ci, text: e.target.value } : ci) } })); }} className="flex-1 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 transition-all shadow-sm" placeholder="O que precisa ser feito?" />
                   {isNewModelTask && (
                     <>
-                      <ChecklistItemElapsed item={c} />
+                      <ChecklistItemElapsed item={c} onSetElapsed={(sec) => setItemElapsedDraft(c.id, sec)} />
                       <ChecklistItemTimerButton item={c} onToggle={() => toggleItemTimerDraft(c.id)} />
                     </>
                   )}

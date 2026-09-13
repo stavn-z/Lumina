@@ -8,7 +8,7 @@ import {
   HelpCircle, ChevronDown, LayoutDashboard, Mail, Check, Copy, ClipboardList, Cloud, Lock,
   Eye, EyeOff, Settings, MonitorPlay, CloudRain, Sun, Moon, CloudLightning, Snowflake, CloudFog, UserCog, Calendar, ChevronUp,
   CalendarDays, ExternalLink, ChevronLeft, ChevronRight,
-  StickyNote, Pin, Palette, Upload, Camera
+  StickyNote, Pin, Palette, Upload, Camera, Link2
 } from "lucide-react";
 import { ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Cell } from "recharts";
 
@@ -137,6 +137,23 @@ function formatTime(totalSeconds: number) {
   return `${h}:${m}:${sec}`;
 }
 
+// Detecta se a demanda usa o modelo novo de cronômetro por item do checklist (em vez do
+// cronômetro único da demanda). Baseado na presença do campo timerElapsed nos itens — demandas
+// antigas nunca tiveram esse campo, então continuam automaticamente no modelo antigo (timer
+// único em timerRunning/timerStart/timerElapsed na própria task) sem precisar de migração.
+function hasItemTimers(t: any): boolean {
+  return Array.isArray(t.checklist) && t.checklist.some((c: any) => typeof c.timerElapsed === 'number');
+}
+
+// Soma o tempo (em segundos) já acumulado nos itens do checklist de uma demanda do modelo
+// novo, contando o item em execução até agora (não só o que já foi congelado).
+function checklistElapsed(checklist: any[]): number {
+  return (checklist || []).reduce((sum: number, c: any) => {
+    if (c.timerRunning && c.timerStart) return sum + (c.timerElapsed || 0) + (Date.now() - c.timerStart) / 1000;
+    return sum + (c.timerElapsed || 0);
+  }, 0);
+}
+
 function getBrasiliaDate() {
   const formatter = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' });
   const parts = formatter.formatToParts(new Date());
@@ -260,7 +277,10 @@ function normalizeTask(t: any) {
     continuedFromId: t.continuedFromId || '',
     // Aproveitamento manual de card: copia de uma demanda concluída/formalizada pra uma nova em "A Fazer".
     // copiedFromId guarda o id do card original só pra exibir o badge de origem no sucessor.
-    copiedFromId: t.copiedFromId || ''
+    copiedFromId: t.copiedFromId || '',
+    // Demandas relacionadas (rodando em paralelo, sem serem a mesma coisa). O vínculo é
+    // bidirecional e mantido em sincronia por quem grava a demanda (ver applyRelatedTaskLinks).
+    relatedTaskIds: Array.isArray(t.relatedTaskIds) ? t.relatedTaskIds : []
   };
   if (norm.timerRunning && norm.timerStart && (Date.now() - norm.timerStart) > MAX_TIMER_SESSION_MS) {
     norm.timerRunning = false;
@@ -268,6 +288,22 @@ function normalizeTask(t: any) {
     norm.timerStart = null;
   }
   return norm;
+}
+
+// Mantém o vínculo de "Demandas Relacionadas" bidirecional: garante que todo id presente em
+// relatedIds aponte de volta pra taskId, e remove o vínculo de quem foi desvinculado nesta
+// edição. Roda sobre a lista inteira (barato o bastante pro volume de demandas do quadro).
+function applyRelatedTaskLinks(list: any[], taskId: string, relatedIds: string[]) {
+  const wanted = new Set((relatedIds || []).filter((id: string) => id && id !== taskId));
+  return list.map((t: any) => {
+    if (t.id === taskId) return t;
+    const current = Array.isArray(t.relatedTaskIds) ? t.relatedTaskIds : [];
+    const has = current.includes(taskId);
+    const should = wanted.has(t.id);
+    if (has === should) return t;
+    const nextIds = should ? [...current, taskId] : current.filter((id: string) => id !== taskId);
+    return { ...t, relatedTaskIds: nextIds };
+  });
 }
 
 function normalizeNote(n: any) {
@@ -1294,6 +1330,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
   };
 
   const getElapsed = (t: any) => {
+    if (hasItemTimers(t)) return checklistElapsed(t.checklist);
     if (t.timerRunning && t.timerStart) return t.timerElapsed + (Date.now() - t.timerStart) / 1000;
     return t.timerElapsed || 0;
   };
@@ -1317,7 +1354,11 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
           return { ...t, skippedOccurrences: [...skipped, occDate] };
         });
       }
-      return next.filter((t: any) => t.id !== id);
+      return next.filter((t: any) => t.id !== id).map((t: any) =>
+        Array.isArray(t.relatedTaskIds) && t.relatedTaskIds.includes(id)
+          ? { ...t, relatedTaskIds: t.relatedTaskIds.filter((rid: string) => rid !== id) }
+          : t
+      );
     });
     if ((window as any).supabaseClient) await (window as any).supabaseClient.from('tasks').delete().eq('id', id.toString());
   };
@@ -1418,9 +1459,9 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
   const doneCount = monthTasks.filter((t) => t.status === "done" || t.status === "formalize").length;
   const overallProgress = activeTasksCount ? Math.round((doneCount / activeTasksCount) * 100) : 0;
 
-  const tasksForClosure = visibleTasks.filter(t => !t.agendaOnly && ['inprogress', 'paused', 'waiting', 'review', 'done'].includes(t.status));
+  const tasksForClosure = visibleTasks.filter(t => !t.agendaOnly && !['formalize', 'cancelled'].includes(t.status));
 
-  const emptyForm = { title: "", description: "", priority: "Média", durationMin: "", clientId: "", responsibleId: user.id, startDate: "", dueDate: "", status: "", waitingFor: "", checklist: [] };
+  const emptyForm = { title: "", description: "", priority: "Média", durationMin: "", clientId: "", responsibleId: user.id, startDate: "", dueDate: "", status: "", waitingFor: "", checklist: [], relatedTaskIds: [] };
 
   function openAddModal(status: string) {
     setValidationError(null);
@@ -1458,7 +1499,10 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
     if (!f.status) missing.push("Fase do Fluxo");
     if (!f.priority) missing.push("Prioridade");
     if (f.status === 'waiting' && !f.waitingFor) missing.push("Dependência (Aguardando por)");
-    
+    // Cronômetro por item do checklist só existe pra demandas novas — exige pelo menos 1 passo
+    // preenchido na criação. Demandas antigas continuam editáveis sem essa exigência.
+    if (modal.mode === 'add' && !(f.checklist || []).some((c: any) => c.text && c.text.trim())) missing.push("Checklist");
+
     if (missing.length > 0) {
       setValidationError(missing);
       return;
@@ -1484,6 +1528,16 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
         return;
     }
 
+    // Congela o cronômetro de qualquer item do checklist ainda rodando quando a demanda entra
+    // num estado terminal (mesma trava que já existia pro cronômetro único da task).
+    const freezeChecklistTimers = (list: any[]) => list.filter((c: any) => c.text.trim()).map((c: any) => {
+      const base = { ...c, text: capitalize(c.text) };
+      if (['done', 'cancelled', 'formalize'].includes(finalStatus) && base.timerRunning) {
+        return { ...base, timerRunning: false, timerStart: null, timerElapsed: (base.timerElapsed || 0) + (base.timerStart ? (Date.now() - base.timerStart) / 1000 : 0) };
+      }
+      return base;
+    });
+
     if (modal.mode === "add") {
       const newTask = {
         id: nextId(),
@@ -1497,7 +1551,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
         dueDate: f.dueDate || '',
         status: finalStatus,
         waitingFor: upper(f.waitingFor || ''),
-        checklist: (f.checklist || []).filter((c: any) => c.text.trim()).map((c: any) => ({ ...c, text: capitalize(c.text) })),
+        checklist: freezeChecklistTimers(f.checklist || []),
         timerRunning: false,
         timerStart: null,
         timerElapsed: 0,
@@ -1512,14 +1566,16 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
         skippedOccurrences: Array.isArray(f.skippedOccurrences) ? f.skippedOccurrences : [],
         isMeeting: !!f.isMeeting,
         scheduledDurationMin: f.scheduledDurationMin || 0,
+        relatedTaskIds: Array.isArray(f.relatedTaskIds) ? f.relatedTaskIds : [],
         history: [histEntry('created')]
       };
-      setTasks((prev) => [...prev, newTask]);
+      setTasks((prev) => applyRelatedTaskLinks([...prev, newTask], newTask.id, newTask.relatedTaskIds));
     } else {
-      setTasks((prev) =>
-        prev.map((t) => {
+      const relatedTaskIds = Array.isArray(f.relatedTaskIds) ? f.relatedTaskIds.filter((id: string) => id !== modal.task.id) : [];
+      setTasks((prev) => {
+        const updated = prev.map((t) => {
           if (t.id !== modal.task.id) return t;
-          
+
           let timerRunning = t.timerRunning;
           let timerElapsed = t.timerElapsed;
           let timerStart = t.timerStart;
@@ -1562,7 +1618,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
             dueDate: f.dueDate || '',
             status: finalStatus,
             waitingFor: upper(f.waitingFor || ''),
-            checklist: (f.checklist || []).filter((c: any) => c.text.trim()).map((c: any) => ({ ...c, text: capitalize(c.text) })),
+            checklist: freezeChecklistTimers(f.checklist || []),
             recurrence: f.recurrence || 'none',
             agendaOnly: !!f.agendaOnly,
             scheduledStart: f.scheduledStart || '',
@@ -1575,10 +1631,12 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
             timerRunning, timerElapsed, timerStart,
             createdAt: t.createdAt || getBrasiliaDate(),
             completedAt: (finalStatus === 'done' || finalStatus === 'formalize') ? (t.completedAt || getBrasiliaDate()) : t.completedAt,
+            relatedTaskIds,
             history: (finalStatus !== t.status) ? [...(Array.isArray(t.history) ? t.history : []), histEntry('status', t.status, finalStatus)] : (Array.isArray(t.history) ? t.history : [])
           };
-        })
-      );
+        });
+        return applyRelatedTaskLinks(updated, modal.task.id, relatedTaskIds);
+      });
     }
     closeModal();
   }
@@ -1597,6 +1655,35 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
           ? [...(Array.isArray(t.history) ? t.history : []), histEntry('status', originalStatus, 'inprogress')]
           : t.history;
         return { ...t, timerRunning: true, timerStart: Date.now(), status: 'inprogress', history };
+      })
+    );
+  }
+
+  // Cronômetro por item do checklist (modelo novo). Mesmo padrão do toggleTimer da demanda:
+  // iniciar sempre move a demanda pra "Em Andamento" (pausar nunca reverte sozinho). Ao
+  // iniciar um item, pausa qualquer outro item rodando NA MESMA demanda — só um por vez.
+  function toggleChecklistItemTimer(taskId: string, itemId: string) {
+    setTasks((prev) =>
+      prev.map((t) => {
+        if (t.id !== taskId) return t;
+        const checklist = Array.isArray(t.checklist) ? t.checklist : [];
+        const target = checklist.find((c: any) => c.id === itemId);
+        if (!target) return t;
+        const wasRunning = !!target.timerRunning;
+        const freezeElapsed = (c: any) => (c.timerElapsed || 0) + (c.timerStart ? (Date.now() - c.timerStart) / 1000 : 0);
+        const nextChecklist = checklist.map((c: any) => {
+          if (c.id === itemId) {
+            if (wasRunning) return { ...c, timerRunning: false, timerStart: null, timerElapsed: freezeElapsed(c) };
+            return { ...c, timerRunning: true, timerStart: Date.now() };
+          }
+          if (c.timerRunning) return { ...c, timerRunning: false, timerStart: null, timerElapsed: freezeElapsed(c) };
+          return c;
+        });
+        if (wasRunning) return { ...t, checklist: nextChecklist };
+        const history = t.status !== 'inprogress'
+          ? [...(Array.isArray(t.history) ? t.history : []), histEntry('status', t.status, 'inprogress')]
+          : t.history;
+        return { ...t, checklist: nextChecklist, status: 'inprogress', history };
       })
     );
   }
@@ -1671,6 +1758,11 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
       const prevHist = isAdd ? [histEntry('created')] : (Array.isArray(modal.task?.history) ? modal.task.history : []);
       let hist = [...prevHist, histEntry('status', isAdd ? '' : (modal.task?.status || ''), 'done')];
       if (donePrompt.continueNextMonth) hist = [...hist, histEntry('continues_next_month', '', targetMonth)];
+      // Congela qualquer item do checklist ainda rodando — a demanda está virando "done" aqui,
+      // mesma trava usada em saveModal pro caminho normal (freezeChecklistTimers).
+      const checklistOnDone = Array.isArray(donePrompt.draftData?.checklist) ? donePrompt.draftData.checklist.map((c: any) =>
+        c.timerRunning ? { ...c, timerRunning: false, timerStart: null, timerElapsed: (c.timerElapsed || 0) + (c.timerStart ? (Date.now() - c.timerStart) / 1000 : 0) } : c
+      ) : donePrompt.draftData?.checklist;
       const finalTask = {
          ...donePrompt.draftData,
          id: donePrompt.taskId,
@@ -1679,16 +1771,18 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
          durationMin: parseInt(donePrompt.durationMin) || 0,
          timerRunning: false,
          timerStart: null,
+         checklist: checklistOnDone,
          status: 'done',
          completedAt: donePrompt.date,
          continueNextMonth: donePrompt.continueNextMonth,
          continueNextMonthFor: targetMonth,
          continueNextMonthDone: false,
+         relatedTaskIds: (Array.isArray(donePrompt.draftData?.relatedTaskIds) ? donePrompt.draftData.relatedTaskIds : []).filter((id: string) => id !== donePrompt.taskId),
          history: hist
       };
 
-      if (modal.mode === 'add') setTasks(prev => [...prev, finalTask]);
-      else setTasks(prev => prev.map(t => t.id === finalTask.id ? finalTask : t));
+      const updatedList = modal.mode === 'add' ? [...tasks, finalTask] : tasks.map(t => t.id === finalTask.id ? finalTask : t);
+      setTasks(applyRelatedTaskLinks(updatedList, finalTask.id, finalTask.relatedTaskIds));
 
       setDonePrompt(null);
       closeModal();
@@ -1705,6 +1799,11 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
       taskToMove.durationMin = parseInt(donePrompt.durationMin) || 0;
       taskToMove.timerRunning = false;
       taskToMove.timerStart = null;
+      if (Array.isArray(taskToMove.checklist)) {
+        taskToMove.checklist = taskToMove.checklist.map((c: any) =>
+          c.timerRunning ? { ...c, timerRunning: false, timerStart: null, timerElapsed: (c.timerElapsed || 0) + (c.timerStart ? (Date.now() - c.timerStart) / 1000 : 0) } : c
+        );
+      }
       taskToMove.status = 'done';
       taskToMove.completedAt = donePrompt.date;
       taskToMove.continueNextMonth = donePrompt.continueNextMonth;
@@ -1757,7 +1856,13 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
           timerElapsed += (Date.now() - timerStart) / 1000;
           timerStart = null;
         }
-        
+        // Mesma trava, pro cronômetro por item do checklist (demandas do modelo novo).
+        if ((newStatus === 'cancelled' || newStatus === 'formalize') && Array.isArray(taskToMove.checklist)) {
+          taskToMove.checklist = taskToMove.checklist.map((c: any) =>
+            c.timerRunning ? { ...c, timerRunning: false, timerStart: null, timerElapsed: (c.timerElapsed || 0) + (c.timerStart ? (Date.now() - c.timerStart) / 1000 : 0) } : c
+          );
+        }
+
         if (newStatus === 'waiting') {
           taskToMove.waitingFor = ''; 
           setTimeout(() => setWaitingPrompt(taskToMove.id), 10);
@@ -2299,6 +2404,9 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                           const prStyle = PRIORITY_STYLE[t.priority] || PRIORITY_STYLE.Média;
                           const isDoneOrCancelled = t.status === "done" || t.status === "cancelled" || t.status === "formalize";
                           const isEditable = canEditTask(t.responsibleId);
+                          const itemTimers = hasItemTimers(t);
+                          const taskTimerRunning = t.timerRunning || (itemTimers && tChecklist.some((c: any) => c.timerRunning));
+                          const taskElapsed = getElapsed(t);
                           
                           const todayMs = new Date().setHours(0, 0, 0, 0);
                           const startMs = parseDateLocal(t.startDate);
@@ -2348,6 +2456,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                                   })()}
                                   {t.continuedFromId && <span className="flex items-center gap-1 text-[9px] uppercase tracking-wider px-2 py-1 rounded-md bg-teal-500/10 text-teal-300 border border-teal-500/20 font-bold" title="Gerada pela continuidade mensal de uma demanda encerrada"><RotateCcw size={10} /> Continuação</span>}
                                   {t.copiedFromId && <span className="flex items-center gap-1 text-[9px] uppercase tracking-wider px-2 py-1 rounded-md bg-teal-500/10 text-teal-300 border border-teal-500/20 font-bold" title="Gerada pelo aproveitamento manual de outra demanda"><Copy size={10} /> Aproveitada</span>}
+                                  {Array.isArray(t.relatedTaskIds) && t.relatedTaskIds.length > 0 && <span className="flex items-center gap-1 text-[9px] uppercase tracking-wider px-2 py-1 rounded-md bg-sky-500/10 text-sky-300 border border-sky-500/20 font-bold" title={`${t.relatedTaskIds.length} demanda(s) relacionada(s)`}><Link2 size={10} /> {t.relatedTaskIds.length}</span>}
                                   {alertBadge}
                                 </div>
                                 
@@ -2394,7 +2503,13 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                                         <button onClick={(e) => { e.stopPropagation(); toggleChecklistItem(t.id, c.id); }} disabled={!isEditable} className={`mt-0.5 w-3.5 h-3.5 rounded flex items-center justify-center shrink-0 border transition-colors ${c.done ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-400' : 'bg-[var(--bg-scrim)] border-[var(--border-overlay)] hover:border-[var(--border-hover)] text-transparent'}`}>
                                            <Check size={10} strokeWidth={3} className={c.done ? 'opacity-100' : 'opacity-0'} />
                                         </button>
-                                        <span className="leading-snug" style={{ color: c.done ? 'var(--text-muted)' : 'var(--text-secondary)', textDecoration: c.done ? 'line-through' : 'none' }}>{c.text || ''}</span>
+                                        <span className="leading-snug flex-1" style={{ color: c.done ? 'var(--text-muted)' : 'var(--text-secondary)', textDecoration: c.done ? 'line-through' : 'none' }}>{c.text || ''}</span>
+                                        {itemTimers && isEditable && !isDoneOrCancelled && (
+                                          <>
+                                            <ChecklistItemElapsed item={c} />
+                                            <ChecklistItemTimerButton item={c} onToggle={() => toggleChecklistItemTimer(t.id, c.id)} />
+                                          </>
+                                        )}
                                       </div>
                                     ))}
                                   </div>
@@ -2410,21 +2525,21 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                                        </div>
                                     )}
 
-                                    {(t.timerRunning || t.timerElapsed > 0) && !isDoneOrCancelled && (
+                                    {(taskTimerRunning || taskElapsed > 0) && !isDoneOrCancelled && (
                                       <div className="flex items-center gap-1 text-[10px] font-mono font-bold px-2 py-1 rounded-md border" style={{ background: 'var(--bg-scrim)', borderColor: 'var(--border-overlay)', color: 'var(--text-secondary)' }}>
-                                        <Clock size={10} className={t.timerRunning ? "text-amber-500 animate-pulse" : ""} style={t.timerRunning ? undefined : { color: 'var(--text-muted)' }} /> <LiveElapsed task={t} getElapsed={getElapsed} />
+                                        <Clock size={10} className={taskTimerRunning ? "text-amber-500 animate-pulse" : ""} style={taskTimerRunning ? undefined : { color: 'var(--text-muted)' }} /> <LiveElapsed task={t} getElapsed={getElapsed} />
                                       </div>
                                     )}
 
-                                    {!t.timerRunning && !(t.timerElapsed > 0) && t.durationMin > 0 && !isDoneOrCancelled && (
+                                    {!taskTimerRunning && !(taskElapsed > 0) && t.durationMin > 0 && !isDoneOrCancelled && (
                                       <div className="flex items-center gap-1 text-[10px] font-mono font-bold px-2 py-1 rounded-md border" style={{ background: 'var(--bg-scrim)', borderColor: 'var(--border-overlay)', color: 'var(--text-secondary)' }}>
                                         <Clock size={10} style={{ color: 'var(--text-muted)' }} /> {formatTime(t.durationMin * 60)}
                                       </div>
                                     )}
 
-                                    {isDoneOrCancelled && (t.timerElapsed > 0 || t.durationMin > 0) && (
+                                    {isDoneOrCancelled && (taskElapsed > 0 || t.durationMin > 0) && (
                                        <div className="flex items-center gap-1.5 text-[10px] font-mono font-bold text-emerald-500 bg-emerald-500/10 px-2 py-1 rounded-md border border-emerald-500/20">
-                                         <CheckCircle2 size={10} /> {formatTime(t.timerElapsed || (t.durationMin * 60))}
+                                         <CheckCircle2 size={10} /> {formatTime(taskElapsed || (t.durationMin * 60))}
                                        </div>
                                     )}
                                  </div>
@@ -2434,7 +2549,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                                       <>
                                         <button onClick={() => openEditModal(t)} className="p-1.5 bg-[var(--bg-overlay)] hover:bg-[var(--bg-overlay-strong)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded-lg transition-colors border border-transparent hover:border-[var(--border-overlay)]" title="Editar"><Pencil size={12}/></button>
                                         {(t.status === 'done' || t.status === 'formalize') && <button onClick={() => setConfirmCopyTask(t)} className="p-1.5 bg-teal-500/10 hover:bg-teal-500/20 text-teal-400 rounded-lg transition-colors border border-transparent hover:border-teal-500/20" title='Aproveitar demanda em "A Fazer"'><Copy size={12}/></button>}
-                                        {!isDoneOrCancelled && <button onClick={() => toggleTimer(t.id)} className={`p-1.5 rounded-lg transition-colors border ${t.timerRunning ? 'text-amber-400 bg-amber-400/10 border-amber-400/20' : 'text-[var(--text-secondary)] bg-[var(--bg-overlay)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-overlay-strong)] border-transparent hover:border-[var(--border-overlay)]'}`} title={t.timerRunning ? "Pausar" : "Iniciar Timer"}>{t.timerRunning ? <Pause size={12}/> : <Play size={12}/>}</button>}
+                                        {!isDoneOrCancelled && !itemTimers && <button onClick={() => toggleTimer(t.id)} className={`p-1.5 rounded-lg transition-colors border ${t.timerRunning ? 'text-amber-400 bg-amber-400/10 border-amber-400/20' : 'text-[var(--text-secondary)] bg-[var(--bg-overlay)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-overlay-strong)] border-transparent hover:border-[var(--border-overlay)]'}`} title={t.timerRunning ? "Pausar" : "Iniciar Timer"}>{t.timerRunning ? <Pause size={12}/> : <Play size={12}/>}</button>}
                                       </>
                                     )}
                                     {isEditable && t.status !== "cancelled" && isDoneOrCancelled && (
@@ -2696,7 +2811,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                     <div key={t.id} className="flex items-center justify-between gap-3 bg-[var(--bg-primary)] border border-[var(--border-primary)] p-4 rounded-xl">
                       <div className="min-w-0">
                         <div className="text-sm font-bold text-[var(--text-primary)] truncate">{t.title}</div>
-                        <div className="text-[11px] text-[var(--text-muted)] mt-0.5">Previsto para {timeStr}{t.timerRunning ? ' · timer rodando' : ''}</div>
+                        <div className="text-[11px] text-[var(--text-muted)] mt-0.5">Previsto para {timeStr}{(hasItemTimers(t) ? (t.checklist || []).some((c: any) => c.timerRunning) : t.timerRunning) ? ' · timer rodando' : ''}</div>
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
                         <button onClick={() => { handleRequestMove(t.id, null, 'done'); setDismissedFinishAlerts((prev: any) => new Set([...prev, `${t.id}|${t.scheduledStart}`])); }} className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-colors" title="Finalizar agora"><CheckCircle2 size={16} /></button>
@@ -2723,7 +2838,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
 
       {/* Modais de Popups Principais */}
       {closureModal && <ClosureModal tasks={tasksForClosure} clients={clients} responsibles={responsibles} getElapsed={getElapsed} onClose={() => setClosureModal(false)} onFormalize={(clientId: string | null) => { if (clientId) { setTasks((prev: any) => prev.map((t: any) => (t.status === 'done' && t.clientId === clientId) ? { ...t, status: 'formalize' } : t)); } else { setTasks((prev: any) => prev.map((t: any) => t.status === 'done' ? { ...t, status: 'formalize' } : t)); setClosureModal(false); } }} />}
-      {modal && <TaskModal modal={modal} setModal={setModal} clients={visibleClients} responsibles={responsibles} closeModal={closeModal} saveModal={saveModal} validationError={validationError} setValidationError={setValidationError} user={user} />}
+      {modal && <TaskModal modal={modal} setModal={setModal} clients={visibleClients} responsibles={responsibles} closeModal={closeModal} saveModal={saveModal} validationError={validationError} setValidationError={setValidationError} user={user} allTasks={tasks} allClients={clients} onOpenRelated={openEditModal} />}
     </div>
   );
 }
@@ -2991,12 +3106,39 @@ function CustomSelect({ label, value, onChange, options, hasError, required }: a
 // Exibe o tempo decorrido e se atualiza sozinho a cada segundo (só ele, não o quadro todo)
 function LiveElapsed({ task, getElapsed }: any) {
   const [, force] = useState(0);
+  const isRunning = task.timerRunning || (Array.isArray(task.checklist) && task.checklist.some((c: any) => c.timerRunning));
   useEffect(() => {
-    if (!task.timerRunning) return;
+    if (!isRunning) return;
     const id = setInterval(() => force((x: number) => x + 1), 1000);
     return () => clearInterval(id);
-  }, [task.timerRunning]);
+  }, [isRunning]);
   return <>{formatTime(getElapsed(task))}</>;
+}
+
+// Botão de play/pause de um item do checklist (modelo novo de cronômetro por item).
+function ChecklistItemTimerButton({ item, onToggle }: { item: any, onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => { e.stopPropagation(); onToggle(); }}
+      className={`p-1 rounded-md transition-colors border shrink-0 ${item.timerRunning ? 'text-amber-400 bg-amber-400/10 border-amber-400/20' : 'text-[var(--text-muted)] bg-[var(--bg-overlay)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-overlay-strong)] border-transparent hover:border-[var(--border-overlay)]'}`}
+      title={item.timerRunning ? "Pausar" : "Iniciar Timer do Item"}
+    >
+      {item.timerRunning ? <Pause size={10} /> : <Play size={10} />}
+    </button>
+  );
+}
+
+// Tempo acumulado de um item do checklist, atualizando ao vivo enquanto está rodando.
+function ChecklistItemElapsed({ item }: { item: any }) {
+  const [, force] = useState(0);
+  useEffect(() => {
+    if (!item.timerRunning) return;
+    const id = setInterval(() => force((x: number) => x + 1), 1000);
+    return () => clearInterval(id);
+  }, [item.timerRunning]);
+  const elapsed = item.timerRunning && item.timerStart ? (item.timerElapsed || 0) + (Date.now() - item.timerStart) / 1000 : (item.timerElapsed || 0);
+  return <span className="font-mono text-[10px] tabular-nums shrink-0" style={{ color: 'var(--text-muted)' }}>{formatTime(elapsed)}</span>;
 }
 
 const NOTE_COLORS = [
@@ -4236,9 +4378,11 @@ function FocusRow({ t, clientName, onOpen, onToggleTimer, onComplete, onOpenAgen
               <CalendarDays size={14} />
             </button>
           )}
-          <button onClick={(e) => { e.stopPropagation(); onToggleTimer(t.id); }} className={`p-2 rounded-lg border transition-colors ${t.timerRunning ? 'text-amber-400 bg-amber-400/10 border-amber-400/20' : 'text-[var(--text-secondary)] bg-[var(--bg-overlay)] border-transparent hover:bg-[var(--bg-overlay-strong)]'}`} title={t.timerRunning ? 'Pausar' : 'Iniciar timer'}>
-            {t.timerRunning ? <Pause size={14} /> : <Play size={14} />}
-          </button>
+          {!hasItemTimers(t) && (
+            <button onClick={(e) => { e.stopPropagation(); onToggleTimer(t.id); }} className={`p-2 rounded-lg border transition-colors ${t.timerRunning ? 'text-amber-400 bg-amber-400/10 border-amber-400/20' : 'text-[var(--text-secondary)] bg-[var(--bg-overlay)] border-transparent hover:bg-[var(--bg-overlay-strong)]'}`} title={t.timerRunning ? 'Pausar' : 'Iniciar timer'}>
+              {t.timerRunning ? <Pause size={14} /> : <Play size={14} />}
+            </button>
+          )}
           <button onClick={(e) => { e.stopPropagation(); onComplete(t); }} className="p-2 rounded-lg border border-transparent bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-colors" title="Concluir">
             <CheckCircle2 size={14} />
           </button>
@@ -4509,7 +4653,7 @@ function TodayView({ tasks, clients, user, getElapsed, onOpen, onToggleTimer, on
         </FocusSection>
 
         <FocusSection label="Em andamento" count={inProgress.length} dot="bg-blue-500">
-          {inProgress.map((t: any) => <FocusRow key={t.id} t={t} clientName={clientName(t.clientId)} onOpen={onOpen} onToggleTimer={onToggleTimer} onComplete={onComplete} accent="bg-blue-500" meta={t.timerRunning ? `Rodando · ${formatTime(getElapsed(t))}` : (getElapsed(t) > 0 ? `Tempo: ${formatTime(getElapsed(t))}` : '')} metaColor="text-blue-400" />)}
+          {inProgress.map((t: any) => <FocusRow key={t.id} t={t} clientName={clientName(t.clientId)} onOpen={onOpen} onToggleTimer={onToggleTimer} onComplete={onComplete} accent="bg-blue-500" meta={(t.timerRunning || (Array.isArray(t.checklist) && t.checklist.some((c: any) => c.timerRunning))) ? `Rodando · ${formatTime(getElapsed(t))}` : (getElapsed(t) > 0 ? `Tempo: ${formatTime(getElapsed(t))}` : '')} metaColor="text-blue-400" />)}
         </FocusSection>
 
         <FocusSection label="Aguardando retorno" count={waiting.length} dot="bg-pink-500">
@@ -5284,7 +5428,7 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
       if (!acc[cId]) acc[cId] = { done: [], inProgress: [] };
       if (task.status === 'done') {
         acc[cId].done.push(task);
-      } else if (['inprogress', 'paused', 'waiting', 'review'].includes(task.status)) {
+      } else {
         acc[cId].inProgress.push(task);
       }
       return acc;
@@ -5596,9 +5740,36 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
   );
 }
 
-function TaskModal({ modal, setModal, clients, responsibles, closeModal, saveModal, validationError, setValidationError }: any) {
+function TaskModal({ modal, setModal, clients, responsibles, closeModal, saveModal, validationError, setValidationError, allTasks, allClients, onOpenRelated }: any) {
   const updateForm = (patch: any) => { setModal((m: any) => ({ ...m, form: { ...m.form, ...patch } })); if (validationError) setValidationError(null); };
-  const addChecklistRow = () => { setModal((m: any) => ({ ...m, form: { ...m.form, checklist: [...(m.form.checklist || []), { id: nextId(), text: "", done: false }] } })); };
+
+  // Cronômetro por item do checklist só existe pra demandas criadas com esse sistema: toda
+  // demanda nova (modo "add"), ou uma já existente que já tenha itens com esses campos. Uma
+  // demanda antiga que nunca teve isso continua no modelo de cronômetro único, mesmo editando.
+  const isNewModelTask = modal.mode === 'add' || hasItemTimers(modal.task || {});
+
+  const addChecklistRow = () => { setModal((m: any) => ({ ...m, form: { ...m.form, checklist: [...(m.form.checklist || []), isNewModelTask ? { id: nextId(), text: "", done: false, timerRunning: false, timerStart: null, timerElapsed: 0 } : { id: nextId(), text: "", done: false }] } })); };
+
+  // Igual ao toggleChecklistItemTimer de KanbanMain, mas operando sobre o rascunho do modal
+  // (m.form) — só vira real quando "Salvar Demanda" é clicado, mesmo padrão do resto do form.
+  const toggleItemTimerDraft = (itemId: string) => {
+    setModal((m: any) => {
+      const checklist = Array.isArray(m.form.checklist) ? m.form.checklist : [];
+      const target = checklist.find((c: any) => c.id === itemId);
+      if (!target) return m;
+      const wasRunning = !!target.timerRunning;
+      const freezeElapsed = (c: any) => (c.timerElapsed || 0) + (c.timerStart ? (Date.now() - c.timerStart) / 1000 : 0);
+      const nextChecklist = checklist.map((c: any) => {
+        if (c.id === itemId) {
+          if (wasRunning) return { ...c, timerRunning: false, timerStart: null, timerElapsed: freezeElapsed(c) };
+          return { ...c, timerRunning: true, timerStart: Date.now() };
+        }
+        if (c.timerRunning) return { ...c, timerRunning: false, timerStart: null, timerElapsed: freezeElapsed(c) };
+        return c;
+      });
+      return { ...m, form: { ...m.form, checklist: nextChecklist, status: (!wasRunning && m.form.status !== 'inprogress') ? 'inprogress' : m.form.status } };
+    });
+  };
 
   // Reordenação por arraste do checklist: pointer capture no "grip" mantém os eventos de
   // move/up chegando nele mesmo se o dedo/cursor sair da linha (mesmo padrão usado no drag
@@ -5636,6 +5807,28 @@ function TaskModal({ modal, setModal, clients, responsibles, closeModal, saveMod
     checklistDragRef.current = null;
     setDraggingChecklistId(null);
   };
+
+  // Demandas Relacionadas: busca entre todas as demandas do sistema (não só as visíveis do
+  // usuário) pra permitir vincular a demandas de outros responsáveis também.
+  const [relatedQuery, setRelatedQuery] = useState('');
+  const relatedTaskIds: string[] = Array.isArray(modal.form.relatedTaskIds) ? modal.form.relatedTaskIds : [];
+  const clientNameFor = (id: string) => (allClients || []).find((c: any) => c.id === id)?.name || '';
+  const linkedTasks = relatedTaskIds
+    .map((id) => (allTasks || []).find((t: any) => t.id === id))
+    .filter(Boolean);
+
+  const relatedQueryTrim = relatedQuery.trim().toLowerCase();
+  const relatedResults = relatedQueryTrim.length === 0 ? [] : (allTasks || []).filter((t: any) => {
+    if (t.agendaOnly) return false;
+    if (modal.task && t.id === modal.task.id) return false;
+    if (relatedTaskIds.includes(t.id)) return false;
+    const hay = `${t.title || ''} ${clientNameFor(t.clientId)}`.toLowerCase();
+    return hay.includes(relatedQueryTrim);
+  }).slice(0, 8);
+
+  const addRelatedTask = (id: string) => { updateForm({ relatedTaskIds: [...relatedTaskIds, id] }); setRelatedQuery(''); };
+  const removeRelatedTask = (id: string) => { updateForm({ relatedTaskIds: relatedTaskIds.filter((rid) => rid !== id) }); };
+
   return (
     <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center px-3 pt-3 pb-24 sm:p-4 z-[85] fade-in" onClick={closeModal}>
       <div className="w-full max-w-xl rounded-[32px] bg-[var(--bg-secondary)] border border-[var(--border-primary)] flex flex-col max-h-[80dvh] sm:max-h-[85dvh] shadow-2xl overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
@@ -5667,11 +5860,55 @@ function TaskModal({ modal, setModal, clients, responsibles, closeModal, saveMod
                   <button onPointerDown={(e) => beginChecklistDrag(e, c.id)} style={{ touchAction: 'none' }} className="p-1.5 text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-grab active:cursor-grabbing shrink-0" title="Arrastar para reordenar"><GripVertical size={16}/></button>
                   <button onClick={() => { setModal((m: any) => ({ ...m, form: { ...m.form, checklist: m.form.checklist.map((ci: any) => ci.id === c.id ? { ...ci, done: !ci.done } : ci) } })); }} className={`p-2.5 border rounded-xl transition-all shrink-0 ${c.done ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-400 shadow-[0_0_10px_rgba(99,102,241,0.2)]' : 'bg-[var(--bg-secondary)] border-[var(--border-primary)] text-[var(--text-muted)] hover:text-[var(--text-muted)] hover:bg-[var(--bg-overlay)]'}`}><Check size={16}/></button>
                   <input value={c.text || ''} onChange={(e) => { setModal((m: any) => ({ ...m, form: { ...m.form, checklist: m.form.checklist.map((ci: any) => ci.id === c.id ? { ...ci, text: e.target.value } : ci) } })); }} className="flex-1 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 transition-all shadow-sm" placeholder="O que precisa ser feito?" />
+                  {isNewModelTask && (
+                    <>
+                      <ChecklistItemElapsed item={c} />
+                      <ChecklistItemTimerButton item={c} onToggle={() => toggleItemTimerDraft(c.id)} />
+                    </>
+                  )}
                   <button onClick={() => setModal((m: any) => ({ ...m, form: { ...m.form, checklist: m.form.checklist.filter((ci: any) => ci.id !== c.id) } }))} className="p-2.5 text-[var(--text-muted)] hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-colors"><X size={18} /></button>
                 </div>
               ))}
             </div>
           </div>
+
+          <div className="mt-2">
+            <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-3 block ml-1">Demandas Relacionadas</label>
+            {linkedTasks.length > 0 && (
+              <div className="flex flex-wrap gap-2 mb-3">
+                {linkedTasks.map((rt: any) => (
+                  <span key={rt.id} className="flex items-center gap-1.5 max-w-full text-[11px] font-bold pl-3 pr-1.5 py-1.5 rounded-full bg-[var(--bg-overlay)] border border-[var(--border-overlay)] text-[var(--text-secondary)]">
+                    <button type="button" onClick={() => onOpenRelated && onOpenRelated(rt)} className="truncate max-w-[220px] hover:text-indigo-400 transition-colors text-left" title={rt.title}>
+                      {rt.title}{clientNameFor(rt.clientId) && <span className="opacity-60"> · {clientNameFor(rt.clientId)}</span>}
+                    </button>
+                    <button type="button" onClick={() => removeRelatedTask(rt.id)} className="p-1 rounded-full text-[var(--text-muted)] hover:text-red-400 hover:bg-red-500/10 transition-colors shrink-0" title="Desvincular"><X size={11} /></button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <div className="relative">
+              <div className="flex items-center gap-2 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-3.5 focus-within:border-indigo-500 transition-colors">
+                <Search size={15} className="text-[var(--text-muted)] shrink-0" />
+                <input value={relatedQuery} onChange={(e) => setRelatedQuery(e.target.value)} placeholder="Buscar demanda para vincular..." className="flex-1 bg-transparent text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]" />
+              </div>
+              {relatedQueryTrim.length > 0 && (
+                <div className="absolute z-10 mt-2 w-full max-h-56 overflow-y-auto kp-scroll bg-[var(--bg-tertiary)] border border-[var(--border-primary)] rounded-xl shadow-xl">
+                  {relatedResults.length === 0 ? (
+                    <div className="text-center text-xs text-[var(--text-muted)] py-6">Nenhuma demanda encontrada.</div>
+                  ) : relatedResults.map((rt: any) => (
+                    <button key={rt.id} type="button" onClick={() => addRelatedTask(rt.id)} className="w-full text-left flex items-center gap-2 px-4 py-3 hover:bg-[var(--bg-overlay)] transition-colors">
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[12px] font-bold text-[var(--text-primary)] truncate">{rt.title}</div>
+                        <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-widest font-bold truncate">{clientNameFor(rt.clientId) || 'Sem cliente'}</div>
+                      </div>
+                      <Plus size={14} className="text-indigo-400 shrink-0" />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
           {modal.mode === 'edit' && Array.isArray(modal.task?.history) && modal.task.history.length > 0 && (
             <div className="mt-2">
               <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-3 block ml-1">Histórico</label>

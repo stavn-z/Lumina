@@ -1586,10 +1586,14 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
             timerStart = Date.now();
           }
 
+          const frozenChecklist = freezeChecklistTimers(f.checklist || []);
+          const itemTimersElapsed = hasItemTimers(t) ? checklistElapsed(frozenChecklist) : 0;
+
           // Sincronização bidirecional entre "Est. Minutos" e o timer: quem foi editado por último manda.
-          // Se o campo foi alterado manualmente, esse valor vence e é aplicado ao timer. Se o campo
-          // ficou intocado E o timer já tem tempo real rodado, reflete esse tempo de volta no campo.
-          // Sem o "timerElapsed > 0" aqui, salvar o formulário sem tocar em "Est. Minutos" enquanto o
+          // Se o campo foi alterado manualmente, esse valor vence e é aplicado ao timer (cronômetro
+          // único). Se o campo ficou intocado, reflete de volta o tempo já rodado — soma dos itens do
+          // checklist nas demandas do modelo novo, ou o cronômetro único nas demandas antigas.
+          // Sem o "> 0" nesses ramos, salvar o formulário sem tocar em "Est. Minutos" enquanto o
           // timer nunca rodou zerava a estimativa por engano (bug: elapsed=0 vencia um valor válido).
           const typedDurationMin = parseInt(f.durationMin) || 0;
           const previousDurationMin = t.durationMin || 0;
@@ -1597,6 +1601,8 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
 
           if (typedDurationMin !== previousDurationMin) {
             timerElapsed = typedDurationMin * 60;
+          } else if (itemTimersElapsed > 0) {
+            finalDurationMin = Math.round(itemTimersElapsed / 60);
           } else if (timerElapsed > 0) {
             finalDurationMin = Math.round(timerElapsed / 60);
           }
@@ -1618,7 +1624,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
             dueDate: f.dueDate || '',
             status: finalStatus,
             waitingFor: upper(f.waitingFor || ''),
-            checklist: freezeChecklistTimers(f.checklist || []),
+            checklist: frozenChecklist,
             recurrence: f.recurrence || 'none',
             agendaOnly: !!f.agendaOnly,
             scheduledStart: f.scheduledStart || '',

@@ -5562,7 +5562,7 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
     if (clientTasks.done.length > 0) {
       text += "CONCLUÍDAS\n\n";
       clientTasks.done.forEach((t: any) => {
-        const timeMin = t.timerElapsed > 0 ? Math.round(t.timerElapsed / 60) : (t.durationMin || 0);
+        const timeMin = getElapsed(t) > 0 ? Math.round(getElapsed(t) / 60) : (t.durationMin || 0);
         const dateStr = t.dueDate ? t.dueDate.split('-').reverse().join('/') : 'Sem data';
         text += `- ${t.title}\n  Descrição: ${t.description || 'Sem descrição'}\n  Tempo: ${timeMin} min\n  Data: ${dateStr}\n\n`;
       });
@@ -5570,7 +5570,7 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
     if (clientTasks.inProgress.length > 0) {
       text += "EM ANDAMENTO\n\n";
       clientTasks.inProgress.forEach((t: any) => {
-        const timeMin = t.timerElapsed > 0 ? Math.round(t.timerElapsed / 60) : (t.durationMin || 0);
+        const timeMin = getElapsed(t) > 0 ? Math.round(getElapsed(t) / 60) : (t.durationMin || 0);
         const dateStr = t.dueDate ? t.dueDate.split('-').reverse().join('/') : 'Sem data';
         text += `- ${t.title}\n  Descrição: ${t.description || 'Sem descrição'}\n  Tempo: ${timeMin} min\n  Data: ${dateStr}\n\n`;
       });

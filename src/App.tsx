@@ -8,7 +8,7 @@ import {
   HelpCircle, ChevronDown, LayoutDashboard, Mail, Check, Copy, ClipboardList, Cloud, Lock,
   Eye, EyeOff, Settings, MonitorPlay, CloudRain, Sun, Moon, CloudLightning, Snowflake, CloudFog, UserCog, Calendar, ChevronUp,
   CalendarDays, ExternalLink, ChevronLeft, ChevronRight,
-  StickyNote, Pin, Palette, Upload, Camera, Link2
+  StickyNote, Pin, Palette, Upload, Camera, Link2, Archive, ArchiveRestore
 } from "lucide-react";
 import { ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Cell } from "recharts";
 
@@ -1110,6 +1110,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
             dailyLogEnabled: !!c.dailyLogEnabled,
             dailyLogMinutes: c.dailyLogMinutes || 60,
             extraHolidays: Array.isArray(c.extraHolidays) ? c.extraHolidays : [],
+            archived: !!c.archived,
           }));
           setClients(normalizedClients);
           normalizedClients.forEach((c: any) => { lastSyncedClientsRef.current[c.id] = stableStringify(c); });
@@ -1395,6 +1396,17 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
     return clients.filter(c => c.ownerId === user.id || tasks.some(t => t.clientId === c.id && t.responsibleId === user.id));
   }, [clients, tasks, user]);
 
+  // Clientes arquivados saem das listas de uso diário (seletores, filtros, captura rápida, alerta
+  // de banco de horas), mas continuam em visibleClients/clients — Analytics, Fechamento e o nome
+  // nos cards antigos seguem resolvendo o clientId normalmente.
+  const activeClients = useMemo(() => visibleClients.filter((c: any) => !c.archived), [visibleClients]);
+
+  // Filtro de cliente salvo no localStorage apontando pra um cliente arquivado esconderia o
+  // quadro inteiro sem o cliente aparecer no seletor — volta pra "Todos".
+  useEffect(() => {
+    if (filterClient !== 'all' && clients.length > 0 && !activeClients.some((c: any) => c.id === filterClient)) setFilterClient('all');
+  }, [activeClients, filterClient, clients.length]);
+
   // Exclui a nota de vez (estado local + Supabase)
   const deleteNoteById = async (id: string) => {
     delete lastSyncedNotesRef.current[id];
@@ -1408,13 +1420,13 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
 
   const clientsNearLimit = useMemo(() => {
     const nowMonth = currentMonthBrasilia();
-    return visibleClients.filter(c => {
+    return activeClients.filter(c => {
       if (!c.contractedHours) return false;
       const cTasks = tasks.filter(t => t.clientId === c.id);
       const hours = hoursInMonth(cTasks, nowMonth, getElapsed) + autoLogHoursForMonth(c, nowMonth);
       return (c.contractedHours - hours) <= 5;
     });
-  }, [visibleClients, tasks]);
+  }, [activeClients, tasks]);
 
   const pendingLimitAlerts = clientsNearLimit.filter(c => !dismissedLimits.has(c.id));
 
@@ -2359,7 +2371,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
 
                     {/* Seletores (Cliente / Responsável / Prioridade) */}
                     <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-5">
-                       <FilterSelect value={filterClient} onChange={setFilterClient} options={visibleClients} defaultLabel="Todos Clientes" />
+                       <FilterSelect value={filterClient} onChange={setFilterClient} options={activeClients} defaultLabel="Todos Clientes" />
                        {user.isAdmin && <>
                          <div className="hidden sm:block w-px h-4" style={{ background: 'var(--border-overlay)' }}></div>
                          <FilterSelect value={filterResp} onChange={setFilterResp} options={responsibles} defaultLabel="Todos Responsáveis" />
@@ -2895,12 +2907,12 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
       <button onClick={() => setQuickAdd(true)} className="fixed bottom-[88px] right-4 md:bottom-6 md:right-6 z-40 w-14 h-14 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white flex items-center justify-center shadow-[0_8px_30px_rgba(79,70,229,0.4)] transition-all active:scale-95" title="Captura rápida">
         <Plus size={24} />
       </button>
-      {quickAdd && <QuickAddModal clients={visibleClients} onClose={() => setQuickAdd(false)} onCreate={(data: any) => setTasks((prev: any) => [...prev, { id: nextId(), title: upper(data.title), description: '', priority: data.priority, durationMin: 0, clientId: data.clientId, responsibleId: user.id, startDate: '', dueDate: '', status: 'backlog', waitingFor: '', checklist: [], timerRunning: false, timerStart: null, timerElapsed: 0, createdAt: getBrasiliaDate(), completedAt: '', history: [histEntry('created')] }])} />}
+      {quickAdd && <QuickAddModal clients={activeClients} onClose={() => setQuickAdd(false)} onCreate={(data: any) => setTasks((prev: any) => [...prev, { id: nextId(), title: upper(data.title), description: '', priority: data.priority, durationMin: 0, clientId: data.clientId, responsibleId: user.id, startDate: '', dueDate: '', status: 'backlog', waitingFor: '', checklist: [], timerRunning: false, timerStart: null, timerElapsed: 0, createdAt: getBrasiliaDate(), completedAt: '', history: [histEntry('created')] }])} />}
       {searchOpen && <SearchModal tasks={visibleTasks} clients={clients} onOpen={openEditModal} onClose={() => setSearchOpen(false)} />}
 
       {/* Modais de Popups Principais */}
       {closureModal && <ClosureModal tasks={tasksForClosure} clients={clients} responsibles={responsibles} getElapsed={getElapsed} onClose={() => setClosureModal(false)} onFormalize={(clientId: string | null) => { if (clientId) { setTasks((prev: any) => prev.map((t: any) => (t.status === 'done' && t.clientId === clientId) ? { ...t, status: 'formalize' } : t)); } else { setTasks((prev: any) => prev.map((t: any) => t.status === 'done' ? { ...t, status: 'formalize' } : t)); setClosureModal(false); } }} />}
-      {modal && <TaskModal modal={modal} setModal={setModal} clients={visibleClients} responsibles={responsibles} closeModal={closeModal} saveModal={saveModal} validationError={validationError} setValidationError={setValidationError} user={user} allTasks={tasks} allClients={clients} onOpenRelated={openEditModal} getElapsed={getElapsed} onToggleItemTimer={toggleChecklistItemTimer} onSetItemElapsed={setChecklistItemElapsed} />}
+      {modal && <TaskModal modal={modal} setModal={setModal} clients={activeClients} responsibles={responsibles} closeModal={closeModal} saveModal={saveModal} validationError={validationError} setValidationError={setValidationError} user={user} allTasks={tasks} allClients={clients} onOpenRelated={openEditModal} getElapsed={getElapsed} onToggleItemTimer={toggleChecklistItemTimer} onSetItemElapsed={setChecklistItemElapsed} />}
     </div>
   );
 }
@@ -3686,7 +3698,7 @@ function ClientModal({ modal, setModal, setClients, user }: any) {
   );
 }
 
-function ClientDetailModal({ client, tasks, getElapsed, user, theme, onClose, onEdit, onRemove }: any) {
+function ClientDetailModal({ client, tasks, getElapsed, user, theme, onClose, onEdit, onArchive }: any) {
   const cTasks = tasks.filter((t: any) => t.clientId === client.id);
   const nowMonth = currentMonthBrasilia();
 
@@ -3870,8 +3882,8 @@ function ClientDetailModal({ client, tasks, getElapsed, user, theme, onClose, on
 
         {user.isAdmin && (
           <div className="px-5 sm:px-8 py-5 border-t border-[var(--border-primary)] bg-[var(--bg-tertiary)] flex items-center justify-between gap-3 shrink-0">
-            <button onClick={() => onRemove(client.id)} className="flex items-center gap-2 px-4 py-3 rounded-xl text-red-400/70 hover:text-red-400 hover:bg-red-500/10 text-[10px] font-bold uppercase tracking-widest transition-colors">
-              <Trash2 size={16} /> Remover
+            <button onClick={() => onArchive(client.id)} className="flex items-center gap-2 px-4 py-3 rounded-xl text-[var(--text-muted)] hover:text-amber-400 hover:bg-amber-500/10 text-[10px] font-bold uppercase tracking-widest transition-colors">
+              <Archive size={16} /> Arquivar cliente
             </button>
             <button onClick={() => onEdit(client)} className="flex items-center gap-2 px-6 py-3.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold uppercase tracking-widest transition-all shadow-[0_0_15px_rgba(147,51,234,0.3)]">
               <Pencil size={16} /> Editar Cliente
@@ -3892,6 +3904,10 @@ function ClientsPanelContent({ clients, setClients, tasks, setTasks, user, getEl
   // então a UI acompanha a regra para evitar salvamentos que falhariam em silêncio.
   const [detailClient, setDetailClient] = useState<any>(null);
   const [confirmRemoveClient, setConfirmRemoveClient] = useState<any>(null);
+  const [confirmRemoveText, setConfirmRemoveText] = useState('');
+  const [showArchived, setShowArchived] = useState(false);
+  const activeList = clients.filter((c: any) => !c.archived);
+  const archivedList = clients.filter((c: any) => c.archived);
 
   const openEdit = (client: any) => {
     if (!user.isAdmin) return;
@@ -3899,12 +3915,24 @@ function ClientsPanelContent({ clients, setClients, tasks, setTasks, user, getEl
     setClientModal({ mode: 'edit', form: { ...client, emails: emailsArray } });
   };
 
+  // Arquivar é o caminho padrão: não apaga o cliente nem mexe no clientId das demandas — só tira
+  // o cliente das listas de uso diário. Histórico, horas e Analytics ficam intactos. Persistido
+  // pelo sync incremental de clientes (upsert do registro alterado).
+  const setArchived = (id: string, archived: boolean) => {
+    if (!user.isAdmin) return;
+    setClients((prev: any) => prev.map((c: any) => c.id === id ? { ...c, archived } : c));
+  };
+
+  // Exclusão definitiva: só a partir da seção de Arquivados, com confirmação digitando o nome.
+  // Apaga o cliente e desvincula as demandas (clientId vazio) — elas somem do banco de horas,
+  // do Analytics por cliente e dos e-mails desse cliente, sem volta.
   const remove = async (id: string) => { 
-    if(!user.isAdmin) return alert("Apenas administradores podem remover clientes.");
+    if(!user.isAdmin) return;
     setClients((prev: any) => prev.filter((c: any) => c.id !== id)); 
     setTasks((prev: any) => prev.map((t: any) => t.clientId === id ? { ...t, clientId: '' } : t)); 
     if ((window as any).supabaseClient) {
-      await (window as any).supabaseClient.from('clients').delete().eq('id', id.toString());
+      const { error } = await (window as any).supabaseClient.from('clients').delete().eq('id', id.toString());
+      if (error) console.error("Erro ao excluir cliente:", error);
     }
   };
 
@@ -3919,12 +3947,12 @@ function ClientsPanelContent({ clients, setClients, tasks, setTasks, user, getEl
       )}
       
       <div className="grid grid-cols-1 gap-4">
-        {clients.length === 0 && (
+        {activeList.length === 0 && (
           <div className="text-center text-sm text-[var(--text-muted)] py-16 border border-dashed border-[var(--border-primary)] rounded-[24px]">
             A sua carteira de clientes está vazia.
           </div>
         )}
-        {clients.map((c: any) => {
+        {activeList.map((c: any) => {
           const count = tasks.filter((t: any) => t.clientId === c.id).length;
           const emailsArray = Array.isArray(c.emails) ? c.emails : [];
           
@@ -3952,8 +3980,8 @@ function ClientsPanelContent({ clients, setClients, tasks, setTasks, user, getEl
                   </a>
                 )}
                 {user.isAdmin && (
-                   <button onClick={(e) => { e.stopPropagation(); setConfirmRemoveClient(c); }} className="p-3.5 text-[var(--text-muted)] hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-colors sm:opacity-0 group-hover:opacity-100 z-10 relative">
-                     <Trash2 size={20} />
+                   <button onClick={(e) => { e.stopPropagation(); setArchived(c.id, true); }} title="Arquivar cliente" className="p-3.5 text-[var(--text-muted)] hover:text-amber-400 hover:bg-amber-500/10 rounded-xl transition-colors sm:opacity-0 group-hover:opacity-100 z-10 relative">
+                     <Archive size={20} />
                    </button>
                 )}
               </div>
@@ -3961,21 +3989,57 @@ function ClientsPanelContent({ clients, setClients, tasks, setTasks, user, getEl
           )
         })}
       </div>
+
+      {archivedList.length > 0 && (
+        <div className="mt-8">
+          <button onClick={() => setShowArchived((v) => !v)} className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors mb-4 ml-1">
+            <Archive size={14} /> Arquivados ({archivedList.length}) {showArchived ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </button>
+          {showArchived && (
+            <div className="grid grid-cols-1 gap-3">
+              {archivedList.map((c: any) => {
+                const count = tasks.filter((t: any) => t.clientId === c.id).length;
+                return (
+                  <div key={c.id} className="flex flex-col sm:flex-row sm:items-center justify-between bg-[var(--bg-secondary)] border border-dashed border-[var(--border-primary)] rounded-[20px] px-6 py-4 gap-4 opacity-80">
+                    <div className="flex flex-col">
+                      <span className="text-base font-bold text-[var(--text-secondary)]">{c.name}</span>
+                      <span className="text-xs text-[var(--text-muted)] mt-1 uppercase tracking-widest font-bold">Arquivado • {count} Demandas</span>
+                    </div>
+                    {user.isAdmin && (
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => { setConfirmRemoveText(''); setConfirmRemoveClient(c); }} className="px-3 py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-widest text-red-400/60 hover:text-red-400 hover:bg-red-500/10 transition-colors flex items-center gap-1.5">
+                          <Trash2 size={13} /> Excluir definitivamente
+                        </button>
+                        <button onClick={() => setArchived(c.id, false)} className="px-5 py-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-[10px] font-bold uppercase tracking-widest transition-colors flex items-center gap-2">
+                          <ArchiveRestore size={14} /> Reativar
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
       {clientModal && createPortal(<ClientModal modal={clientModal} setModal={setClientModal} setClients={setClients} user={user} />, document.body)}
-      {detailClient && createPortal(<ClientDetailModal client={detailClient} tasks={tasks} getElapsed={getElapsed} user={user} theme={theme} onClose={() => setDetailClient(null)} onEdit={(c: any) => { setDetailClient(null); setClientModal({ mode: 'edit', form: { ...c, emails: Array.isArray(c.emails) ? c.emails : [] } }); }} onRemove={(id: string) => { setDetailClient(null); setConfirmRemoveClient(clients.find((c: any) => c.id === id)); }} />, document.body)}
+      {detailClient && createPortal(<ClientDetailModal client={detailClient} tasks={tasks} getElapsed={getElapsed} user={user} theme={theme} onClose={() => setDetailClient(null)} onEdit={(c: any) => { setDetailClient(null); setClientModal({ mode: 'edit', form: { ...c, emails: Array.isArray(c.emails) ? c.emails : [] } }); }} onArchive={(id: string) => { setDetailClient(null); setArchived(id, true); }} />, document.body)}
       {confirmRemoveClient && createPortal(
         <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center px-4 pt-4 pb-24 sm:p-4 z-[110] fade-in" onClick={() => setConfirmRemoveClient(null)}>
           <div className="w-full max-w-sm rounded-[32px] bg-[var(--bg-secondary)] border border-[var(--border-primary)] p-5 sm:p-8 shadow-2xl relative animate-modal-pop" onClick={e => e.stopPropagation()}>
             <div className="flex items-center gap-3 mb-4 text-red-500">
               <div className="p-3 bg-red-500/10 rounded-2xl shadow-inner"><Trash2 size={24} /></div>
-              <h3 className="font-bold text-xl tracking-tight">Excluir Cliente</h3>
+              <h3 className="font-bold text-xl tracking-tight">Excluir definitivamente</h3>
             </div>
-            <p className="text-sm text-[var(--text-secondary)] mb-8 leading-relaxed">
-              Remover <span className="font-bold text-[var(--text-primary)]">"{confirmRemoveClient.name}"</span> definitivamente? As demandas desse cliente não são apagadas, mas ficam sem cliente vinculado — e saem do relatório de banco de horas.
+            <p className="text-sm text-[var(--text-secondary)] mb-3 leading-relaxed">
+              Excluir <span className="font-bold text-[var(--text-primary)]">"{confirmRemoveClient.name}"</span> não tem volta. As demandas não são apagadas, mas <span className="font-bold text-red-400">todo o histórico perde o vínculo com o cliente</span>: as horas, o Analytics por cliente e os e-mails de fechamento deixam de mostrá-lo, inclusive nos meses passados.
             </p>
+            <p className="text-sm text-[var(--text-secondary)] mb-4 leading-relaxed">Se a ideia é só tirar o cliente do dia a dia, deixe-o arquivado.</p>
+            <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Digite o nome do cliente para confirmar</label>
+            <input autoFocus value={confirmRemoveText} onChange={(e) => setConfirmRemoveText(e.target.value)} placeholder={confirmRemoveClient.name} className="w-full bg-[var(--bg-primary)] border border-[var(--border-primary)] rounded-xl px-4 py-3 text-sm text-[var(--text-primary)] outline-none focus:border-red-500 mb-6" />
             <div className="flex flex-col sm:flex-row items-center gap-3">
               <button onClick={() => setConfirmRemoveClient(null)} className="w-full sm:flex-1 py-3.5 sm:py-3 rounded-2xl border border-[var(--border-primary)] hover:bg-[var(--bg-overlay)] text-[var(--text-primary)] font-bold transition-all text-sm">Cancelar</button>
-              <button onClick={() => { const id = confirmRemoveClient.id; setConfirmRemoveClient(null); remove(id); }} className="w-full sm:flex-1 py-3.5 sm:py-3 rounded-2xl bg-red-600 hover:bg-red-500 text-white font-bold transition-all text-sm shadow-lg shadow-red-600/10">Excluir</button>
+              <button disabled={confirmRemoveText.trim().toUpperCase() !== String(confirmRemoveClient.name || '').trim().toUpperCase()} onClick={() => { const id = confirmRemoveClient.id; setConfirmRemoveClient(null); remove(id); }} className="w-full sm:flex-1 py-3.5 sm:py-3 rounded-2xl bg-red-600 hover:bg-red-500 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-red-600 text-white font-bold transition-all text-sm shadow-lg shadow-red-600/10">Excluir</button>
             </div>
           </div>
         </div>,
@@ -5389,7 +5453,7 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove, user, onCre
                 <div className="relative">
                   <select value={cClient} onChange={e => setCClient(e.target.value)} className="appearance-none w-full rounded-xl pl-4 pr-10 py-3.5 text-sm outline-none focus:border-teal-500 cursor-pointer transition-colors" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)', color: 'var(--text-primary)' }}>
                     <option value="" className="bg-[var(--bg-tertiary)]">Pessoal / sem cliente</option>
-                    {clients.map((c: any) => <option key={c.id} value={c.id} className="bg-[var(--bg-tertiary)]">{c.name}</option>)}
+                    {clients.filter((c: any) => !c.archived).map((c: any) => <option key={c.id} value={c.id} className="bg-[var(--bg-tertiary)]">{c.name}</option>)}
                   </select>
                   <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--text-muted)' }} />
                 </div>
@@ -5978,6 +6042,12 @@ function TaskModal({ modal, setModal, clients, responsibles, closeModal, saveMod
   const [relatedQuery, setRelatedQuery] = useState('');
   const relatedTaskIds: string[] = Array.isArray(modal.form.relatedTaskIds) ? modal.form.relatedTaskIds : [];
   const clientNameFor = (id: string) => (allClients || []).find((c: any) => c.id === id)?.name || '';
+  // Seletor de cliente só lista ativos; numa demanda antiga de cliente arquivado, mantém o
+  // cliente atual como opção (marcado "arquivado") pra não aparecer "Selecione a empresa..."
+  // nem trocar o vínculo sem querer ao salvar.
+  const currentArchivedClient = modal.form.clientId && !clients.some((c: any) => c.id === modal.form.clientId)
+    ? (allClients || []).find((c: any) => c.id === modal.form.clientId) : null;
+  const clientOptions = currentArchivedClient ? [...clients, currentArchivedClient] : clients;
   const linkedTasks = relatedTaskIds
     .map((id) => (allTasks || []).find((t: any) => t.id === id))
     .filter(Boolean);
@@ -6002,7 +6072,7 @@ function TaskModal({ modal, setModal, clients, responsibles, closeModal, saveMod
           <div><label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Título do Card *</label><input autoFocus value={modal.form.title || ''} onChange={(e) => updateForm({ title: e.target.value })} className={`w-full bg-[var(--bg-secondary)] border rounded-xl px-4 py-4 sm:py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 transition-all ${validationError && String(validationError).includes("Título") ? "border-red-500" : "border-[var(--border-primary)]"}`} placeholder="Ex: Ajustar Fluxo de E-mails..." /></div>
           <div><label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Contexto / Descrição *</label><textarea value={modal.form.description || ''} onChange={(e) => updateForm({ description: e.target.value })} rows={4} className={`w-full bg-[var(--bg-secondary)] border rounded-xl px-4 py-4 sm:py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 resize-none transition-all ${validationError && String(validationError).includes("Descrição") ? "border-red-500" : "border-[var(--border-primary)]"}`} placeholder="Descreva os requisitos técnicos ou regras de negócio..." /></div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5"><CustomSelect label="Prioridade *" required hasError={validationError && String(validationError).includes("Prioridade")} value={modal.form.priority || ''} onChange={(e: any) => updateForm({ priority: e.target.value })} options={<><option value="" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Selecione...</option><option value="Baixa" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Baixa</option><option value="Média" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Média</option><option value="Alta" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Alta</option></>} /><div><label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Est. Minutos</label><input type="number" value={(!modal.form.durationTouched && liveTask ? liveTask.durationMin : modal.form.durationMin) ?? ''} onChange={(e) => updateForm({ durationMin: e.target.value, durationTouched: true })} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-4 sm:py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 shadow-sm" placeholder="Ex: 60" /></div></div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5"><CustomSelect label="Responsável *" required hasError={validationError && String(validationError).includes("Responsável")} value={modal.form.responsibleId || ''} onChange={(e: any) => updateForm({ responsibleId: e.target.value })} options={<><option value="" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Selecione a pessoa...</option>{responsibles.map((r: any) => <option key={r.id} value={r.id} className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">{r.name}</option>)}</>} /><CustomSelect label="Cliente *" required hasError={validationError && String(validationError).includes("Cliente")} value={modal.form.clientId || ''} onChange={(e: any) => updateForm({ clientId: e.target.value })} options={<><option value="" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Selecione a empresa...</option>{clients.map((c: any) => <option key={c.id} value={c.id} className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">{c.name}</option>)}</>} /></div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5"><CustomSelect label="Responsável *" required hasError={validationError && String(validationError).includes("Responsável")} value={modal.form.responsibleId || ''} onChange={(e: any) => updateForm({ responsibleId: e.target.value })} options={<><option value="" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Selecione a pessoa...</option>{responsibles.map((r: any) => <option key={r.id} value={r.id} className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">{r.name}</option>)}</>} /><CustomSelect label="Cliente *" required hasError={validationError && String(validationError).includes("Cliente")} value={modal.form.clientId || ''} onChange={(e: any) => updateForm({ clientId: e.target.value })} options={<><option value="" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Selecione a empresa...</option>{clientOptions.map((c: any) => <option key={c.id} value={c.id} className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">{c.name}{c.archived ? ' (arquivado)' : ''}</option>)}</>} /></div>
           
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
             <div><label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Data de Início</label><input type="date" value={modal.form.startDate || ''} onChange={(e) => updateForm({ startDate: e.target.value })} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-4 sm:py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 [color-scheme:dark] shadow-sm" /></div>

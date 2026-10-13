@@ -8,7 +8,7 @@ import {
   HelpCircle, ChevronDown, LayoutDashboard, Mail, Check, Copy, ClipboardList, Cloud, Lock,
   Eye, EyeOff, Settings, MonitorPlay, CloudRain, Sun, Moon, CloudLightning, Snowflake, CloudFog, UserCog, Calendar, ChevronUp,
   CalendarDays, ExternalLink, ChevronLeft, ChevronRight,
-  StickyNote, Pin, Palette, Upload, Camera, Link2, Archive, ArchiveRestore
+  StickyNote, Pin, Palette, Upload, Camera, Link2, Archive, ArchiveRestore, Tag
 } from "lucide-react";
 import { ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Cell } from "recharts";
 
@@ -292,6 +292,18 @@ function stableStringify(obj: any): string {
 // 8 horas (aba fechada com timer ligado), ele é pausado automaticamente com teto de 8h,
 // evitando que o banco de horas do cliente exploda por esquecimento.
 const MAX_TIMER_SESSION_MS = 8 * 3600 * 1000;
+// Tags das demandas: sempre em caixa baixa, sem "#" na frente, espaços colapsados e sem
+// duplicatas — "Urgente", "#urgente" e " urgente " viram a mesma tag "urgente".
+function normalizeTag(raw: string) {
+  return String(raw || '').trim().replace(/^#+/, '').replace(/\s+/g, ' ').toLowerCase();
+}
+function normalizeTags(list: any): string[] {
+  if (!Array.isArray(list)) return [];
+  const out: string[] = [];
+  list.forEach((x: any) => { const t = normalizeTag(x); if (t && !out.includes(t)) out.push(t); });
+  return out;
+}
+
 function normalizeTask(t: any) {
   const norm: any = {
     ...t,
@@ -304,6 +316,7 @@ function normalizeTask(t: any) {
     startDate: t.startDate || '',
     dueDate: t.dueDate || '',
     waitingFor: t.waitingFor || '',
+    tags: normalizeTags(t.tags),
     scheduledStart: t.scheduledStart || '',
     checklist: Array.isArray(t.checklist) ? t.checklist : [],
     history: Array.isArray(t.history) ? t.history : [],
@@ -1349,13 +1362,16 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
   const [filterCreatedEnd, setFilterCreatedEnd] = useState(savedFilters.filterCreatedEnd || "");
   const [filterCompletedStart, setFilterCompletedStart] = useState(savedFilters.filterCompletedStart || "");
   const [filterCompletedEnd, setFilterCompletedEnd] = useState(savedFilters.filterCompletedEnd || "");
+  // Tags selecionadas no filtro do quadro: a demanda precisa ter TODAS (cada tag clicada estreita).
+  const [filterTags, setFilterTags] = useState<string[]>(normalizeTags(savedFilters.filterTags));
+  const toggleFilterTag = (tag: string) => setFilterTags((prev) => prev.includes(tag) ? prev.filter((x) => x !== tag) : [...prev, tag]);
 
   // Salva os filtros sempre que mudam (ficam fixos mesmo recarregando)
   useEffect(() => {
     try {
-      localStorage.setItem('lumina_filters', JSON.stringify({ filterClient, filterResp, filterPriority, filterCreatedStart, filterCreatedEnd, filterCompletedStart, filterCompletedEnd }));
+      localStorage.setItem('lumina_filters', JSON.stringify({ filterClient, filterResp, filterPriority, filterCreatedStart, filterCreatedEnd, filterCompletedStart, filterCompletedEnd, filterTags }));
     } catch {}
-  }, [filterClient, filterResp, filterPriority, filterCreatedStart, filterCreatedEnd, filterCompletedStart, filterCompletedEnd]);
+  }, [filterClient, filterResp, filterPriority, filterCreatedStart, filterCreatedEnd, filterCompletedStart, filterCompletedEnd, filterTags]);
 
   // Consultor não filtra por responsável (só vê as próprias demandas)
   useEffect(() => {
@@ -1363,10 +1379,12 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
   }, [user.isAdmin]);
 
   const hasDateFilters = filterCreatedStart || filterCreatedEnd || filterCompletedStart || filterCompletedEnd;
-  const hasAnyFilter = filterClient !== 'all' || filterResp !== 'all' || filterPriority !== 'all' || !!hasDateFilters;
+  const hasAnyFilter = filterClient !== 'all' || filterResp !== 'all' || filterPriority !== 'all' || !!hasDateFilters || filterTags.length > 0;
+  const activeFilterCount = [filterClient !== 'all', filterResp !== 'all', filterPriority !== 'all', !!(filterCreatedStart || filterCreatedEnd), !!(filterCompletedStart || filterCompletedEnd)].filter(Boolean).length + filterTags.length;
   const resetFilters = () => {
     setFilterClient('all'); setFilterResp('all'); setFilterPriority('all');
     setFilterCreatedStart(''); setFilterCreatedEnd(''); setFilterCompletedStart(''); setFilterCompletedEnd('');
+    setFilterTags([]);
   };
 
 
@@ -1531,8 +1549,16 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
       (filterResp === "all" || t.responsibleId === filterResp) &&
       (filterPriority === "all" || t.priority === filterPriority) &&
       filterByPeriod(t.createdAt, filterCreatedStart, filterCreatedEnd) &&
-      filterByPeriod(t.completedAt, filterCompletedStart, filterCompletedEnd)
+      filterByPeriod(t.completedAt, filterCompletedStart, filterCompletedEnd) &&
+      (filterTags.length === 0 || filterTags.every((tag) => Array.isArray(t.tags) && t.tags.includes(tag)))
   );
+
+  // Todas as tags já usadas (autocomplete do TaskModal e opções do filtro), mais usadas primeiro.
+  const allTags = useMemo(() => {
+    const count: Record<string, number> = {};
+    tasks.forEach((t: any) => (Array.isArray(t.tags) ? t.tags : []).forEach((tag: string) => { count[tag] = (count[tag] || 0) + 1; }));
+    return Object.keys(count).sort((a, b) => count[b] - count[a] || a.localeCompare(b));
+  }, [tasks]);
 
   // Últimos 12 meses (mês corrente primeiro) para o filtro de mês da barra de Progresso.
   const progressMonthOptions = useMemo(() => {
@@ -1569,7 +1595,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
     return !isMeetingOrRecurring || t.status === 'done';
   });
 
-  const emptyForm = { title: "", description: "", priority: "Média", durationMin: "", clientId: "", responsibleId: user.id, startDate: "", dueDate: "", status: "", waitingFor: "", checklist: [], relatedTaskIds: [] };
+  const emptyForm = { title: "", description: "", priority: "Média", durationMin: "", clientId: "", responsibleId: user.id, startDate: "", dueDate: "", status: "", waitingFor: "", checklist: [], relatedTaskIds: [], tags: [] };
 
   function openAddModal(status: string) {
     setValidationError(null);
@@ -1680,6 +1706,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
         isMeeting: !!f.isMeeting,
         scheduledDurationMin: f.scheduledDurationMin || 0,
         relatedTaskIds: Array.isArray(f.relatedTaskIds) ? f.relatedTaskIds : [],
+        tags: normalizeTags(f.tags),
         history: [histEntry('created')]
       };
       setTasks((prev) => applyRelatedTaskLinks([...prev, newTask], newTask.id, newTask.relatedTaskIds));
@@ -1751,6 +1778,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
             createdAt: t.createdAt || getBrasiliaDate(),
             completedAt: (finalStatus === 'done' || finalStatus === 'formalize') ? (t.completedAt || getBrasiliaDate()) : t.completedAt,
             relatedTaskIds,
+            tags: normalizeTags(f.tags),
             history: (finalStatus !== t.status) ? [...(Array.isArray(t.history) ? t.history : []), histEntry('status', t.status, finalStatus)] : (Array.isArray(t.history) ? t.history : [])
           };
         });
@@ -2382,6 +2410,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                      className={`h-11 w-11 lg:w-auto px-0 lg:px-4 flex items-center justify-center gap-2 rounded-xl transition-all shadow-sm shrink-0 border font-bold uppercase tracking-widest text-[10px] ${showFilters ? 'bg-indigo-600 text-white border-indigo-500 shadow-[0_0_15px_rgba(79,70,229,0.3)]' : 'glass-panel text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
                    >
                      <Filter size={16} /> <span className="hidden lg:inline">Filtros</span>
+                     {activeFilterCount > 0 && <span className={`min-w-[16px] h-4 px-1 rounded-full text-[9px] leading-4 text-center ${showFilters ? 'bg-white text-indigo-600' : 'bg-indigo-500 text-white'}`}>{activeFilterCount}</span>}
                    </button>
 
                    <button
@@ -2441,6 +2470,18 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                        <FilterSelect value={filterPriority} onChange={setFilterPriority} options={[{id: 'Baixa', name: 'Baixa'}, {id: 'Média', name: 'Média'}, {id: 'Alta', name: 'Alta'}]} defaultLabel="Prioridades" />
                     </div>
 
+                    {allTags.length > 0 && (
+                      <div className="flex flex-col gap-2">
+                        <span className="text-[10px] uppercase font-bold tracking-widest flex items-center gap-1.5" style={{ color: 'var(--text-muted)' }}><Tag size={12}/> Tags {filterTags.length > 1 && <span className="normal-case tracking-normal font-medium">(demandas com todas as selecionadas)</span>}</span>
+                        <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto kp-scroll">
+                          {allTags.map((tag) => {
+                            const on = filterTags.includes(tag);
+                            return <button key={tag} onClick={() => toggleFilterTag(tag)} className={`text-[11px] px-2.5 py-1 rounded-lg border transition-colors ${on ? 'bg-indigo-500/15 text-indigo-300 border-indigo-500/40' : 'text-[var(--text-secondary)] border-[var(--border-overlay)] hover:text-indigo-300 hover:border-indigo-500/40'}`}>#{tag}</button>;
+                          })}
+                        </div>
+                      </div>
+                    )}
+
                     <div className="h-px w-full" style={{ background: 'var(--border-overlay)' }}></div>
 
                     {/* Intervalos de data */}
@@ -2480,6 +2521,17 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                        </button>
                     )}
                   </div>
+               </div>
+             )}
+
+             {/* Tags ativas no filtro — visível mesmo com o painel fechado (ex.: tag clicada num card) */}
+             {filterTags.length > 0 && !showFilters && (
+               <div className="w-full flex items-center gap-2 flex-wrap text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                 <Tag size={12} /> Filtrando por
+                 {filterTags.map((tag) => (
+                   <button key={tag} onClick={() => toggleFilterTag(tag)} title="Remover do filtro" className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-500/25 transition-colors">#{tag} <X size={11} /></button>
+                 ))}
+                 <button onClick={() => setFilterTags([])} className="underline decoration-dotted underline-offset-2 hover:text-[var(--text-primary)] transition-colors">limpar</button>
                </div>
              )}
           </div>
@@ -2621,6 +2673,13 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                               <div className="mb-3">
                                 <h3 className={`font-display text-[13px] font-bold leading-relaxed mb-1.5 ${isDoneOrCancelled ? 'line-through' : ''}`} style={{ color: isDoneOrCancelled ? 'var(--text-muted)' : 'var(--text-primary)' }}>{t.title}</h3>
                                 {t.description && <div className="text-[11px] line-clamp-2 leading-relaxed" style={{ color: 'var(--text-secondary)' }}>{t.description}</div>}
+                                {Array.isArray(t.tags) && t.tags.length > 0 && (
+                                  <div className="flex flex-wrap gap-1 mt-2">
+                                    {t.tags.map((tag: string) => (
+                                      <button key={tag} onClick={(e) => { e.stopPropagation(); if (!filterTags.includes(tag)) toggleFilterTag(tag); }} title={`Filtrar o quadro por #${tag}`} className={`text-[10px] leading-none px-1.5 py-1 rounded-md border transition-colors ${filterTags.includes(tag) ? 'text-indigo-300 border-indigo-500/40 bg-indigo-500/10' : 'text-[var(--text-muted)] border-[var(--border-overlay)] hover:text-indigo-300 hover:border-indigo-500/40'}`}>#{tag}</button>
+                                    ))}
+                                  </div>
+                                )}
                               </div>
 
                               {t.status === 'waiting' && t.waitingFor && (
@@ -2986,7 +3045,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
 
       {/* Modais de Popups Principais */}
       {closureModal && <ClosureModal tasks={tasksForClosure} clients={clients} responsibles={responsibles} getElapsed={getElapsed} onClose={() => setClosureModal(false)} onFormalize={(clientId: string | null) => { if (clientId) { setTasks((prev: any) => prev.map((t: any) => (t.status === 'done' && t.clientId === clientId) ? { ...t, status: 'formalize' } : t)); } else { setTasks((prev: any) => prev.map((t: any) => t.status === 'done' ? { ...t, status: 'formalize' } : t)); setClosureModal(false); } }} />}
-      {modal && <TaskModal modal={modal} setModal={setModal} clients={activeClients} responsibles={responsibles} closeModal={closeModal} saveModal={saveModal} validationError={validationError} setValidationError={setValidationError} user={user} allTasks={tasks} allClients={clients} onOpenRelated={openEditModal} getElapsed={getElapsed} onToggleItemTimer={toggleChecklistItemTimer} onSetItemElapsed={setChecklistItemElapsed} />}
+      {modal && <TaskModal modal={modal} setModal={setModal} clients={activeClients} responsibles={responsibles} closeModal={closeModal} saveModal={saveModal} validationError={validationError} setValidationError={setValidationError} user={user} allTasks={tasks} allClients={clients} onOpenRelated={openEditModal} getElapsed={getElapsed} onToggleItemTimer={toggleChecklistItemTimer} onSetItemElapsed={setChecklistItemElapsed} allTags={allTags} />}
     </div>
   );
 }
@@ -4715,7 +4774,9 @@ function SearchModal({ tasks, clients, onOpen, onClose }: any) {
   }, [onClose]);
 
   const results = query.length === 0 ? [] : tasks.filter((t: any) => {
-    const hay = `${t.title || ''} ${t.description || ''} ${clientName(t.clientId)}`.toLowerCase();
+    // Tags entram na busca com e sem "#", então "#integração" e "integração" acham a demanda.
+    const tags = Array.isArray(t.tags) ? t.tags : [];
+    const hay = `${t.title || ''} ${t.description || ''} ${clientName(t.clientId)} ${tags.join(' ')} ${tags.map((x: string) => '#' + x).join(' ')}`.toLowerCase();
     return hay.includes(query);
   }).slice(0, 40);
 
@@ -4724,7 +4785,7 @@ function SearchModal({ tasks, clients, onOpen, onClose }: any) {
       <div className="w-full max-w-xl rounded-3xl bg-[var(--bg-secondary)] border border-[var(--border-primary)] shadow-2xl overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
         <div className="flex items-center gap-3 px-5 py-4 border-b border-[var(--border-primary)]">
           <Search size={18} className="text-[var(--text-muted)] shrink-0" />
-          <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar por título, cliente ou descrição..." className="flex-1 bg-transparent text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]" />
+          <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar por título, cliente, descrição ou #tag..." className="flex-1 bg-transparent text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]" />
           <button onClick={onClose} className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"><X size={18} /></button>
         </div>
         <div className="max-h-[52vh] overflow-y-auto kp-scroll p-2">
@@ -4748,6 +4809,7 @@ function SearchModal({ tasks, clients, onOpen, onClose }: any) {
                     <span>{col?.name || t.status}</span>
                     <span className="opacity-40">·</span>
                     <span className={pr.text}>{t.priority}</span>
+                    {Array.isArray(t.tags) && t.tags.length > 0 && <><span className="opacity-40">·</span><span className="normal-case tracking-normal font-medium truncate max-w-[180px]">{t.tags.map((x: string) => '#' + x).join(' ')}</span></>}
                   </div>
                 </div>
                 <ChevronRight size={16} className="text-[var(--text-muted)] group-hover:text-[var(--text-secondary)] shrink-0 transition-colors" />
@@ -6063,7 +6125,55 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
   );
 }
 
-function TaskModal({ modal, setModal, clients, responsibles, closeModal, saveModal, validationError, setValidationError, allTasks, allClients, onOpenRelated, getElapsed, onToggleItemTimer, onSetItemElapsed }: any) {
+// Campo de tags do TaskModal: Enter (ou vírgula) cria o chip, Backspace com o campo vazio remove
+// o último; sugere tags já usadas em outras demandas. Tudo normalizado (caixa baixa, sem duplicata).
+function TagInput({ tags, onChange, suggestions }: { tags: string[], onChange: (tags: string[]) => void, suggestions: string[] }) {
+  const [draft, setDraft] = useState('');
+  const [focused, setFocused] = useState(false);
+  const q = normalizeTag(draft);
+  const matches = suggestions.filter((s) => !tags.includes(s) && (!q || s.includes(q))).slice(0, 6);
+  const add = (raw: string) => {
+    const tag = normalizeTag(raw);
+    if (tag && !tags.includes(tag)) onChange([...tags, tag]);
+    setDraft('');
+  };
+  return (
+    <div className="mt-2">
+      <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-3 block ml-1">Tags</label>
+      <div className="relative">
+        <div className="flex flex-wrap items-center gap-1.5 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-3 py-2.5 focus-within:border-indigo-500 transition-colors">
+          {tags.map((tag) => (
+            <span key={tag} className="flex items-center gap-1 text-[11px] pl-2 pr-1 py-0.5 rounded-md border border-[var(--border-overlay)] text-[var(--text-secondary)]">
+              #{tag}
+              <button type="button" onClick={() => onChange(tags.filter((t) => t !== tag))} className="p-0.5 rounded text-[var(--text-muted)] hover:text-red-400 transition-colors" title="Remover tag"><X size={10} /></button>
+            </span>
+          ))}
+          <input
+            value={draft}
+            onChange={(e) => { if (e.target.value.endsWith(',')) add(e.target.value.slice(0, -1)); else setDraft(e.target.value); }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { e.preventDefault(); add(draft); }
+              else if (e.key === 'Backspace' && !draft && tags.length > 0) onChange(tags.slice(0, -1));
+            }}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setTimeout(() => setFocused(false), 150)}
+            className="flex-1 min-w-[120px] bg-transparent text-sm text-[var(--text-primary)] outline-none py-1"
+            placeholder={tags.length ? 'Adicionar tag...' : 'Digite e aperte Enter (ex.: integração)'}
+          />
+        </div>
+        {focused && matches.length > 0 && (
+          <div className="absolute left-0 right-0 top-full mt-1 z-10 rounded-xl border border-[var(--border-primary)] bg-[var(--bg-tertiary)] shadow-xl p-1.5 flex flex-wrap gap-1.5">
+            {matches.map((s) => (
+              <button key={s} type="button" onMouseDown={(e) => { e.preventDefault(); add(s); }} className="text-[11px] px-2 py-1 rounded-md border border-[var(--border-overlay)] text-[var(--text-secondary)] hover:text-indigo-300 hover:border-indigo-500/40 transition-colors">#{s}</button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TaskModal({ modal, setModal, clients, responsibles, closeModal, saveModal, validationError, setValidationError, allTasks, allClients, onOpenRelated, getElapsed, onToggleItemTimer, onSetItemElapsed, allTags }: any) {
   const updateForm = (patch: any) => { setModal((m: any) => ({ ...m, form: { ...m.form, ...patch } })); if (validationError) setValidationError(null); };
 
   // Cronômetro por item do checklist só existe pra demandas criadas com esse sistema: toda
@@ -6244,6 +6354,8 @@ function TaskModal({ modal, setModal, clients, responsibles, closeModal, saveMod
               ))}
             </div>
           </div>
+
+          <TagInput tags={Array.isArray(modal.form.tags) ? modal.form.tags : []} onChange={(tags: string[]) => updateForm({ tags })} suggestions={allTags || []} />
 
           <div className="mt-2">
             <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-3 block ml-1">Demandas Relacionadas</label>

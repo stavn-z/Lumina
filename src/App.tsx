@@ -154,6 +154,23 @@ function checklistElapsed(checklist: any[]): number {
   }, 0);
 }
 
+// Mescla o checklist do formulário (cópia feita ao abrir o modal) com o checklist vivo da
+// demanda, pelo id do item: do formulário vêm texto/done/ordem/itens adicionados ou removidos;
+// os campos de cronômetro vêm SEMPRE do estado vivo quando o item existe lá. Sem isso, salvar o
+// modal sobrescrevia timerRunning/timerStart/timerElapsed com valores desatualizados da cópia —
+// apagando tempo rodado por fora (outro dispositivo/Realtime) ou duplicando tempo já pausado.
+const CHECKLIST_TIMER_FIELDS = ['timerRunning', 'timerStart', 'timerElapsed'];
+function mergeChecklistTimers(formList: any[], liveList: any[]): any[] {
+  const liveById = new Map((Array.isArray(liveList) ? liveList : []).map((c: any) => [c.id, c]));
+  return (formList || []).map((c: any) => {
+    const live: any = liveById.get(c.id);
+    if (!live) return c;
+    const merged = { ...c };
+    CHECKLIST_TIMER_FIELDS.forEach((k) => { if (k in live) merged[k] = live[k]; });
+    return merged;
+  });
+}
+
 function getBrasiliaDate() {
   const formatter = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' });
   const parts = formatter.formatToParts(new Date());
@@ -1586,7 +1603,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
             timerStart = Date.now();
           }
 
-          const frozenChecklist = freezeChecklistTimers(f.checklist || []);
+          const frozenChecklist = freezeChecklistTimers(mergeChecklistTimers(f.checklist || [], t.checklist));
           const itemTimersElapsed = hasItemTimers(t) ? checklistElapsed(frozenChecklist) : 0;
 
           // Sincronização bidirecional entre "Est. Minutos" e o timer: quem foi editado por último manda.
@@ -1779,7 +1796,9 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
       if (donePrompt.continueNextMonth) hist = [...hist, histEntry('continues_next_month', '', targetMonth)];
       // Congela qualquer item do checklist ainda rodando — a demanda está virando "done" aqui,
       // mesma trava usada em saveModal pro caminho normal (freezeChecklistTimers).
-      const checklistOnDone = Array.isArray(donePrompt.draftData?.checklist) ? donePrompt.draftData.checklist.map((c: any) =>
+      // Em edição, os campos de cronômetro vêm do estado vivo (ver mergeChecklistTimers).
+      const liveChecklist = isAdd ? [] : (tasks.find((t: any) => t.id === donePrompt.taskId)?.checklist || []);
+      const checklistOnDone = Array.isArray(donePrompt.draftData?.checklist) ? mergeChecklistTimers(donePrompt.draftData.checklist, liveChecklist).map((c: any) =>
         c.timerRunning ? { ...c, timerRunning: false, timerStart: null, timerElapsed: (c.timerElapsed || 0) + (c.timerStart ? (Date.now() - c.timerStart) / 1000 : 0) } : c
       ) : donePrompt.draftData?.checklist;
       const finalTask = {
@@ -2857,7 +2876,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
 
       {/* Modais de Popups Principais */}
       {closureModal && <ClosureModal tasks={tasksForClosure} clients={clients} responsibles={responsibles} getElapsed={getElapsed} onClose={() => setClosureModal(false)} onFormalize={(clientId: string | null) => { if (clientId) { setTasks((prev: any) => prev.map((t: any) => (t.status === 'done' && t.clientId === clientId) ? { ...t, status: 'formalize' } : t)); } else { setTasks((prev: any) => prev.map((t: any) => t.status === 'done' ? { ...t, status: 'formalize' } : t)); setClosureModal(false); } }} />}
-      {modal && <TaskModal modal={modal} setModal={setModal} clients={visibleClients} responsibles={responsibles} closeModal={closeModal} saveModal={saveModal} validationError={validationError} setValidationError={setValidationError} user={user} allTasks={tasks} allClients={clients} onOpenRelated={openEditModal} />}
+      {modal && <TaskModal modal={modal} setModal={setModal} clients={visibleClients} responsibles={responsibles} closeModal={closeModal} saveModal={saveModal} validationError={validationError} setValidationError={setValidationError} user={user} allTasks={tasks} allClients={clients} onOpenRelated={openEditModal} getElapsed={getElapsed} onToggleItemTimer={toggleChecklistItemTimer} onSetItemElapsed={setChecklistItemElapsed} />}
     </div>
   );
 }
@@ -5826,7 +5845,7 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
   );
 }
 
-function TaskModal({ modal, setModal, clients, responsibles, closeModal, saveModal, validationError, setValidationError, allTasks, allClients, onOpenRelated }: any) {
+function TaskModal({ modal, setModal, clients, responsibles, closeModal, saveModal, validationError, setValidationError, allTasks, allClients, onOpenRelated, getElapsed, onToggleItemTimer, onSetItemElapsed }: any) {
   const updateForm = (patch: any) => { setModal((m: any) => ({ ...m, form: { ...m.form, ...patch } })); if (validationError) setValidationError(null); };
 
   // Cronômetro por item do checklist só existe pra demandas criadas com esse sistema: toda
@@ -5836,8 +5855,39 @@ function TaskModal({ modal, setModal, clients, responsibles, closeModal, saveMod
 
   const addChecklistRow = () => { setModal((m: any) => ({ ...m, form: { ...m.form, checklist: [...(m.form.checklist || []), isNewModelTask ? { id: nextId(), text: "", done: false, timerRunning: false, timerStart: null, timerElapsed: 0 } : { id: nextId(), text: "", done: false }] } })); };
 
+  // Cronômetro não é rascunho: em edição, os itens que já existem na demanda rodam direto no
+  // estado vivo (tasks), pra o card do quadro e o total refletirem na hora, sem salvar. Só itens
+  // ainda não salvos (modo "add" ou passo recém-adicionado) cronometram no rascunho do modal.
+  const liveTask = modal.mode === 'edit' && modal.task ? (allTasks || []).find((t: any) => t.id === modal.task.id) : null;
+  const liveItemFor = (itemId: string) => (liveTask && Array.isArray(liveTask.checklist) ? liveTask.checklist.find((c: any) => c.id === itemId) : null);
+  const viewChecklist = liveTask ? mergeChecklistTimers(modal.form.checklist || [], liveTask.checklist) : (modal.form.checklist || []);
+  const freezeDraftItem = (c: any) => ({ ...c, timerRunning: false, timerStart: null, timerElapsed: (c.timerElapsed || 0) + (c.timerStart ? (Date.now() - c.timerStart) / 1000 : 0) });
+
+  const toggleItemTimer = (itemId: string) => {
+    const live = liveItemFor(itemId);
+    if (live) {
+      const starting = !live.timerRunning;
+      onToggleItemTimer(liveTask.id, itemId);
+      // Espelha no rascunho o que o toggle vivo faz: só um item rodando por vez (pausa itens
+      // de rascunho) e iniciar move pra "Em Andamento" — senão salvar reverteria o status.
+      if (starting) setModal((m: any) => ({ ...m, form: { ...m.form, status: m.form.status !== 'inprogress' ? 'inprogress' : m.form.status, checklist: (m.form.checklist || []).map((c: any) => (!liveItemFor(c.id) && c.timerRunning) ? freezeDraftItem(c) : c) } }));
+      return;
+    }
+    const draftItem = (modal.form.checklist || []).find((c: any) => c.id === itemId);
+    if (draftItem && !draftItem.timerRunning && liveTask) {
+      const runningLive = (liveTask.checklist || []).find((c: any) => c.timerRunning);
+      if (runningLive) onToggleItemTimer(liveTask.id, runningLive.id);
+    }
+    toggleItemTimerDraft(itemId);
+  };
+
+  const setItemElapsed = (itemId: string, seconds: number) => {
+    if (liveItemFor(itemId)) onSetItemElapsed(liveTask.id, itemId, seconds);
+    else setItemElapsedDraft(itemId, seconds);
+  };
+
   // Igual ao toggleChecklistItemTimer de KanbanMain, mas operando sobre o rascunho do modal
-  // (m.form) — só vira real quando "Salvar Demanda" é clicado, mesmo padrão do resto do form.
+  // (m.form) — usado só pra itens que ainda não existem na demanda salva.
   const toggleItemTimerDraft = (itemId: string) => {
     setModal((m: any) => {
       const checklist = Array.isArray(m.form.checklist) ? m.form.checklist : [];
@@ -5942,19 +5992,27 @@ function TaskModal({ modal, setModal, clients, responsibles, closeModal, saveMod
           
           <div className="mt-2">
             <div className="flex items-center justify-between mb-3">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] ml-1">Checklist de Passos</label>
+              <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] ml-1 flex items-center gap-2">
+                Checklist de Passos
+                {isNewModelTask && (
+                  <span className="flex items-center gap-1 normal-case tracking-normal font-mono tabular-nums" title="Tempo total da demanda (soma dos itens)">
+                    <Clock size={10} className={viewChecklist.some((c: any) => c.timerRunning) ? 'text-amber-500 animate-pulse' : ''} />
+                    Total <LiveElapsed task={{ checklist: viewChecklist }} getElapsed={getElapsed} />
+                  </span>
+                )}
+              </label>
               <button onClick={addChecklistRow} className="text-[10px] font-black uppercase text-indigo-400 hover:text-indigo-300 transition-colors p-1 flex items-center gap-1"><Plus size={12}/> Adicionar Passo</button>
             </div>
             <div className="flex flex-col gap-3 pb-safe" onPointerMove={onChecklistPointerMove} onPointerUp={endChecklistDrag} onPointerCancel={endChecklistDrag}>
-              {(modal.form.checklist || []).map((c: any) => (
+              {viewChecklist.map((c: any) => (
                 <div key={c.id} data-checklist-id={c.id} className={`flex items-center gap-2 transition-opacity ${draggingChecklistId === c.id ? 'opacity-40' : ''}`}>
                   <button onPointerDown={(e) => beginChecklistDrag(e, c.id)} style={{ touchAction: 'none' }} className="p-1.5 text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-grab active:cursor-grabbing shrink-0" title="Arrastar para reordenar"><GripVertical size={16}/></button>
                   <button onClick={() => { setModal((m: any) => ({ ...m, form: { ...m.form, checklist: m.form.checklist.map((ci: any) => ci.id === c.id ? { ...ci, done: !ci.done } : ci) } })); }} className={`p-2.5 border rounded-xl transition-all shrink-0 ${c.done ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-400 shadow-[0_0_10px_rgba(99,102,241,0.2)]' : 'bg-[var(--bg-secondary)] border-[var(--border-primary)] text-[var(--text-muted)] hover:text-[var(--text-muted)] hover:bg-[var(--bg-overlay)]'}`}><Check size={16}/></button>
                   <input value={c.text || ''} onChange={(e) => { setModal((m: any) => ({ ...m, form: { ...m.form, checklist: m.form.checklist.map((ci: any) => ci.id === c.id ? { ...ci, text: e.target.value } : ci) } })); }} className="flex-1 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 transition-all shadow-sm" placeholder="O que precisa ser feito?" />
                   {isNewModelTask && (
                     <>
-                      <ChecklistItemElapsed item={c} onSetElapsed={(sec) => setItemElapsedDraft(c.id, sec)} />
-                      <ChecklistItemTimerButton item={c} onToggle={() => toggleItemTimerDraft(c.id)} />
+                      <ChecklistItemElapsed item={c} onSetElapsed={(sec) => setItemElapsed(c.id, sec)} />
+                      <ChecklistItemTimerButton item={c} onToggle={() => toggleItemTimer(c.id)} />
                     </>
                   )}
                   <button onClick={() => setModal((m: any) => ({ ...m, form: { ...m.form, checklist: m.form.checklist.filter((ci: any) => ci.id !== c.id) } }))} className="p-2.5 text-[var(--text-muted)] hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-colors"><X size={18} /></button>

@@ -1358,10 +1358,17 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
   const [filterClient, setFilterClient] = useState(savedFilters.filterClient || "all");
   const [filterResp, setFilterResp] = useState(savedFilters.filterResp || "all");
   const [filterPriority, setFilterPriority] = useState(savedFilters.filterPriority || "all");
-  const [filterCreatedStart, setFilterCreatedStart] = useState(savedFilters.filterCreatedStart || "");
-  const [filterCreatedEnd, setFilterCreatedEnd] = useState(savedFilters.filterCreatedEnd || "");
-  const [filterCompletedStart, setFilterCompletedStart] = useState(savedFilters.filterCompletedStart || "");
-  const [filterCompletedEnd, setFilterCompletedEnd] = useState(savedFilters.filterCompletedEnd || "");
+  // Atalho de período salvo junto (filterCreatedPreset/filterCompletedPreset): ao recarregar, o
+  // período é recalculado — "Esta semana" continua sendo a semana atual, não as datas de quando
+  // foi escolhido. Datas digitadas à mão (personalizado) ficam fixas.
+  const savedCreated = resolveDatePreset(savedFilters.filterCreatedPreset, savedFilters.filterCreatedStart, savedFilters.filterCreatedEnd);
+  const savedCompleted = resolveDatePreset(savedFilters.filterCompletedPreset, savedFilters.filterCompletedStart, savedFilters.filterCompletedEnd);
+  const [filterCreatedStart, setFilterCreatedStart] = useState(savedCreated[0]);
+  const [filterCreatedEnd, setFilterCreatedEnd] = useState(savedCreated[1]);
+  const [filterCreatedPreset, setFilterCreatedPreset] = useState<string | null>(savedFilters.filterCreatedPreset || null);
+  const [filterCompletedStart, setFilterCompletedStart] = useState(savedCompleted[0]);
+  const [filterCompletedEnd, setFilterCompletedEnd] = useState(savedCompleted[1]);
+  const [filterCompletedPreset, setFilterCompletedPreset] = useState<string | null>(savedFilters.filterCompletedPreset || null);
   // Tags selecionadas no filtro do quadro: a demanda precisa ter TODAS (cada tag clicada estreita).
   const [filterTags, setFilterTags] = useState<string[]>(normalizeTags(savedFilters.filterTags));
   const toggleFilterTag = (tag: string) => setFilterTags((prev) => prev.includes(tag) ? prev.filter((x) => x !== tag) : [...prev, tag]);
@@ -1369,9 +1376,9 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
   // Salva os filtros sempre que mudam (ficam fixos mesmo recarregando)
   useEffect(() => {
     try {
-      localStorage.setItem('lumina_filters', JSON.stringify({ filterClient, filterResp, filterPriority, filterCreatedStart, filterCreatedEnd, filterCompletedStart, filterCompletedEnd, filterTags }));
+      localStorage.setItem('lumina_filters', JSON.stringify({ filterClient, filterResp, filterPriority, filterCreatedStart, filterCreatedEnd, filterCreatedPreset, filterCompletedStart, filterCompletedEnd, filterCompletedPreset, filterTags }));
     } catch {}
-  }, [filterClient, filterResp, filterPriority, filterCreatedStart, filterCreatedEnd, filterCompletedStart, filterCompletedEnd, filterTags]);
+  }, [filterClient, filterResp, filterPriority, filterCreatedStart, filterCreatedEnd, filterCreatedPreset, filterCompletedStart, filterCompletedEnd, filterCompletedPreset, filterTags]);
 
   // Consultor não filtra por responsável (só vê as próprias demandas)
   useEffect(() => {
@@ -1384,9 +1391,12 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
   const resetFilters = () => {
     setFilterClient('all'); setFilterResp('all'); setFilterPriority('all');
     setFilterCreatedStart(''); setFilterCreatedEnd(''); setFilterCompletedStart(''); setFilterCompletedEnd('');
+    setFilterCreatedPreset(null); setFilterCompletedPreset(null);
     setFilterTags([]);
   };
-
+  const setCreatedRange = (a: string, b: string, preset: string | null) => { setFilterCreatedStart(a); setFilterCreatedEnd(b); setFilterCreatedPreset(preset); };
+  const setCompletedRange = (a: string, b: string, preset: string | null) => { setFilterCompletedStart(a); setFilterCompletedEnd(b); setFilterCompletedPreset(preset); };
+  const dateFilterLabel = dateFiltersSummary([filterCreatedStart, filterCreatedEnd], [filterCompletedStart, filterCompletedEnd]);
 
   const [modal, setModal] = useState<any>(null); 
   const [profileModal, setProfileModal] = useState(false);
@@ -2410,6 +2420,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                      className={`h-11 w-11 lg:w-auto px-0 lg:px-4 flex items-center justify-center gap-2 rounded-xl transition-all shadow-sm shrink-0 border font-bold uppercase tracking-widest text-[10px] ${showFilters ? 'bg-indigo-600 text-white border-indigo-500 shadow-[0_0_15px_rgba(79,70,229,0.3)]' : 'glass-panel text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
                    >
                      <Filter size={16} /> <span className="hidden lg:inline">Filtros</span>
+                     {dateFilterLabel && <span className={`hidden lg:inline normal-case tracking-normal font-semibold max-w-[220px] truncate ${showFilters ? 'text-indigo-100' : 'text-indigo-300'}`} title={dateFilterLabel}>· {dateFilterLabel}</span>}
                      {activeFilterCount > 0 && <span className={`min-w-[16px] h-4 px-1 rounded-full text-[9px] leading-4 text-center ${showFilters ? 'bg-white text-indigo-600' : 'bg-indigo-500 text-white'}`}>{activeFilterCount}</span>}
                    </button>
 
@@ -2486,33 +2497,8 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
 
                     {/* Intervalos de data */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                       <div className="rounded-xl border p-3.5 flex flex-col gap-2.5" style={{ borderColor: 'var(--border-overlay)', background: 'var(--bg-scrim)' }}>
-                          <span className="text-[10px] uppercase font-bold tracking-widest text-indigo-300 flex items-center gap-1.5"><Clock size={12}/> Criado entre</span>
-                          <div className="grid grid-cols-2 gap-2">
-                             <div className="flex flex-col gap-1">
-                                <label className="text-[9px] uppercase font-bold ml-0.5" style={{ color: 'var(--text-muted)' }}>De</label>
-                                <input type="date" value={filterCreatedStart} onChange={e => setFilterCreatedStart(e.target.value)} className="w-full rounded-lg px-3 h-10 text-xs outline-none focus:border-indigo-500" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)', color: 'var(--text-primary)', colorScheme: theme }} />
-                             </div>
-                             <div className="flex flex-col gap-1">
-                                <label className="text-[9px] uppercase font-bold ml-0.5" style={{ color: 'var(--text-muted)' }}>Até</label>
-                                <input type="date" value={filterCreatedEnd} onChange={e => setFilterCreatedEnd(e.target.value)} className="w-full rounded-lg px-3 h-10 text-xs outline-none focus:border-indigo-500" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)', color: 'var(--text-primary)', colorScheme: theme }} />
-                             </div>
-                          </div>
-                       </div>
-
-                       <div className="rounded-xl border p-3.5 flex flex-col gap-2.5" style={{ borderColor: 'var(--border-overlay)', background: 'var(--bg-scrim)' }}>
-                          <span className="text-[10px] uppercase font-bold tracking-widest text-emerald-300 flex items-center gap-1.5"><CheckCircle2 size={12}/> Concluído entre</span>
-                          <div className="grid grid-cols-2 gap-2">
-                             <div className="flex flex-col gap-1">
-                                <label className="text-[9px] uppercase font-bold ml-0.5" style={{ color: 'var(--text-muted)' }}>De</label>
-                                <input type="date" value={filterCompletedStart} onChange={e => setFilterCompletedStart(e.target.value)} className="w-full rounded-lg px-3 h-10 text-xs outline-none focus:border-emerald-500" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)', color: 'var(--text-primary)', colorScheme: theme }} />
-                             </div>
-                             <div className="flex flex-col gap-1">
-                                <label className="text-[9px] uppercase font-bold ml-0.5" style={{ color: 'var(--text-muted)' }}>Até</label>
-                                <input type="date" value={filterCompletedEnd} onChange={e => setFilterCompletedEnd(e.target.value)} className="w-full rounded-lg px-3 h-10 text-xs outline-none focus:border-emerald-500" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)', color: 'var(--text-primary)', colorScheme: theme }} />
-                             </div>
-                          </div>
-                       </div>
+                       <DateRangeFilter title="Criado entre" icon={<Clock size={12}/>} accent="indigo" start={filterCreatedStart} end={filterCreatedEnd} onChange={setCreatedRange} theme={theme} />
+                       <DateRangeFilter title="Concluído entre" icon={<CheckCircle2 size={12}/>} accent="emerald" start={filterCompletedStart} end={filterCompletedEnd} onChange={setCompletedRange} theme={theme} />
                     </div>
 
                     {hasAnyFilter && (
@@ -3281,6 +3267,77 @@ function OverlayModal({ title, icon, onClose, children, fullWidth, isClosing }: 
       </div>
     </div>
   )
+}
+
+// Atalhos de período dos filtros de data (quadro e Analytics). Datas em YYYY-MM-DD no dia de
+// Brasília, mesmo formato de createdAt/completedAt; semana começa na segunda.
+const DATE_PRESETS: { key: string, label: string, range: (today: string) => [string, string] }[] = [
+  { key: 'today', label: 'Hoje', range: (t) => [t, t] },
+  { key: 'yesterday', label: 'Ontem', range: (t) => { const y = addDaysISO(t, -1); return [y, y]; } },
+  { key: 'thisWeek', label: 'Esta semana', range: (t) => { const mon = addDaysISO(t, -((weekdayISO(t) + 6) % 7)); return [mon, addDaysISO(mon, 6)]; } },
+  { key: 'lastWeek', label: 'Semana passada', range: (t) => { const mon = addDaysISO(t, -((weekdayISO(t) + 6) % 7) - 7); return [mon, addDaysISO(mon, 6)]; } },
+  { key: 'thisMonth', label: 'Este mês', range: (t) => { const [y, m] = t.split('-').map(Number); return [`${t.slice(0, 7)}-01`, lastDayOfMonthISO(y, m)]; } },
+  { key: 'lastMonth', label: 'Mês passado', range: (t) => { let [y, m] = t.split('-').map(Number); m--; if (m < 1) { m = 12; y--; } const mm = String(m).padStart(2, '0'); return [`${y}-${mm}-01`, lastDayOfMonthISO(y, m)]; } },
+  { key: 'last7', label: 'Últimos 7 dias', range: (t) => [addDaysISO(t, -6), t] },
+];
+function weekdayISO(iso: string) { const [y, m, d] = iso.split('-').map(Number); return new Date(Date.UTC(y, m - 1, d)).getUTCDay(); }
+function lastDayOfMonthISO(y: number, m: number) { return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10); }
+// Atalho que corresponde exatamente ao período (pra destacar), ou null se for personalizado.
+function detectDatePreset(start: string, end: string, today = getBrasiliaDate()) {
+  if (!start || !end) return null;
+  return DATE_PRESETS.find((p) => { const [a, b] = p.range(today); return a === start && b === end; })?.key || null;
+}
+// Recalcula o período de um atalho salvo (ex.: "Esta semana" salvo semana passada vira a semana atual).
+function resolveDatePreset(preset: string | null | undefined, start: string, end: string): [string, string] {
+  const p = preset ? DATE_PRESETS.find((x) => x.key === preset) : null;
+  return p ? p.range(getBrasiliaDate()) : [start || '', end || ''];
+}
+// Texto curto do período aplicado (botão de Filtros): nome do atalho ou dd/mm–dd/mm.
+function dateRangeSummary(start: string, end: string) {
+  if (!start && !end) return '';
+  const preset = detectDatePreset(start, end);
+  if (preset) return DATE_PRESETS.find((p) => p.key === preset)!.label;
+  const fmt = (iso: string) => iso.split('-').reverse().slice(0, 2).join('/');
+  if (start && end) return start === end ? fmt(start) : `${fmt(start)}–${fmt(end)}`;
+  return start ? `desde ${fmt(start)}` : `até ${fmt(end)}`;
+}
+function dateFiltersSummary(created: [string, string], completed: [string, string]) {
+  const c = dateRangeSummary(created[0], created[1]);
+  const d = dateRangeSummary(completed[0], completed[1]);
+  if (c && d) return `Criado: ${c} · Concluído: ${d}`;
+  if (c) return `Criado: ${c}`;
+  if (d) return `Concluído: ${d}`;
+  return '';
+}
+
+// Filtro "De/Até" com atalhos de período — usado no painel de Filtros do quadro e no Analytics.
+// onChange recebe o atalho escolhido (ou null quando as datas são editadas à mão).
+function DateRangeFilter({ title, icon, accent, start, end, onChange, theme }: { title: string, icon: React.ReactNode, accent: 'indigo' | 'emerald', start: string, end: string, onChange: (start: string, end: string, preset: string | null) => void, theme: string }) {
+  const active = detectDatePreset(start, end);
+  const accentText = accent === 'indigo' ? 'text-indigo-300' : 'text-emerald-300';
+  const accentFocus = accent === 'indigo' ? 'focus:border-indigo-500' : 'focus:border-emerald-500';
+  const accentOn = accent === 'indigo' ? 'bg-indigo-500/15 text-indigo-300 border-indigo-500/40' : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40';
+  const inputStyle = { background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)', color: 'var(--text-primary)', colorScheme: theme } as React.CSSProperties;
+  return (
+    <div className="rounded-xl border p-3.5 flex flex-col gap-2.5" style={{ borderColor: 'var(--border-overlay)', background: 'var(--bg-scrim)' }}>
+      <span className={`text-[10px] uppercase font-bold tracking-widest flex items-center gap-1.5 ${accentText}`}>{icon} {title}</span>
+      <div className="flex flex-wrap gap-1.5">
+        {DATE_PRESETS.map((p) => (
+          <button key={p.key} type="button" onClick={() => { if (active === p.key) onChange('', '', null); else { const [a, b] = p.range(getBrasiliaDate()); onChange(a, b, p.key); } }} className={`text-[10px] font-bold px-2 py-1 rounded-md border transition-colors ${active === p.key ? accentOn : 'text-[var(--text-secondary)] border-[var(--border-overlay)] hover:text-[var(--text-primary)] hover:border-[var(--border-hover)]'}`}>{p.label}</button>
+        ))}
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div className="flex flex-col gap-1">
+          <label className="text-[9px] uppercase font-bold ml-0.5" style={{ color: 'var(--text-muted)' }}>De</label>
+          <input type="date" value={start} onChange={(e) => onChange(e.target.value, end, null)} className={`w-full rounded-lg px-3 h-10 text-xs outline-none ${accentFocus}`} style={inputStyle} />
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-[9px] uppercase font-bold ml-0.5" style={{ color: 'var(--text-muted)' }}>Até</label>
+          <input type="date" value={end} onChange={(e) => onChange(start, e.target.value, null)} className={`w-full rounded-lg px-3 h-10 text-xs outline-none ${accentFocus}`} style={inputStyle} />
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function FilterSelect({ value, onChange, options, defaultLabel }: any) {
@@ -4442,6 +4499,7 @@ function AnalyticsModal({ onClose, tasks, clients, responsibles, getElapsed, isC
                  className={`h-11 w-full sm:w-auto px-4 flex items-center justify-center gap-2 rounded-xl transition-all shadow-sm shrink-0 border font-bold uppercase tracking-widest text-[10px] ${showFilters ? 'bg-indigo-600 text-white border-indigo-500 shadow-[0_0_15px_rgba(79,70,229,0.3)]' : 'glass-panel text-[var(--text-secondary)] border-[var(--border-overlay)] hover:text-[var(--text-primary)]'}`}
                >
                  <Filter size={16} /> Filtros
+                 {hasDateFilters && <span className={`normal-case tracking-normal font-semibold max-w-[240px] truncate ${showFilters ? 'text-indigo-100' : 'text-indigo-300'}`}>· {dateFiltersSummary([filterCreatedStart, filterCreatedEnd], [filterCompletedStart, filterCompletedEnd])}</span>}
                </button>
                <button
                  onClick={exportTasksCSV}
@@ -4471,33 +4529,8 @@ function AnalyticsModal({ onClose, tasks, clients, responsibles, getElapsed, isC
 
                       {/* Intervalos de data */}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                         <div className="rounded-xl border border-[var(--border-overlay)] bg-[var(--bg-scrim)] p-3.5 flex flex-col gap-2.5">
-                            <span className="text-[10px] uppercase font-bold tracking-widest text-indigo-300 flex items-center gap-1.5"><Clock size={12}/> Criado entre</span>
-                            <div className="grid grid-cols-2 gap-2">
-                               <div className="flex flex-col gap-1">
-                                  <label className="text-[9px] uppercase font-bold text-[var(--text-muted)] ml-0.5">De</label>
-                                  <input type="date" value={filterCreatedStart} onChange={e => setFilterCreatedStart(e.target.value)} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-lg px-3 h-10 text-xs text-[var(--text-primary)] outline-none focus:border-indigo-500 [color-scheme:dark]" />
-                               </div>
-                               <div className="flex flex-col gap-1">
-                                  <label className="text-[9px] uppercase font-bold text-[var(--text-muted)] ml-0.5">Até</label>
-                                  <input type="date" value={filterCreatedEnd} onChange={e => setFilterCreatedEnd(e.target.value)} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-lg px-3 h-10 text-xs text-[var(--text-primary)] outline-none focus:border-indigo-500 [color-scheme:dark]" />
-                               </div>
-                            </div>
-                         </div>
-
-                         <div className="rounded-xl border border-[var(--border-overlay)] bg-[var(--bg-scrim)] p-3.5 flex flex-col gap-2.5">
-                            <span className="text-[10px] uppercase font-bold tracking-widest text-emerald-300 flex items-center gap-1.5"><CheckCircle2 size={12}/> Concluído entre</span>
-                            <div className="grid grid-cols-2 gap-2">
-                               <div className="flex flex-col gap-1">
-                                  <label className="text-[9px] uppercase font-bold text-[var(--text-muted)] ml-0.5">De</label>
-                                  <input type="date" value={filterCompletedStart} onChange={e => setFilterCompletedStart(e.target.value)} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-lg px-3 h-10 text-xs text-[var(--text-primary)] outline-none focus:border-emerald-500 [color-scheme:dark]" />
-                               </div>
-                               <div className="flex flex-col gap-1">
-                                  <label className="text-[9px] uppercase font-bold text-[var(--text-muted)] ml-0.5">Até</label>
-                                  <input type="date" value={filterCompletedEnd} onChange={e => setFilterCompletedEnd(e.target.value)} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-lg px-3 h-10 text-xs text-[var(--text-primary)] outline-none focus:border-emerald-500 [color-scheme:dark]" />
-                               </div>
-                            </div>
-                         </div>
+                         <DateRangeFilter title="Criado entre" icon={<Clock size={12}/>} accent="indigo" start={filterCreatedStart} end={filterCreatedEnd} onChange={(a, b) => { setFilterCreatedStart(a); setFilterCreatedEnd(b); }} theme={theme} />
+                         <DateRangeFilter title="Concluído entre" icon={<CheckCircle2 size={12}/>} accent="emerald" start={filterCompletedStart} end={filterCompletedEnd} onChange={(a, b) => { setFilterCompletedStart(a); setFilterCompletedEnd(b); }} theme={theme} />
                       </div>
 
                       {hasDateFilters && (

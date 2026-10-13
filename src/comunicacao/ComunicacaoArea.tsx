@@ -1,11 +1,21 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { LayoutGrid, PenLine, Tag } from "lucide-react";
+import "./comunicacao.css";
+import { supa } from "./data/supa.ts";
+import { useTemplates } from "./data/useComData.ts";
+import { TYPES } from "./lib/library.ts";
+import { LibraryTab } from "./library/LibraryTab.tsx";
+import { useTemplateActions } from "./library/useTemplateActions.tsx";
+import { DialogProvider } from "./ui/Dialogs.tsx";
+import { ToastProvider } from "./ui/Toast.tsx";
 
 // Área "Comunicação": templates de e-mail, SMS e WhatsApp e taxonomia de nomes.
 // Renderizada dentro do OverlayModal do App.tsx (activeTab === 'comunicacao').
 
 export type ComTab = 'lib' | 'editor' | 'tax';
+
+interface ComUser { id: string, name: string }
 
 const TABS: { id: ComTab, label: string, short?: string, icon: ReactNode }[] = [
   { id: 'lib', label: 'Meus templates', short: 'Templates', icon: <LayoutGrid size={14} /> },
@@ -13,30 +23,53 @@ const TABS: { id: ComTab, label: string, short?: string, icon: ReactNode }[] = [
   { id: 'tax', label: 'Taxonomia', icon: <Tag size={14} /> },
 ];
 
-const tabKey = (userId: string) => `lumina_com_tab:${userId}`;
-
-function readTab(userId: string): ComTab {
-  try {
-    const v = localStorage.getItem(tabKey(userId));
-    if (v === 'lib' || v === 'editor' || v === 'tax') return v;
-  } catch {}
-  return 'lib';
+// Conveniências por usuário neste navegador: aba atual e template aberto.
+function useStored(key: string, initial: string | null) {
+  const [v, setV] = useState<string | null>(() => { try { return localStorage.getItem(key) ?? initial; } catch { return initial; } });
+  useEffect(() => { try { if (v == null) localStorage.removeItem(key); else localStorage.setItem(key, v); } catch {} }, [key, v]);
+  return [v, setV] as const;
 }
 
-export default function ComunicacaoArea({ user, onClose }: { user: { id: string, name: string }, onClose: () => void }) {
-  const [tab, setTab] = useState<ComTab>(() => readTab(user.id));
+export default function ComunicacaoArea({ user, onClose }: { user: ComUser, onClose: () => void }) {
+  return (
+    <ToastProvider>
+      <DialogProvider>
+        <Area user={user} onClose={onClose} />
+      </DialogProvider>
+    </ToastProvider>
+  );
+}
 
+function Area({ user, onClose }: { user: ComUser, onClose: () => void }) {
+  const [storedTab, setTab] = useStored(`lumina_com_tab:${user.id}`, 'lib');
+  const tab: ComTab = storedTab === 'editor' || storedTab === 'tax' ? storedTab : 'lib';
+  const [openId, setOpenId] = useStored(`lumina_com_open:${user.id}`, null);
+  const { rows, loading, error, upsertLocal, removeLocal } = useTemplates();
+  const [names, setNames] = useState<Record<string, string>>({});
+
+  // Nomes da equipe para o histórico ("Alterado · Ana").
   useEffect(() => {
-    try { localStorage.setItem(tabKey(user.id), tab); } catch {}
-  }, [tab, user.id]);
+    supa().from('responsibles').select('id,name').then(({ data }: any) => {
+      if (data) setNames(Object.fromEntries(data.map((r: any) => [r.id, r.name])));
+    });
+  }, []);
 
   // O OverlayModal do Lumina não fecha com Esc; a área trata isso por conta própria.
-  // Diálogos internos (etapas seguintes) param a propagação do Esc antes de chegar aqui.
+  // Os diálogos internos capturam o Esc antes (preventDefault), então só um fecha por vez.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !e.defaultPrevented) onClose(); };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
+
+  const openTemplate = useCallback((id: string) => { setOpenId(id); setTab('editor'); }, [setOpenId, setTab]);
+  const actions = useTemplateActions({
+    userId: user.id, names, upsertLocal, removeLocal,
+    onOpen: openTemplate,
+    onDeleted: id => { if (id === openId) setOpenId(null); },
+  });
+
+  const openRow = rows.find(r => r.id === openId) || null;
 
   return (
     <div className="flex-1 min-h-0 flex flex-col gap-5">
@@ -61,8 +94,24 @@ export default function ComunicacaoArea({ user, onClose }: { user: { id: string,
       </div>
 
       <div role="tabpanel" id={`com-panel-${tab}`} aria-labelledby={`com-tab-${tab}`} className="flex-1 min-h-0 flex flex-col">
-        {tab === 'lib' && <EmptyState icon={<LayoutGrid size={28} />} title="Meus templates" text="Os templates de e-mail, SMS e WhatsApp da equipe vão aparecer aqui." />}
-        {tab === 'editor' && <EmptyState icon={<PenLine size={28} />} title="Nenhum template aberto" text="Abra um template em Meus templates para editar." />}
+        {tab === 'lib' && (
+          <LibraryTab
+            userId={user.id}
+            rows={rows}
+            loading={loading}
+            error={error}
+            openId={openId}
+            onNew={actions.create}
+            onOpen={r => openTemplate(r.id)}
+            onDuplicate={actions.duplicate}
+            onHistory={actions.showHistory}
+            onDelete={actions.remove}
+            onToggleRubeus={actions.toggleRubeus}
+          />
+        )}
+        {tab === 'editor' && (openRow
+          ? <EmptyState icon={<PenLine size={28} />} title={openRow.data.nome || 'Sem nome'} text={`Editor de ${TYPES[openRow.type]} — chega na Etapa ${openRow.type === 'email' ? 4 : 5}.`} />
+          : <EmptyState icon={<PenLine size={28} />} title={loading ? 'Carregando…' : 'Nenhum template aberto'} text="Abra um template em Meus templates para editar." />)}
         {tab === 'tax' && <EmptyState icon={<Tag size={28} />} title="Taxonomia" text="Gere o nome padronizado da campanha ou do template." />}
       </div>
     </div>
@@ -73,7 +122,7 @@ function EmptyState({ icon, title, text }: { icon: ReactNode, title: string, tex
   return (
     <div className="flex-1 flex flex-col items-center justify-center text-center gap-3 py-16 px-4 rounded-2xl border border-dashed" style={{ borderColor: 'var(--border-primary)' }}>
       <div className="p-3 rounded-2xl text-indigo-400" style={{ background: 'var(--bg-overlay)' }}>{icon}</div>
-      <h3 className="font-display font-bold text-base" style={{ color: 'var(--text-primary)' }}>{title}</h3>
+      <h3 className="font-display font-bold text-base break-all" style={{ color: 'var(--text-primary)' }}>{title}</h3>
       <p className="text-sm max-w-sm" style={{ color: 'var(--text-muted)' }}>{text}</p>
     </div>
   );

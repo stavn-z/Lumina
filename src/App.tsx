@@ -1486,7 +1486,15 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
   const doneCount = monthTasks.filter((t) => t.status === "done" || t.status === "formalize").length;
   const overallProgress = activeTasksCount ? Math.round((doneCount / activeTasksCount) * 100) : 0;
 
-  const tasksForClosure = visibleTasks.filter(t => !t.agendaOnly && !['formalize', 'cancelled'].includes(t.status));
+  // Fechamento Semanal (lista e e-mail): entra tudo que não está em Backlog (ainda não começou),
+  // Formalizar (já enviado) ou Cancelada. Reuniões e recorrências — marcadas como reunião, o
+  // molde semanal (generatesCards) ou instância gerada dele (templateId) — só entram depois de
+  // Concluídas: enquanto estão "pra ser executadas", não são trabalho a reportar ao cliente.
+  const tasksForClosure = visibleTasks.filter(t => {
+    if (t.agendaOnly || ['backlog', 'formalize', 'cancelled'].includes(t.status)) return false;
+    const isMeetingOrRecurring = t.isMeeting || t.generatesCards || !!t.templateId;
+    return !isMeetingOrRecurring || t.status === 'done';
+  });
 
   const emptyForm = { title: "", description: "", priority: "Média", durationMin: "", clientId: "", responsibleId: user.id, startDate: "", dueDate: "", status: "", waitingFor: "", checklist: [], relatedTaskIds: [] };
 

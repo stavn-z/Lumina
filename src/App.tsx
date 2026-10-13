@@ -8,9 +8,10 @@ import {
   HelpCircle, ChevronDown, LayoutDashboard, Mail, Check, Copy, ClipboardList, Cloud, Lock,
   Eye, EyeOff, Settings, MonitorPlay, CloudRain, Sun, Moon, CloudLightning, Snowflake, CloudFog, UserCog, Calendar, ChevronUp,
   CalendarDays, ExternalLink, ChevronLeft, ChevronRight,
-  StickyNote, Pin, Palette, Upload, Camera, Link2, Archive, ArchiveRestore, Tag
+  StickyNote, Pin, Palette, Upload, Camera, Link2, Archive, ArchiveRestore, Tag, Megaphone
 } from "lucide-react";
 import { ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Cell } from "recharts";
+import ComunicacaoArea from "./comunicacao/ComunicacaoArea";
 
 // ==========================================
 // CONFIGURAÇÃO DO BANCO DE DADOS (SUPABASE)
@@ -2348,6 +2349,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
              <SidebarBtn icon={<Users size={20} />} active={activeTab === 'responsibles' && !isClosingModal} onClick={() => setActiveTab('responsibles')} tooltip="Equipe" />
              <SidebarBtn icon={<Building2 size={20} />} active={activeTab === 'clients' && !isClosingModal} onClick={() => setActiveTab('clients')} tooltip="Clientes" alert={clientsNearLimit.length > 0} />
              <SidebarBtn icon={<BarChart3 size={20} />} active={activeTab === 'reports' && !isClosingModal} onClick={() => setActiveTab('reports')} tooltip="Analytics" />
+             <SidebarBtn icon={<Megaphone size={20} />} active={activeTab === 'comunicacao' && !isClosingModal} onClick={() => setActiveTab('comunicacao')} tooltip="Comunicação" />
           </div>
         </div>
         
@@ -2406,6 +2408,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
         {activeTab === 'clients' && <OverlayModal title="Gestão de Clientes" icon={<Building2 size={20} className="text-purple-400"/>} isClosing={isClosingModal} onClose={handleCloseTab}><ClientsPanelContent clients={visibleClients} setClients={setClients} tasks={tasks} setTasks={setTasks} user={user} getElapsed={getElapsed} theme={theme} /></OverlayModal>}
         {activeTab === 'reports' && <AnalyticsModal isClosing={isClosingModal} onClose={handleCloseTab} tasks={filteredTasks} clients={visibleClients} responsibles={responsibles} getElapsed={getElapsed} globalLookerUrl={globalLookerUrl} setGlobalLookerUrl={setGlobalLookerUrl} user={user} theme={theme} />}
         {activeTab === 'agenda' && <OverlayModal title="Agenda" icon={<CalendarDays size={20} className="text-teal-400"/>} isClosing={isClosingModal} onClose={handleCloseTab} fullWidth><CalendarView tasks={visibleTasks} setTasks={setTasks} clients={clients} handleRequestMove={handleRequestMove} user={user} onCreateCard={(prefill: any) => setModal({ mode: 'add', form: { ...emptyForm, ...prefill } })} onDeleteTask={deleteTaskById} onOpenTask={openEditModal} /></OverlayModal>}
+        {activeTab === 'comunicacao' && <OverlayModal title="Comunicação" icon={<Megaphone size={20} className="text-indigo-400"/>} isClosing={isClosingModal} onClose={handleCloseTab} fullWidth><ComunicacaoArea user={user} onClose={handleCloseTab} /></OverlayModal>}
 
         {/* BOARD VIEW */}
         <div className={`flex-1 flex flex-col min-h-0 ${activeTab !== 'board' ? 'hidden md:flex opacity-30 pointer-events-none transition-opacity duration-300' : 'fade-in'}`}>
@@ -2780,6 +2783,8 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
          <MobileNavBtn icon={<Sun size={20} />} label="Hoje" active={activeTab === 'today' && !isClosingModal} onClick={() => setActiveTab('today')} count={todayCount} />
          <MobileNavBtn icon={<StickyNote size={20} />} label="Notas" active={activeTab === 'notes' && !isClosingModal} onClick={() => setActiveTab('notes')} />
          <MobileProfileNavBtn url={activeAvatar} name={user.name} open={showProfileMenu} onClick={(e: any) => { e.stopPropagation(); setShowProfileMenu(!showProfileMenu); }}>
+            <button onClick={() => { setActiveTab('comunicacao'); setShowProfileMenu(false); }} className="w-full text-left px-5 py-3 text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-overlay)] flex items-center gap-3 font-medium"><Megaphone size={16}/> Comunicação</button>
+            <div className="h-px w-full bg-[var(--border-primary)] my-1"></div>
             <button onClick={() => { setProfileModal(true); setShowProfileMenu(false); }} className="w-full text-left px-5 py-3 text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-overlay)] flex items-center gap-3 font-medium"><UserCog size={16}/> Editar Perfil</button>
             <div className="h-px w-full bg-[var(--border-primary)] my-1"></div>
             <button onClick={toggleTheme} className="w-full text-left px-5 py-3 text-sm text-[var(--text-secondary)] flex items-center justify-between gap-3 font-medium">

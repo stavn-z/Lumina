@@ -154,6 +154,16 @@ function checklistElapsed(checklist: any[]): number {
   }, 0);
 }
 
+// Grava em durationMin (o "tempo da demanda") a soma dos cronômetros dos itens, nas demandas do
+// modelo novo — chamado a cada play/pause/lançamento manual feito direto no Kanban, pra o tempo
+// final já ficar salvo na demanda sem precisar abrir o card e salvar. Mesmo "> 0" do saveModal:
+// enquanto nenhum item rodou, não zera uma estimativa digitada à mão.
+function syncItemDuration(t: any): any {
+  if (!hasItemTimers(t)) return t;
+  const elapsed = checklistElapsed(t.checklist);
+  return elapsed > 0 ? { ...t, durationMin: Math.round(elapsed / 60) } : t;
+}
+
 // Mescla o checklist do formulário (cópia feita ao abrir o modal) com o checklist vivo da
 // demanda, pelo id do item: do formulário vêm texto/done/ordem/itens adicionados ou removidos;
 // os campos de cronômetro vêm SEMPRE do estado vivo quando o item existe lá. Sem isso, salvar o
@@ -1494,7 +1504,12 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
   }
 
   function saveModal() {
-    const f = modal.form;
+    // "Est. Minutos" que o usuário não tocou segue o valor vivo da demanda — os cronômetros dos
+    // itens atualizam durationMin direto no Kanban (syncItemDuration) enquanto o modal fica
+    // aberto, e o valor da cópia, desatualizado, seria lido como edição manual e venceria.
+    const liveForSave = modal.mode === 'edit' ? tasks.find((t: any) => t.id === modal.task.id) : null;
+    const { durationTouched, ...formRest } = modal.form;
+    const f = (!durationTouched && liveForSave) ? { ...formRest, durationMin: liveForSave.durationMin } : formRest;
 
     // Trava contra sobrescrita por aba/dispositivo desatualizado: se essa demanda avançou pra
     // Formalizar/Cancelada em outro lugar (outra aba, outro dispositivo, ou o Realtime) enquanto
@@ -1702,11 +1717,11 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
           if (c.timerRunning) return { ...c, timerRunning: false, timerStart: null, timerElapsed: freezeElapsed(c) };
           return c;
         });
-        if (wasRunning) return { ...t, checklist: nextChecklist };
+        if (wasRunning) return syncItemDuration({ ...t, checklist: nextChecklist });
         const history = t.status !== 'inprogress'
           ? [...(Array.isArray(t.history) ? t.history : []), histEntry('status', t.status, 'inprogress')]
           : t.history;
-        return { ...t, checklist: nextChecklist, status: 'inprogress', history };
+        return syncItemDuration({ ...t, checklist: nextChecklist, status: 'inprogress', history });
       })
     );
   }
@@ -1719,7 +1734,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
       prev.map((t) => {
         if (t.id !== taskId) return t;
         const checklist = Array.isArray(t.checklist) ? t.checklist : [];
-        return { ...t, checklist: checklist.map((c: any) => c.id === itemId ? { ...c, timerRunning: false, timerStart: null, timerElapsed: seconds } : c) };
+        return syncItemDuration({ ...t, checklist: checklist.map((c: any) => c.id === itemId ? { ...c, timerRunning: false, timerStart: null, timerElapsed: seconds } : c) });
       })
     );
   }
@@ -1899,6 +1914,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
           taskToMove.checklist = taskToMove.checklist.map((c: any) =>
             c.timerRunning ? { ...c, timerRunning: false, timerStart: null, timerElapsed: (c.timerElapsed || 0) + (c.timerStart ? (Date.now() - c.timerStart) / 1000 : 0) } : c
           );
+          taskToMove.durationMin = syncItemDuration(taskToMove).durationMin;
         }
 
         if (newStatus === 'waiting') {
@@ -5977,7 +5993,7 @@ function TaskModal({ modal, setModal, clients, responsibles, closeModal, saveMod
         <div className="p-6 sm:p-8 overflow-y-auto kp-scroll flex flex-col gap-6 bg-[var(--bg-primary)] flex-1">
           <div><label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Título do Card *</label><input autoFocus value={modal.form.title || ''} onChange={(e) => updateForm({ title: e.target.value })} className={`w-full bg-[var(--bg-secondary)] border rounded-xl px-4 py-4 sm:py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 transition-all ${validationError && String(validationError).includes("Título") ? "border-red-500" : "border-[var(--border-primary)]"}`} placeholder="Ex: Ajustar Fluxo de E-mails..." /></div>
           <div><label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Contexto / Descrição *</label><textarea value={modal.form.description || ''} onChange={(e) => updateForm({ description: e.target.value })} rows={4} className={`w-full bg-[var(--bg-secondary)] border rounded-xl px-4 py-4 sm:py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 resize-none transition-all ${validationError && String(validationError).includes("Descrição") ? "border-red-500" : "border-[var(--border-primary)]"}`} placeholder="Descreva os requisitos técnicos ou regras de negócio..." /></div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5"><CustomSelect label="Prioridade *" required hasError={validationError && String(validationError).includes("Prioridade")} value={modal.form.priority || ''} onChange={(e: any) => updateForm({ priority: e.target.value })} options={<><option value="" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Selecione...</option><option value="Baixa" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Baixa</option><option value="Média" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Média</option><option value="Alta" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Alta</option></>} /><div><label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Est. Minutos</label><input type="number" value={modal.form.durationMin ?? ''} onChange={(e) => updateForm({ durationMin: e.target.value })} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-4 sm:py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 shadow-sm" placeholder="Ex: 60" /></div></div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5"><CustomSelect label="Prioridade *" required hasError={validationError && String(validationError).includes("Prioridade")} value={modal.form.priority || ''} onChange={(e: any) => updateForm({ priority: e.target.value })} options={<><option value="" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Selecione...</option><option value="Baixa" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Baixa</option><option value="Média" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Média</option><option value="Alta" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Alta</option></>} /><div><label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Est. Minutos</label><input type="number" value={(!modal.form.durationTouched && liveTask ? liveTask.durationMin : modal.form.durationMin) ?? ''} onChange={(e) => updateForm({ durationMin: e.target.value, durationTouched: true })} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-4 sm:py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 shadow-sm" placeholder="Ex: 60" /></div></div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5"><CustomSelect label="Responsável *" required hasError={validationError && String(validationError).includes("Responsável")} value={modal.form.responsibleId || ''} onChange={(e: any) => updateForm({ responsibleId: e.target.value })} options={<><option value="" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Selecione a pessoa...</option>{responsibles.map((r: any) => <option key={r.id} value={r.id} className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">{r.name}</option>)}</>} /><CustomSelect label="Cliente *" required hasError={validationError && String(validationError).includes("Cliente")} value={modal.form.clientId || ''} onChange={(e: any) => updateForm({ clientId: e.target.value })} options={<><option value="" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Selecione a empresa...</option>{clients.map((c: any) => <option key={c.id} value={c.id} className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">{c.name}</option>)}</>} /></div>
           
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">

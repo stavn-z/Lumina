@@ -190,6 +190,30 @@ function getBrasiliaDate() {
   return `${year}-${month}-${day}`;
 }
 
+// Cliente de cobertura temporária (férias de um colega). Datas no formato YYYY-MM-DD (dia de
+// Brasília), comparadas como texto. A cobertura vale até o fim do dia "Até": só no dia seguinte
+// o cliente é arquivado automaticamente (ver useEffect de "cover_expired" em KanbanMain).
+function addDaysISO(iso: string, days: number) {
+  const [y, m, d] = iso.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + days));
+  return dt.toISOString().slice(0, 10);
+}
+function isCoverExpired(c: any, today = getBrasiliaDate()) {
+  return !!c.isCover && !!c.coverUntil && c.coverUntil < today;
+}
+// Arquivado de fato: marcado no banco ou cobertura vencida ainda não gravada como arquivada (só o
+// admin grava em clients; os demais já tratam o cliente como arquivado na tela).
+function isClientArchived(c: any) {
+  return !!c.archived || isCoverExpired(c);
+}
+function coverPeriodLabel(c: any) {
+  const fmt = (iso: string) => iso ? iso.split('-').reverse().slice(0, 2).join('/') : '';
+  if (c.coverFrom && c.coverUntil) return `${fmt(c.coverFrom)}–${fmt(c.coverUntil)}`;
+  if (c.coverUntil) return `até ${fmt(c.coverUntil)}`;
+  if (c.coverFrom) return `desde ${fmt(c.coverFrom)}`;
+  return '';
+}
+
 function parseDateLocal(dateStr: string) {
   if (!dateStr) return null;
   const [y, m, d] = dateStr.split('-');
@@ -794,6 +818,13 @@ function ChartTooltip({ active, payload, label }: any) {
 function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLogout: any }) {
   const [tasks, setTasks] = useState<any[]>([]);
   const [clients, setClients] = useState<any[]>([]);
+  // Dia de Brasília, atualizado a cada minuto — vira à meia-noite com o sistema aberto (usado
+  // pelo arquivamento automático e pelo aviso de fim de cobertura).
+  const [today, setToday] = useState(getBrasiliaDate());
+  useEffect(() => {
+    const id = setInterval(() => setToday(getBrasiliaDate()), 60000);
+    return () => clearInterval(id);
+  }, []);
   const [responsibles, setResponsibles] = useState<any[]>([]);
   const [notes, setNotes] = useState<any[]>([]);
   const [globalLookerUrl, setGlobalLookerUrl] = useState<string>('');
@@ -1111,6 +1142,10 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
             dailyLogMinutes: c.dailyLogMinutes || 60,
             extraHolidays: Array.isArray(c.extraHolidays) ? c.extraHolidays : [],
             archived: !!c.archived,
+            isCover: !!c.isCover,
+            coverFor: c.coverFor || '',
+            coverFrom: c.coverFrom || null,
+            coverUntil: c.coverUntil || null,
           }));
           setClients(normalizedClients);
           normalizedClients.forEach((c: any) => { lastSyncedClientsRef.current[c.id] = stableStringify(c); });
@@ -1334,6 +1369,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
     setFilterCreatedStart(''); setFilterCreatedEnd(''); setFilterCompletedStart(''); setFilterCompletedEnd('');
   };
 
+
   const [modal, setModal] = useState<any>(null); 
   const [profileModal, setProfileModal] = useState(false);
   const [quickAdd, setQuickAdd] = useState(false);
@@ -1399,7 +1435,30 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
   // Clientes arquivados saem das listas de uso diário (seletores, filtros, captura rápida, alerta
   // de banco de horas), mas continuam em visibleClients/clients — Analytics, Fechamento e o nome
   // nos cards antigos seguem resolvendo o clientId normalmente.
-  const activeClients = useMemo(() => visibleClients.filter((c: any) => !c.archived), [visibleClients]);
+  const activeClients = useMemo(() => visibleClients.filter((c: any) => !isClientArchived(c)), [visibleClients, today]);
+
+  // Cobertura temporária: depois do "Até", o cliente é arquivado automaticamente (mesmo campo
+  // "archived" do fluxo manual) — nada é apagado e o clientId das demandas não muda, então
+  // histórico, horas e Analytics ficam intactos. Roda no load e a cada minuto (pega a virada do
+  // dia com o sistema aberto). Só o admin grava em clients; pros demais isClientArchived já trata.
+  useEffect(() => {
+    if (!isCloudSynced || !user.isAdmin) return;
+    if (!clients.some((c: any) => !c.archived && isCoverExpired(c, today))) return;
+    setClients((prev: any) => prev.map((c: any) => (!c.archived && isCoverExpired(c, today)) ? { ...c, archived: true } : c));
+  }, [clients, today, isCloudSynced, user.isAdmin]);
+
+  // Aviso discreto na véspera do fim da cobertura, pra dar tempo do fechamento semanal final.
+  // Dispensado por cliente + data (se o "Até" mudar, o aviso volta pra nova data).
+  const [dismissedCoverAlerts, setDismissedCoverAlerts] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem('lumina_dismissed_cover_alerts') || '[]')); } catch { return new Set(); }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('lumina_dismissed_cover_alerts', JSON.stringify([...dismissedCoverAlerts])); } catch {}
+  }, [dismissedCoverAlerts]);
+  const coversEndingTomorrow = useMemo(() => {
+    const tomorrow = addDaysISO(today, 1);
+    return activeClients.filter((c: any) => c.isCover && c.coverUntil === tomorrow && !dismissedCoverAlerts.has(`${c.id}:${c.coverUntil}`));
+  }, [activeClients, today, dismissedCoverAlerts]);
 
   // Filtro de cliente salvo no localStorage apontando pra um cliente arquivado esconderia o
   // quadro inteiro sem o cliente aparecer no seletor — volta pra "Todos".
@@ -1421,6 +1480,8 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
   const clientsNearLimit = useMemo(() => {
     const nowMonth = currentMonthBrasilia();
     return activeClients.filter(c => {
+      // Sem teto definido não há alerta — vale também (e principalmente) pra clientes de
+      // cobertura: as horas contam normalmente, mas só alertam se tiverem teto explícito.
       if (!c.contractedHours) return false;
       const cTasks = tasks.filter(t => t.clientId === c.id);
       const hours = hoursInMonth(cTasks, nowMonth, getElapsed) + autoLogHoursForMonth(c, nowMonth);
@@ -2518,6 +2579,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                               <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
                                 <div className="flex items-center gap-2 flex-wrap">
                                   {client && <span className="flex items-center gap-1 text-[9px] uppercase tracking-wider px-2 py-1 rounded-md bg-[var(--bg-overlay)] text-[var(--text-secondary)] font-bold max-w-[140px] truncate border border-[var(--border-overlay)]"><Building2 size={10} /> {client.name}</span>}
+                                  {client?.isCover && <span title={`Cobertura${client.coverFor ? ` de ${client.coverFor}` : ''}${coverPeriodLabel(client) ? ` · ${coverPeriodLabel(client)}` : ''}`} className="flex items-center gap-1 text-[9px] uppercase tracking-wider px-2 py-1 rounded-md bg-sky-500/10 text-sky-400 border border-sky-500/20 font-bold whitespace-nowrap">Cobertura{coverPeriodLabel(client) ? ` · ${coverPeriodLabel(client)}` : ''}</span>}
                                   <span className={`flex items-center gap-1 text-[9px] uppercase tracking-wider px-2 py-1 rounded-md border font-bold ${prStyle.bg} ${prStyle.text} ${prStyle.border}`}>
                                     <span className={`w-1 h-1 rounded-full ${prStyle.dot}`} /> {t.priority}
                                   </span>
@@ -2830,6 +2892,18 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
 
       {/* Erro de sincronização com a nuvem — visível na tela em vez de só no console,
           pra não descobrir uma falha de save somente depois de recarregar e perder o card. */}
+      {coversEndingTomorrow.length > 0 && (
+        <div className="fixed bottom-4 left-4 z-[150] max-w-xs flex flex-col gap-2">
+          {coversEndingTomorrow.map((c: any) => (
+            <div key={c.id} className="flex items-center gap-2 pl-3 pr-1.5 py-2 rounded-xl bg-[var(--bg-secondary)] border border-sky-500/30 shadow-lg text-xs text-[var(--text-secondary)] animate-fade-in">
+              <CalendarDays size={14} className="text-sky-400 shrink-0" />
+              <span className="flex-1 min-w-0">Cobertura de <span className="font-bold text-[var(--text-primary)]">{c.name}</span> termina amanhã</span>
+              <button onClick={() => setDismissedCoverAlerts((prev) => new Set([...prev, `${c.id}:${c.coverUntil}`]))} className="p-1 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors shrink-0" title="Dispensar"><X size={14} /></button>
+            </div>
+          ))}
+        </div>
+      )}
+
       {syncError && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[200] w-[92%] max-w-lg rounded-2xl bg-[var(--bg-secondary)] border border-red-500/40 shadow-2xl overflow-hidden animate-modal-pop">
           <div className="p-4 flex items-start gap-3">
@@ -3173,6 +3247,16 @@ function CustomSelect({ label, value, onChange, options, hasError, required }: a
         <ChevronDown size={16} className="absolute right-4 text-[var(--text-muted)] pointer-events-none" />
       </div>
     </div>
+  );
+}
+
+// Selo discreto de cliente de cobertura temporária, com o período (e quem está sendo coberto no title).
+function CoverBadge({ client }: { client: any }) {
+  const period = coverPeriodLabel(client);
+  return (
+    <span title={`Cobertura${client.coverFor ? ` de ${client.coverFor}` : ''}${period ? ` · ${period}` : ''}`} className="inline-flex items-center gap-1 text-[9px] uppercase tracking-wider px-2 py-0.5 rounded-md bg-sky-500/10 text-sky-400 border border-sky-500/20 font-bold whitespace-nowrap">
+      Cobertura{period ? ` · ${period}` : ''}
+    </span>
   );
 }
 
@@ -3597,7 +3681,17 @@ function ClientModal({ modal, setModal, setClients, user }: any) {
        dailyLogEnabled: !!form.dailyLogEnabled,
        dailyLogMinutes: form.dailyLogMinutes === '' ? 60 : parseInt(form.dailyLogMinutes, 10) || 60,
        extraHolidays: Array.isArray(form.extraHolidays) ? form.extraHolidays : [],
+       isCover: !!form.isCover,
+       coverFor: form.isCover ? (form.coverFor || '').trim() : '',
+       // Colunas "date" no Supabase não aceitam '' — vazio vai como null.
+       coverFrom: form.isCover && form.coverFrom ? form.coverFrom : null,
+       coverUntil: form.isCover && form.coverUntil ? form.coverUntil : null,
     };
+    if (finalForm.isCover && finalForm.coverFrom && finalForm.coverUntil && finalForm.coverFrom > finalForm.coverUntil) { setValidationError("A data \"De\" da cobertura não pode ser depois do \"Até\"."); return; }
+    // Cobertura que já terminou é salva arquivada. Estender o "Até" de uma cobertura que tinha
+    // sido arquivada por expirar a traz de volta às listas; arquivamento manual não é tocado.
+    if (isCoverExpired(finalForm)) finalForm.archived = true;
+    else if (finalForm.archived && isCoverExpired(modal.form)) finalForm.archived = false;
 
     if (modal.mode === "add") { 
        setClients((prev: any) => [...prev, { ...finalForm, id: 'c' + Date.now(), ownerId: user.id }]); 
@@ -3624,6 +3718,35 @@ function ClientModal({ modal, setModal, setClients, user }: any) {
           <div>
             <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Teto de Horas Contratadas (Mensal)</label>
             <input type="number" value={form.contractedHours === 0 ? '' : form.contractedHours} onChange={(e) => setForm({ ...form, contractedHours: e.target.value })} className={`w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-4 sm:py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-purple-500 transition-colors`} placeholder="Ex: 50" />
+          </div>
+
+          <div className="rounded-2xl border border-[var(--border-primary)] p-4 sm:p-5 flex flex-col gap-4">
+            <button type="button" onClick={() => { setForm((prev: any) => ({ ...prev, isCover: !prev.isCover })); setValidationError(null); }} className="w-full flex items-start gap-3 text-left">
+              <span className={`mt-0.5 w-4 h-4 rounded flex items-center justify-center shrink-0 border transition-colors ${form.isCover ? 'bg-purple-500 border-purple-500 text-white' : 'border-[var(--border-hover)] text-transparent'}`}><Check size={11} strokeWidth={3}/></span>
+              <span>
+                <span className="block text-xs font-bold text-[var(--text-primary)]">Cliente de cobertura</span>
+                <span className="block text-[10px] text-[var(--text-muted)] mt-1 leading-relaxed">Cliente de um colega que você cobre por um período. Depois do "Até", é arquivado sozinho, sem perder histórico.</span>
+              </span>
+            </button>
+
+            {form.isCover && (
+              <div className="flex flex-col gap-4 animate-fade-in">
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Cobrindo quem</label>
+                  <input value={form.coverFor || ''} onChange={(e) => setForm({ ...form, coverFor: e.target.value })} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-purple-500 transition-colors" placeholder="Nome do colega" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">De</label>
+                    <input type="date" value={form.coverFrom || ''} onChange={(e) => { setForm({ ...form, coverFrom: e.target.value }); setValidationError(null); }} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-3 py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-purple-500 transition-colors [color-scheme:dark]" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Até</label>
+                    <input type="date" value={form.coverUntil || ''} onChange={(e) => { setForm({ ...form, coverUntil: e.target.value }); setValidationError(null); }} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-3 py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-purple-500 transition-colors [color-scheme:dark]" />
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
 
@@ -3750,6 +3873,7 @@ function ClientDetailModal({ client, tasks, getElapsed, user, theme, onClose, on
           <div className="flex items-center gap-3 min-w-0">
             <div className="p-2.5 bg-purple-500/10 rounded-xl border border-purple-500/20 shrink-0"><Building2 size={22} className="text-purple-400" /></div>
             <h3 className="font-display font-bold text-xl text-[var(--text-primary)] tracking-tight truncate">{client.name}</h3>
+            {client.isCover && <div className="mt-1"><CoverBadge client={client} /></div>}
           </div>
           <button onClick={onClose} className="p-2.5 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-overlay)] transition-colors shrink-0"><X size={20} /></button>
         </div>
@@ -3906,8 +4030,8 @@ function ClientsPanelContent({ clients, setClients, tasks, setTasks, user, getEl
   const [confirmRemoveClient, setConfirmRemoveClient] = useState<any>(null);
   const [confirmRemoveText, setConfirmRemoveText] = useState('');
   const [showArchived, setShowArchived] = useState(false);
-  const activeList = clients.filter((c: any) => !c.archived);
-  const archivedList = clients.filter((c: any) => c.archived);
+  const activeList = clients.filter((c: any) => !isClientArchived(c));
+  const archivedList = clients.filter((c: any) => isClientArchived(c));
 
   const openEdit = (client: any) => {
     if (!user.isAdmin) return;
@@ -3920,7 +4044,10 @@ function ClientsPanelContent({ clients, setClients, tasks, setTasks, user, getEl
   // pelo sync incremental de clientes (upsert do registro alterado).
   const setArchived = (id: string, archived: boolean) => {
     if (!user.isAdmin) return;
-    setClients((prev: any) => prev.map((c: any) => c.id === id ? { ...c, archived } : c));
+    // Reativar uma cobertura já vencida a transforma em cliente normal (sai do modo cobertura) —
+    // senão o arquivamento automático a arquivaria de novo no minuto seguinte. Pra estender a
+    // cobertura em vez disso, basta editar o "Até".
+    setClients((prev: any) => prev.map((c: any) => c.id !== id ? c : (!archived && isCoverExpired(c)) ? { ...c, archived: false, isCover: false } : { ...c, archived }));
   };
 
   // Exclusão definitiva: só a partir da seção de Arquivados, com confirmação digitando o nome.
@@ -3966,7 +4093,7 @@ function ClientsPanelContent({ clients, setClients, tasks, setTasks, user, getEl
               <div className="flex items-center gap-5">
                 <div className="p-4 bg-[var(--bg-overlay)] rounded-2xl border border-[var(--border-overlay)] group-hover:border-purple-500/30 transition-colors"><Building2 size={24} className="text-purple-400" /></div>
                 <div className="flex flex-col">
-                  <span className="text-lg font-bold text-[var(--text-primary)] group-hover:text-purple-400 transition-colors">{c.name}</span>
+                  <span className="text-lg font-bold text-[var(--text-primary)] group-hover:text-purple-400 transition-colors flex items-center gap-2 flex-wrap">{c.name}{c.isCover && <CoverBadge client={c} />}</span>
                   <span className="text-xs text-[var(--text-muted)] mt-1 uppercase tracking-widest font-bold">
                     {c.contractedHours ? <span className="text-indigo-400">Teto: {c.contractedHours}h/mês | </span> : ''} {emailsArray.length === 0 ? "0 E-mails" : `${emailsArray.length} Contato(s)`} • {count} Demandas
                   </span>
@@ -4002,13 +4129,16 @@ function ClientsPanelContent({ clients, setClients, tasks, setTasks, user, getEl
                 return (
                   <div key={c.id} className="flex flex-col sm:flex-row sm:items-center justify-between bg-[var(--bg-secondary)] border border-dashed border-[var(--border-primary)] rounded-[20px] px-6 py-4 gap-4 opacity-80">
                     <div className="flex flex-col">
-                      <span className="text-base font-bold text-[var(--text-secondary)]">{c.name}</span>
-                      <span className="text-xs text-[var(--text-muted)] mt-1 uppercase tracking-widest font-bold">Arquivado • {count} Demandas</span>
+                      <span className="text-base font-bold text-[var(--text-secondary)] flex items-center gap-2 flex-wrap">{c.name}{c.isCover && <CoverBadge client={c} />}</span>
+                      <span className="text-xs text-[var(--text-muted)] mt-1 uppercase tracking-widest font-bold">{isCoverExpired(c) ? 'Cobertura encerrada' : 'Arquivado'} • {count} Demandas</span>
                     </div>
                     {user.isAdmin && (
                       <div className="flex items-center gap-2">
                         <button onClick={() => { setConfirmRemoveText(''); setConfirmRemoveClient(c); }} className="px-3 py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-widest text-red-400/60 hover:text-red-400 hover:bg-red-500/10 transition-colors flex items-center gap-1.5">
                           <Trash2 size={13} /> Excluir definitivamente
+                        </button>
+                        <button onClick={() => openEdit(c)} title={isCoverExpired(c) ? 'Editar (ex.: estender o "Até" da cobertura)' : 'Editar'} className="p-2.5 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-overlay)] transition-colors">
+                          <Pencil size={14} />
                         </button>
                         <button onClick={() => setArchived(c.id, false)} className="px-5 py-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-[10px] font-bold uppercase tracking-widest transition-colors flex items-center gap-2">
                           <ArchiveRestore size={14} /> Reativar
@@ -5453,7 +5583,7 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove, user, onCre
                 <div className="relative">
                   <select value={cClient} onChange={e => setCClient(e.target.value)} className="appearance-none w-full rounded-xl pl-4 pr-10 py-3.5 text-sm outline-none focus:border-teal-500 cursor-pointer transition-colors" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)', color: 'var(--text-primary)' }}>
                     <option value="" className="bg-[var(--bg-tertiary)]">Pessoal / sem cliente</option>
-                    {clients.filter((c: any) => !c.archived).map((c: any) => <option key={c.id} value={c.id} className="bg-[var(--bg-tertiary)]">{c.name}</option>)}
+                    {clients.filter((c: any) => !isClientArchived(c)).map((c: any) => <option key={c.id} value={c.id} className="bg-[var(--bg-tertiary)]">{c.name}</option>)}
                   </select>
                   <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--text-muted)' }} />
                 </div>
@@ -6072,7 +6202,7 @@ function TaskModal({ modal, setModal, clients, responsibles, closeModal, saveMod
           <div><label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Título do Card *</label><input autoFocus value={modal.form.title || ''} onChange={(e) => updateForm({ title: e.target.value })} className={`w-full bg-[var(--bg-secondary)] border rounded-xl px-4 py-4 sm:py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 transition-all ${validationError && String(validationError).includes("Título") ? "border-red-500" : "border-[var(--border-primary)]"}`} placeholder="Ex: Ajustar Fluxo de E-mails..." /></div>
           <div><label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Contexto / Descrição *</label><textarea value={modal.form.description || ''} onChange={(e) => updateForm({ description: e.target.value })} rows={4} className={`w-full bg-[var(--bg-secondary)] border rounded-xl px-4 py-4 sm:py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 resize-none transition-all ${validationError && String(validationError).includes("Descrição") ? "border-red-500" : "border-[var(--border-primary)]"}`} placeholder="Descreva os requisitos técnicos ou regras de negócio..." /></div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5"><CustomSelect label="Prioridade *" required hasError={validationError && String(validationError).includes("Prioridade")} value={modal.form.priority || ''} onChange={(e: any) => updateForm({ priority: e.target.value })} options={<><option value="" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Selecione...</option><option value="Baixa" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Baixa</option><option value="Média" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Média</option><option value="Alta" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Alta</option></>} /><div><label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Est. Minutos</label><input type="number" value={(!modal.form.durationTouched && liveTask ? liveTask.durationMin : modal.form.durationMin) ?? ''} onChange={(e) => updateForm({ durationMin: e.target.value, durationTouched: true })} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-4 sm:py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 shadow-sm" placeholder="Ex: 60" /></div></div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5"><CustomSelect label="Responsável *" required hasError={validationError && String(validationError).includes("Responsável")} value={modal.form.responsibleId || ''} onChange={(e: any) => updateForm({ responsibleId: e.target.value })} options={<><option value="" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Selecione a pessoa...</option>{responsibles.map((r: any) => <option key={r.id} value={r.id} className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">{r.name}</option>)}</>} /><CustomSelect label="Cliente *" required hasError={validationError && String(validationError).includes("Cliente")} value={modal.form.clientId || ''} onChange={(e: any) => updateForm({ clientId: e.target.value })} options={<><option value="" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Selecione a empresa...</option>{clientOptions.map((c: any) => <option key={c.id} value={c.id} className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">{c.name}{c.archived ? ' (arquivado)' : ''}</option>)}</>} /></div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5"><CustomSelect label="Responsável *" required hasError={validationError && String(validationError).includes("Responsável")} value={modal.form.responsibleId || ''} onChange={(e: any) => updateForm({ responsibleId: e.target.value })} options={<><option value="" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Selecione a pessoa...</option>{responsibles.map((r: any) => <option key={r.id} value={r.id} className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">{r.name}</option>)}</>} /><CustomSelect label="Cliente *" required hasError={validationError && String(validationError).includes("Cliente")} value={modal.form.clientId || ''} onChange={(e: any) => updateForm({ clientId: e.target.value })} options={<><option value="" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Selecione a empresa...</option>{clientOptions.map((c: any) => <option key={c.id} value={c.id} className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">{c.name}{isClientArchived(c) ? ' (arquivado)' : ''}</option>)}</>} /></div>
           
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
             <div><label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Data de Início</label><input type="date" value={modal.form.startDate || ''} onChange={(e) => updateForm({ startDate: e.target.value })} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-4 sm:py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 [color-scheme:dark] shadow-sm" /></div>

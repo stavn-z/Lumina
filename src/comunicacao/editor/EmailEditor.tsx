@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Copy, RotateCcw } from "lucide-react";
 import { clone, DEFAULT } from "../defaults.ts";
-import { createTemplate } from "../data/templatesApi.ts";
 import { errorText } from "../data/supa.ts";
 import { emailWarnings, sizeLabel } from "../lib/emailChecks.ts";
 import { esc, generateEmailHtml, resolve, VAR_RE, varMap } from "../lib/emailHtml.ts";
@@ -84,12 +83,9 @@ export function EmailEditor({ row, deleted, userId, names, upsertLocal, onToggle
   }
 
   async function saveAsCopy() {
-    const data = clone(ed.draftRef.current);
-    data.nome = (data.nome || 'template') + '_copia';
     try {
-      const r = await createTemplate({ type: 'email', data, history: [{ t: Date.now(), kind: 'dup', from: row.data.nome || 'Sem nome', by: userId }], created_by: userId });
-      upsertLocal(r);
-      toast('Sua versão foi salva como “' + data.nome + '”');
+      const r = await ed.saveMineAsCopy();
+      toast('Sua versão foi salva como “' + r.data.nome + '”');
       if (ed.conflict?.current) ed.loadTheirs(); else { ed.dismissConflict(); onGone(); }
     } catch (e) { toast('Não foi possível salvar a cópia: ' + errorText(e)); }
   }
@@ -196,13 +192,13 @@ export function EmailEditor({ row, deleted, userId, names, upsertLocal, onToggle
         </section>
 
         {/* DADOS DO ENVIO + PRÉVIA */}
-        <section aria-label="Prévia" className={`${mobilePane === 'preview' ? 'flex' : 'hidden'} lg:flex flex-col gap-4 lg:min-h-0 lg:overflow-y-auto kp-scroll lg:pr-1 pt-4 lg:pt-0`}>
+        <section aria-label="Prévia" className={`${mobilePane === 'preview' ? 'flex' : 'hidden'} lg:flex flex-col gap-4 [&>*]:shrink-0 lg:min-h-0 lg:overflow-y-auto kp-scroll lg:pr-1 pt-4 lg:pt-0`}>
           <div className={panel} style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-primary)' }} aria-label="Dados do envio">
             <h4 className="flex items-center gap-2 mb-3 font-display font-bold text-[var(--text-primary)]">Dados do envio <span className="text-[9px] font-bold uppercase tracking-widest text-[var(--text-muted)] border border-[var(--border-primary)] rounded-md px-1.5 py-0.5">Copie para a plataforma</span></h4>
             <div className="mb-3"><RubeusLine row={ed.base} onToggle={() => onToggleRubeus(ed.base)} /></div>
             {([['Nome', S.nome, 'Sem nome', S.nome], ['Assunto', S.assunto, 'Preencha o assunto em Identificação', resolve(S.assunto, S)], ['Preheader', S.preheader, 'Preencha o preheader em Identificação', resolve(S.preheader, S)]] as const).map(([k, raw, empty, copyVal]) => (
-              <div key={k} className="grid grid-cols-[72px_minmax(0,1fr)_auto] items-center gap-3 py-2 border-t" style={{ borderColor: 'var(--border-overlay)' }}>
-                <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)]">{k}</span>
+              <div key={k} className="grid grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[72px_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 py-2 border-t" style={{ borderColor: 'var(--border-overlay)' }}>
+                <span className="col-span-2 sm:col-span-1 text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)]">{k}</span>
                 <BlockValue raw={raw} empty={empty} vars={k === 'Nome' ? {} : vars} />
                 <CopyButton value={copyVal} ariaLabel={'Copiar ' + k.toLowerCase()} />
               </div>

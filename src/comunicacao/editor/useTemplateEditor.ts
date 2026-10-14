@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { clone } from "../defaults.ts";
-import { saveTemplateContent } from "../data/templatesApi.ts";
+import { createTemplate, saveTemplateContent } from "../data/templatesApi.ts";
 import { useAutosave } from "../data/useAutosave.ts";
 import type { TemplateRow } from "../types.ts";
 
@@ -72,5 +72,14 @@ export function useTemplateEditor<D>(row: TemplateRow, userId: string, upsertLoc
   };
   const dismissConflict = () => { setConflict(null); autosave.discard(); };
 
-  return { draft, base, update, autosave, conflict, loadTheirs, keepMine, dismissConflict, draftRef };
+  /** "Salvar a minha como cópia": cria um template novo com o rascunho atual. */
+  const saveMineAsCopy = async () => {
+    const data: any = clone(draftRef.current);
+    data.nome = (data.nome || 'template') + '_copia';
+    const created = await createTemplate({ type: row.type, data, history: [{ t: Date.now(), kind: 'dup', from: baseRef.current.data.nome || 'Sem nome', by: userId }], created_by: userId });
+    upsertLocal(created);
+    return created;
+  };
+
+  return { draft, base, update, autosave, conflict, loadTheirs, keepMine, dismissConflict, saveMineAsCopy, draftRef };
 }

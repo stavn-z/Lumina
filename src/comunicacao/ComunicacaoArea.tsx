@@ -4,8 +4,8 @@ import { LayoutGrid, PenLine, Tag } from "lucide-react";
 import "./comunicacao.css";
 import { supa } from "./data/supa.ts";
 import { useTemplates } from "./data/useComData.ts";
-import { TYPES } from "./lib/library.ts";
 import { EmailEditor } from "./editor/EmailEditor.tsx";
+import { TextEditor } from "./editor/TextEditor.tsx";
 import { LibraryTab } from "./library/LibraryTab.tsx";
 import { useTemplateActions } from "./library/useTemplateActions.tsx";
 import { DialogProvider } from "./ui/Dialogs.tsx";
@@ -116,12 +116,11 @@ function Area({ user, onClose }: { user: ComUser, onClose: () => void }) {
             onToggleRubeus={actions.toggleRubeus}
           />
         )}
-        {tab === 'editor' && editRow && editRow.type === 'email' && (
-          <EmailEditor key={editRow.id} row={editRow} deleted={!openRow} userId={user.id} names={names} upsertLocal={upsertLocal} onToggleRubeus={actions.toggleRubeus} onGone={() => setOpenId(null)} />
-        )}
-        {tab === 'editor' && !(editRow && editRow.type === 'email') && (openRow
-          ? <EmptyState icon={<PenLine size={28} />} title={openRow.data.nome || 'Sem nome'} text={`Editor de ${TYPES[openRow.type]} — chega na Etapa ${openRow.type === 'email' ? 4 : 5}.`} />
-          : <EmptyState icon={<PenLine size={28} />} title={loading ? 'Carregando…' : 'Nenhum template aberto'} text="Abra um template em Meus templates para editar." />)}
+        {tab === 'editor' && editRow && (() => {
+          const Editor = editRow.type === 'email' ? EmailEditor : TextEditor;
+          return <Editor key={editRow.id} row={editRow} deleted={!openRow} userId={user.id} names={names} upsertLocal={upsertLocal} onToggleRubeus={actions.toggleRubeus} onGone={() => setOpenId(null)} />;
+        })()}
+        {tab === 'editor' && !editRow && <EmptyState icon={<PenLine size={28} />} title={loading ? 'Carregando…' : 'Nenhum template aberto'} text="Abra um template em Meus templates para editar." />}
         {tab === 'tax' && <EmptyState icon={<Tag size={28} />} title="Taxonomia" text="Gere o nome padronizado da campanha ou do template." />}
       </div>
     </div>

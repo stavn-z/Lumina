@@ -1,0 +1,19 @@
+{
+  "nome": "fin_eml_amb_zo_ins_rep_c2",
+  "assunto": "Lembrete de pagamento",
+  "preheader": "Seu boleto vence amanhã",
+  "webview": { "on": true, "text": "", "url": "" },
+  "banner": { "src": "https://i.ibb.co/banner/fin.png", "upload": "", "alt": "Financeiro", "link": "" },
+  "texto": "Oi, {1}.\n\nSeu boleto vence em {2}.",
+  "textColor": "#625f5f",
+  "fontSize": "14",
+  "font": "poppins",
+  "btn": { "text": "", "link": "https://x.com", "bg": "#0095d9", "color": "#ffffff", "upper": true },
+  "footer": { "src": "", "upload": "", "alt": "Rodapé", "link": "" },
+  "bg": "#e5e5e5",
+  "textAlign": "outro",
+  "social": { "on": true, "bg": "#000000", "accent": "", "color": "#eeeeee", "size": "x", "title": "", "contato": "", "unsub": true, "unsubText": "", "iconStyle": "outline-dark", "pos": "below",
+    "items": [{ "rede": "facebook", "link": "", "icon": "" }, { "rede": "linkedin", "link": "https://linkedin.com/x", "icon": "" }] },
+  "vars": [{ "k": "1", "v": "Fulano <b>" }, { "k": "2", "v": "14/10" }],
+  "links": []
+}

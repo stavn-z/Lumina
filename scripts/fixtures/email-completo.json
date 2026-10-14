@@ -1,0 +1,26 @@
+{
+  "nome": "CAP_EML_POS_TJ_PRE_PRM_C1",
+  "assunto": "{1}, sua bolsa de 30% na Pós <termina> \"hoje\" & amanhã",
+  "preheader": "Garanta a sua vaga com **desconto** antes do fim do prazo",
+  "webview": { "on": true, "text": "Ver no navegador", "url": "{view}" },
+  "banner": { "src": "https://wztalukwyzqbjcvhrunt.supabase.co/storage/v1/object/public/imagens/templates/2026/10/topo.png", "upload": "topo.png", "alt": "Pós Celso Lisboa – \"Inscrições\"", "link": "[link2]",
+    "orig": { "src": "https://wztalukwyzqbjcvhrunt.supabase.co/storage/v1/object/public/imagens/templates/2026/10/topo-original.png", "upload": "topo-original.png" } },
+  "texto": "Olá, **{1}**!\n\nSua matrícula na pós de {2} está quase pronta. Veja [o edital](https://celsolisboa.edu.br/edital?x=1&y=2) e confira em [link].\n\nLinha 1 do parágrafo\nLinha 2 com < e > e \"aspas\"\n\n[botão]\n\nDúvidas? Fale com a gente em [clique aqui](link3).\n\nAtenciosamente,\nEquipe Celso",
+  "textColor": "#333333",
+  "fontSize": "15",
+  "font": "arial",
+  "btn": { "text": "Quero minha vaga, {1}", "link": "[link]?utm={2}", "bg": "#e30613", "color": "#fff", "upper": true },
+  "footer": { "src": "https://i.ibb.co/abc123/rodape.jpg", "upload": "", "alt": "Rodapé", "link": "https://celsolisboa.edu.br/" },
+  "bg": "#f0f0f0",
+  "textAlign": "center",
+  "social": { "on": true, "bg": "#01348d", "accent": "#0187ce", "color": "#ffffff", "size": "36", "title": "Fale com a gente", "contato": "[Câmpus Tijuca](https://goo.gl/maps/abc) | [Câmpus Bangu](https://goo.gl/maps/def)\n[Telefone: (21) 3289-4000](https://wa.me/552132894000)\n**Horário:** 8h às 20h", "unsub": true, "unsubText": "Se deseja não receber mais mensagens como esta, [descadastre-se]({unsubscribe}).", "iconStyle": "color", "pos": "above",
+    "items": [
+      { "rede": "instagram", "link": "https://instagram.com/celsolisboa", "icon": "" },
+      { "rede": "x", "link": "https://x.com/celso", "icon": "" },
+      { "rede": "tiktok", "link": "https://tiktok.com/@celso", "icon": "" },
+      { "rede": "site", "link": "", "icon": "https://i.ibb.co/xyz/site.png" },
+      { "rede": "whatsapp", "link": "", "icon": "" }
+    ] },
+  "vars": [{ "k": "1", "v": "@@primeiro_nome@@" }, { "k": "2", "v": "@@curso@@" }, { "k": " ", "v": "ignorada" }],
+  "links": [{ "k": "link", "v": "https://celsolisboa.edu.br/pos?a=1&b=2" }, { "k": "LINK2", "v": " https://celsolisboa.edu.br/topo " }, { "k": "link3", "v": "https://wa.me/552132894000" }, { "k": "link4", "v": "" }]
+}

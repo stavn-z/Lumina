@@ -1,0 +1,18 @@
+{
+  "nome": "cap_eml_grd_en_ead_rep_c3",
+  "assunto": "",
+  "preheader": "",
+  "webview": { "on": false, "text": "", "url": "" },
+  "banner": { "src": "", "upload": "", "alt": "", "link": "" },
+  "texto": "  [ BOTÃO ]  \nTexto só depois do marcador, com {9} não declarada e [link5] sem endereço.\n\n\n\nOutro parágrafo com **negrito** e ** solto.",
+  "textColor": "#000",
+  "fontSize": "17",
+  "font": "poppins",
+  "btn": { "text": "", "link": "", "bg": "#0095d9", "color": "#ffffff", "upper": false },
+  "footer": { "src": "", "upload": "", "alt": "", "link": "" },
+  "bg": "#ffffff",
+  "textAlign": "justify",
+  "social": { "on": false, "bg": "#01348d", "accent": "", "color": "#ffffff", "size": "24", "title": "", "contato": "", "unsub": false, "unsubText": "", "iconStyle": "dark", "pos": "below", "items": [] },
+  "vars": [],
+  "links": []
+}

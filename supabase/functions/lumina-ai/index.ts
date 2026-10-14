@@ -52,13 +52,50 @@ type Action = {
   buildPrompt: (payload: Record<string, unknown>) => string;
   // Quando definido, a resposta vem como JSON validado por este schema.
   schema?: Record<string, unknown>;
+  // Ajuste final de uma resposta em texto (sem schema), antes de devolvê-la.
+  postProcess?: (text: string) => string;
 };
 
 // Regras contra invenção, comuns às ações que escrevem a partir das demandas.
 const ONLY_GIVEN_DATA = [
   "Use APENAS as informações presentes nos dados recebidos (título, descrição, status, tempo, datas). Nunca invente prazos, entregas, resultados, nomes, números ou compromissos que não estejam nos dados.",
   "Se faltar informação para algo, omita em vez de preencher com suposição.",
+  "Não escreva comentários sobre o próprio pedido nem sobre os dados recebidos (por exemplo \"a frase não detalha…\" ou \"não há informação sobre…\").",
 ];
+
+// Espaçamento fixo das seções do e-mail: título da seção colado ao primeiro item, itens sem
+// linha em branco entre si e exatamente uma linha em branco antes e depois de cada seção.
+// Só mexe em quebras de linha; se algum caractere de conteúdo mudasse, devolve o original.
+const SECTION_HEADER = /^Demandas (Finalizadas|em Andamento):$/i;
+function normalizeEmailSpacing(text: string): string {
+  const lines = text.split(/\r?\n/);
+  const isBlank = (l: string) => /^\s*$/.test(l);
+  const out: string[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    if (!SECTION_HEADER.test(lines[i].trim())) { out.push(lines[i]); i++; continue; }
+    while (out.length > 0 && isBlank(out[out.length - 1])) out.pop();
+    if (out.length > 0) out.push("");
+    out.push(lines[i]);
+    i++;
+    // Pertence à seção: linha não vazia logo após outra da seção, ou, depois de linha em branco,
+    // um novo item ("- ") ou o tempo dele. Qualquer outra coisa encerra a seção.
+    let prevBlank = false;
+    while (i < lines.length) {
+      const l = lines[i];
+      if (isBlank(l)) { prevBlank = true; i++; continue; }
+      if (SECTION_HEADER.test(l.trim())) break;
+      if (prevBlank && !/^\s*(- |Tempo dedicado:)/.test(l)) break;
+      out.push(l);
+      prevBlank = false;
+      i++;
+    }
+    if (i < lines.length) out.push("");
+  }
+  const result = out.join("\n");
+  const content = (t: string) => t.replace(/\s+/g, "");
+  return content(result) === content(text) ? result : text;
+}
 
 const ACTIONS: Record<string, Action> = {
   closure_email: {
@@ -71,11 +108,18 @@ const ACTIONS: Record<string, Action> = {
       "1. A linha \"Prezados(as),\", uma linha em branco e \"Espero que se encontrem bem.\".",
       "2. Uma frase de abertura. Se houver data da reunião, diga que segue o resumo da reunião de overview realizada nessa data, com os principais pontos e o estado das demandas; se não houver, diga que segue o resumo semanal com os principais pontos e o estado das demandas.",
       "3. Se houver link da reunião, a linha \"Acesse a gravação da reunião: <link>\" com o link exatamente como recebido. Sem link, não mencione gravação.",
-      "4. A seção \"Demandas Finalizadas:\" e depois \"Demandas em Andamento:\". Cada demanda numa linha iniciada por \"- \" com o título, seguida de uma ou duas frases claras sobre o que foi feito (finalizadas) ou o que está em curso (em andamento), escritas só a partir da descrição. Sem descrição, deixe só o título. Omita a seção que não tiver demandas.",
-      "5. Se o tempo vier nos dados, ponha numa linha logo abaixo da demanda \"Tempo dedicado: <tempo>\", exatamente como recebido. Se não vier, não mencione horas.",
-      "Espaçamento das seções, sempre igual: o primeiro item vem na linha IMEDIATAMENTE seguinte ao título da seção, sem linha em branco entre o título e o item; não há linha em branco entre os itens de uma mesma seção; há exatamente uma linha em branco depois do último item de cada seção.",
+      "4. A seção \"Demandas Finalizadas:\" e depois \"Demandas em Andamento:\". Omita a seção que não tiver demandas. Cada demanda ocupa UMA linha, com o título e a descrição juntos, separados por dois-pontos: uma ou duas frases claras sobre o que foi feito (finalizadas) ou o que está em curso (em andamento), escritas só a partir da descrição. Sem descrição, a linha tem só o título.",
+      "5. Só quando o tempo vier nos dados, a linha logo abaixo da demanda é \"Tempo dedicado: <tempo>\", com o tempo exatamente como recebido. Sem tempo nos dados, não existe essa linha nem menção a horas.",
+      "Modelo literal de uma seção (repita a linha da demanda para cada uma, na mesma seção, sem linha em branco entre elas; a linha de tempo só existe se o tempo for enviado):",
+      "Demandas Finalizadas:",
+      "- TÍTULO DA DEMANDA: Descrição do que foi feito.",
+      "Tempo dedicado: 2h30min",
+      "- TÍTULO DE OUTRA DEMANDA: Descrição do que foi feito.",
+      "Tempo dedicado: 45min",
+      "Fim do modelo. O primeiro item vem na linha seguinte ao título da seção, sem linha em branco; entre seções há exatamente uma linha em branco.",
       "6. Feche com \"Em caso de dúvidas, continuo à disposição.\", uma linha em branco e a linha final \"Com os melhores cumprimentos,\". Nada depois dela.",
     ].join("\n"),
+    postProcess: normalizeEmailSpacing,
     buildPrompt: (p) => {
       const includeTime = p.includeTime === true;
       const tasks = taskList(p.tasks).map(t => ({
@@ -102,14 +146,16 @@ const ACTIONS: Record<string, Action> = {
       ...ONLY_GIVEN_DATA,
       "Devolva: um título curto (até 60 caracteres, começando por verbo no infinitivo quando fizer sentido), uma descrição objetiva de uma a três frases e até 5 itens de checklist curtos e acionáveis, em ordem de execução.",
       "Não repita o nome do cliente na descrição nem no título: o cliente já fica registrado na demanda.",
-      "O checklist deve conter só passos que decorram do que foi escrito na frase, sem pressupor etapas, aprovações, revisões ou exigências que a frase não mencionou. Se a frase só sustentar poucos passos, devolva só esses; se não sustentar nenhum passo concreto, devolva o checklist vazio. Nunca invente passos para completar a lista.",
+      "O checklist deve conter só passos que decorram do que foi escrito na frase, sem pressupor etapas, aprovações, revisões ou exigências que a frase não mencionou. Se a frase só sustentar poucos passos, devolva só esses. Nunca invente passos para completar a lista.",
+      "Não crie passos de confirmar, levantar ou coletar informação, validar o escopo ou alinhar com o cliente, a menos que a própria frase peça isso.",
+      "Se a frase for vaga demais para indicar o que fazer, a descrição é uma reescrita fiel da frase, sem acrescentar nada, e o checklist fica VAZIO (lista sem itens).",
     ].join("\n"),
     schema: {
       type: "object",
       properties: {
         title: { type: "string" },
         description: { type: "string" },
-        checklist: { type: "array", items: { type: "string" } },
+        checklist: { type: "array", items: { type: "string" }, minItems: 0 },
       },
       required: ["title", "description", "checklist"],
       additionalProperties: false,
@@ -129,7 +175,8 @@ const ACTIONS: Record<string, Action> = {
       "- moved: o que andou (finalizado ou com avanço na semana);",
       "- blocked: o que travou ou está aguardando alguém;",
       "- attention: o que está atrasado (prazo anterior à data de hoje e não finalizado) ou pede atenção.",
-      "Cada bloco pode ficar vazio. Não repita a mesma demanda em dois blocos sem motivo. Use só os dados recebidos; não invente motivos, pessoas nem prazos.",
+      ...ONLY_GIVEN_DATA,
+      "Cada bloco pode ficar vazio. Não repita a mesma demanda em dois blocos sem motivo. Não invente motivos, pessoas nem prazos: cite um motivo de bloqueio só se ele estiver nos dados.",
     ].join("\n"),
     schema: {
       type: "object",
@@ -256,7 +303,7 @@ async function runAction(action: Action, prompt: string): Promise<unknown> {
     .trim();
   if (!text) throw new FriendlyError("A IA devolveu uma resposta vazia. Tente de novo.", 502);
 
-  if (!action.schema) return { text };
+  if (!action.schema) return { text: action.postProcess ? action.postProcess(text) : text };
   try {
     return JSON.parse(text);
   } catch {

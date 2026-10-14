@@ -3032,7 +3032,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
       <button onClick={() => setQuickAdd(true)} className="fixed bottom-[88px] right-4 md:bottom-6 md:right-6 z-40 w-14 h-14 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white flex items-center justify-center shadow-[0_8px_30px_rgba(79,70,229,0.4)] transition-all active:scale-95" title="Captura rápida">
         <Plus size={24} />
       </button>
-      {quickAdd && <QuickAddModal clients={activeClients} onClose={() => setQuickAdd(false)} onCreate={(data: any) => setTasks((prev: any) => [...prev, { id: nextId(), title: upper(data.title), description: '', priority: data.priority, durationMin: 0, clientId: data.clientId, responsibleId: user.id, startDate: '', dueDate: '', status: 'backlog', waitingFor: '', checklist: [], timerRunning: false, timerStart: null, timerElapsed: 0, createdAt: getBrasiliaDate(), completedAt: '', history: [histEntry('created')] }])} />}
+      {quickAdd && <QuickAddModal clients={activeClients} onClose={() => setQuickAdd(false)} onCreate={(data: any) => setTasks((prev: any) => [...prev, { id: nextId(), title: upper(data.title), description: capitalize((data.description || '').trim()), priority: data.priority, durationMin: 0, clientId: data.clientId, responsibleId: user.id, startDate: '', dueDate: '', status: 'backlog', waitingFor: '', checklist: (data.checklist || []).map((text: string) => ({ id: nextId(), text: capitalize(text.trim()), done: false, timerRunning: false, timerStart: null, timerElapsed: 0 })), timerRunning: false, timerStart: null, timerElapsed: 0, createdAt: getBrasiliaDate(), completedAt: '', history: [histEntry('created')] }])} />}
       {searchOpen && <SearchModal tasks={visibleTasks} clients={clients} onOpen={openEditModal} onClose={() => setSearchOpen(false)} />}
 
       {/* Modais de Popups Principais */}
@@ -4872,6 +4872,9 @@ function QuickAddModal({ clients, onCreate, onClose }: any) {
   const [clientId, setClientId] = useState('');
   const [priority, setPriority] = useState('Média');
   const [error, setError] = useState('');
+  // Prévia sugerida pela IA (título, descrição, checklist). Só vira demanda ao clicar em "Criar demanda".
+  const [draft, setDraft] = useState<{ title: string, description: string, checklist: string[] } | null>(null);
+  const draftAi = useLuminaAi<{ title: string, description: string, checklist: string[] }>('draft_task');
 
   const save = () => {
     if (!title.trim()) return setError('Informe um título.');
@@ -4880,9 +4883,32 @@ function QuickAddModal({ clients, onCreate, onClose }: any) {
     onClose();
   };
 
+  const improveWithAi = async () => {
+    if (!title.trim()) return setError('Escreva a frase que a IA vai melhorar.');
+    setError('');
+    const res = await draftAi.run({ text: title.trim(), clientName: clients.find((c: any) => c.id === clientId)?.name || '' });
+    if (res) setDraft({
+      title: String(res.title || ''),
+      description: String(res.description || ''),
+      checklist: (Array.isArray(res.checklist) ? res.checklist : []).map((c: any) => String(c)).filter((c: string) => c.trim()).slice(0, 5),
+    });
+  };
+
+  // Mesma regra do modal completo: demanda nova só nasce com pelo menos 1 item no checklist.
+  const draftHasStep = !!draft && draft.checklist.some(c => c.trim());
+  const saveDraft = () => {
+    if (!draft) return;
+    if (!draft.title.trim()) return setError('Informe um título.');
+    if (!clientId) return setError('Selecione um cliente.');
+    if (!draftHasStep) return setError('Preencha pelo menos 1 item do checklist.');
+    onCreate({ title: draft.title.trim(), description: draft.description, checklist: draft.checklist.filter(c => c.trim()), clientId, priority });
+    onClose();
+  };
+  const setStep = (i: number, text: string) => { setDraft(d => d && { ...d, checklist: d.checklist.map((c, j) => j === i ? text : c) }); setError(''); };
+
   return (
     <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center px-3 pt-3 pb-24 sm:p-4 z-[95] fade-in" onClick={onClose}>
-      <div className="w-full max-w-md rounded-3xl sm:rounded-[32px] bg-[var(--bg-secondary)] border border-[var(--border-primary)] shadow-2xl overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
+      <div className="w-full max-w-md rounded-3xl sm:rounded-[32px] bg-[var(--bg-secondary)] border border-[var(--border-primary)] shadow-2xl overflow-hidden animate-modal-pop flex flex-col max-h-[80dvh] sm:max-h-[88dvh]" onClick={e => e.stopPropagation()}>
         <div className="px-6 py-5 border-b border-[var(--border-primary)] flex items-center justify-between bg-[var(--bg-tertiary)]">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-indigo-500/10 rounded-xl border border-indigo-500/20"><Plus size={18} className="text-indigo-400" /></div>
@@ -4890,12 +4916,54 @@ function QuickAddModal({ clients, onCreate, onClose }: any) {
           </div>
           <button onClick={onClose} className="p-2 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"><X size={20} /></button>
         </div>
-        <div className="p-6 flex flex-col gap-5 bg-[var(--bg-primary)]">
+        <div className="p-6 flex flex-col gap-5 bg-[var(--bg-primary)] overflow-y-auto kp-scroll">
           {error && <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs px-3 py-2.5 rounded-lg flex items-center gap-2"><AlertTriangle size={14} className="shrink-0" /> {error}</div>}
-          <div>
-            <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Título *</label>
-            <input autoFocus value={title} onChange={e => { setTitle(e.target.value); setError(''); }} onKeyDown={e => e.key === 'Enter' && save()} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 transition-colors" placeholder="O que precisa ser feito?" />
-          </div>
+          {!draft ? (
+            <div>
+              <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Título *</label>
+              <input autoFocus value={title} onChange={e => { setTitle(e.target.value); setError(''); }} onKeyDown={e => e.key === 'Enter' && save()} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 transition-colors" placeholder="O que precisa ser feito?" />
+              <div className="flex items-center gap-3 mt-3">
+                <button type="button" onClick={improveWithAi} disabled={draftAi.loading || !title.trim()} className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold uppercase tracking-widest border border-indigo-500/40 text-indigo-500 bg-indigo-500/10 hover:bg-indigo-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                  {draftAi.loading ? 'Gerando…' : '✨ Melhorar com IA'}
+                </button>
+                <span className="text-[10px] text-[var(--text-muted)] leading-snug">Sugere título, descrição e checklist para você revisar.</span>
+              </div>
+              {draftAi.error && (
+                <div className="mt-3 flex items-start gap-2 text-xs font-medium text-amber-500 bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3">
+                  <AlertTriangle size={14} className="shrink-0 mt-0.5" /> <span>{draftAi.error}</span>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex flex-col gap-4">
+              <div className="text-[10px] font-bold uppercase tracking-widest text-indigo-500 ml-1">Prévia sugerida pela IA · revise antes de criar</div>
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Título *</label>
+                <input value={draft.title} onChange={e => { setDraft({ ...draft, title: e.target.value }); setError(''); }} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-3 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 transition-colors" />
+              </div>
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Descrição</label>
+                <textarea value={draft.description} onChange={e => setDraft({ ...draft, description: e.target.value })} rows={3} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-3 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 transition-colors resize-y" />
+              </div>
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Checklist *</label>
+                {!draftHasStep && (
+                  <div className="mb-2 flex items-start gap-2 text-xs font-medium text-amber-500 bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3">
+                    <AlertTriangle size={14} className="shrink-0 mt-0.5" /> <span>A frase não deixa claro nenhum passo. Preencha pelo menos 1 item para criar a demanda.</span>
+                  </div>
+                )}
+                <div className="flex flex-col gap-2">
+                  {draft.checklist.map((c, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <input value={c} onChange={e => setStep(i, e.target.value)} className="flex-1 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-3 py-2.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 transition-colors" placeholder="Passo" />
+                      <button type="button" onClick={() => setDraft({ ...draft, checklist: draft.checklist.filter((_, j) => j !== i) })} className="p-2 rounded-lg text-[var(--text-muted)] hover:text-red-400 transition-colors" title="Remover item"><X size={14} /></button>
+                    </div>
+                  ))}
+                  <button type="button" onClick={() => setDraft({ ...draft, checklist: [...draft.checklist, ''] })} className="self-start inline-flex items-center gap-1.5 text-[11px] font-bold text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"><Plus size={12} /> Adicionar item</button>
+                </div>
+              </div>
+            </div>
+          )}
           <div>
             <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Cliente *</label>
             <div className="relative">
@@ -4916,11 +4984,20 @@ function QuickAddModal({ clients, onCreate, onClose }: any) {
               })}
             </div>
           </div>
-          <p className="text-[10px] text-[var(--text-muted)] ml-1 leading-relaxed">A demanda entra no Backlog com você como responsável. Detalhe (descrição, prazo, checklist) depois.</p>
+          <p className="text-[10px] text-[var(--text-muted)] ml-1 leading-relaxed">{draft ? 'A demanda entra no Backlog com você como responsável.' : 'A demanda entra no Backlog com você como responsável. Detalhe (descrição, prazo, checklist) depois.'}</p>
         </div>
         <div className="px-6 py-5 border-t border-[var(--border-primary)] bg-[var(--bg-tertiary)] flex items-center justify-end gap-3">
-          <button onClick={onClose} className="text-xs font-bold uppercase tracking-widest px-5 py-3.5 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">Cancelar</button>
-          <button onClick={save} className="text-xs font-black uppercase tracking-widest px-8 py-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition-all shadow-[0_0_15px_rgba(79,70,229,0.3)]">Adicionar</button>
+          {draft ? (
+            <>
+              <button onClick={() => { setDraft(null); setError(''); }} className="text-xs font-bold uppercase tracking-widest px-5 py-3.5 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">Descartar prévia</button>
+              <button onClick={saveDraft} className="text-xs font-black uppercase tracking-widest px-8 py-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition-all shadow-[0_0_15px_rgba(79,70,229,0.3)]">Criar demanda</button>
+            </>
+          ) : (
+            <>
+              <button onClick={onClose} className="text-xs font-bold uppercase tracking-widest px-5 py-3.5 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">Cancelar</button>
+              <button onClick={save} disabled={draftAi.loading} className="text-xs font-black uppercase tracking-widest px-8 py-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition-all shadow-[0_0_15px_rgba(79,70,229,0.3)] disabled:opacity-50">Adicionar</button>
+            </>
+          )}
         </div>
       </div>
     </div>

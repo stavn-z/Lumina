@@ -72,7 +72,8 @@ const ACTIONS: Record<string, Action> = {
       "2. Uma frase de abertura. Se houver data da reunião, diga que segue o resumo da reunião de overview realizada nessa data, com os principais pontos e o estado das demandas; se não houver, diga que segue o resumo semanal com os principais pontos e o estado das demandas.",
       "3. Se houver link da reunião, a linha \"Acesse a gravação da reunião: <link>\" com o link exatamente como recebido. Sem link, não mencione gravação.",
       "4. A seção \"Demandas Finalizadas:\" e depois \"Demandas em Andamento:\". Cada demanda numa linha iniciada por \"- \" com o título, seguida de uma ou duas frases claras sobre o que foi feito (finalizadas) ou o que está em curso (em andamento), escritas só a partir da descrição. Sem descrição, deixe só o título. Omita a seção que não tiver demandas.",
-      "5. Se o tempo vier nos dados, ponha numa linha abaixo da demanda \"Tempo dedicado: <tempo>\", exatamente como recebido. Se não vier, não mencione horas.",
+      "5. Se o tempo vier nos dados, ponha numa linha logo abaixo da demanda \"Tempo dedicado: <tempo>\", exatamente como recebido. Se não vier, não mencione horas.",
+      "Espaçamento das seções, sempre igual: o primeiro item vem na linha IMEDIATAMENTE seguinte ao título da seção, sem linha em branco entre o título e o item; não há linha em branco entre os itens de uma mesma seção; há exatamente uma linha em branco depois do último item de cada seção.",
       "6. Feche com \"Em caso de dúvidas, continuo à disposição.\", uma linha em branco e a linha final \"Com os melhores cumprimentos,\". Nada depois dela.",
     ].join("\n"),
     buildPrompt: (p) => {
@@ -99,9 +100,9 @@ const ACTIONS: Record<string, Action> = {
     system: [
       "Você transforma uma frase solta em uma demanda de trabalho de uma agência. Escreva em português do Brasil, tom profissional e direto.",
       ...ONLY_GIVEN_DATA,
-      "Devolva: um título curto (até 60 caracteres, começando por verbo no infinitivo quando fizer sentido), uma descrição objetiva de uma a três frases e de 3 a 5 itens de checklist curtos e acionáveis, em ordem de execução.",
+      "Devolva: um título curto (até 60 caracteres, começando por verbo no infinitivo quando fizer sentido), uma descrição objetiva de uma a três frases e até 5 itens de checklist curtos e acionáveis, em ordem de execução.",
       "Não repita o nome do cliente na descrição nem no título: o cliente já fica registrado na demanda.",
-      "O checklist deve conter só passos que decorram do que foi escrito na frase, sem pressupor etapas, aprovações, revisões ou exigências que a frase não mencionou. Se a frase só sustentar menos de 3 passos, devolva menos (no mínimo 1) em vez de inventar.",
+      "O checklist deve conter só passos que decorram do que foi escrito na frase, sem pressupor etapas, aprovações, revisões ou exigências que a frase não mencionou. Se a frase só sustentar poucos passos, devolva só esses; se não sustentar nenhum passo concreto, devolva o checklist vazio. Nunca invente passos para completar a lista.",
     ].join("\n"),
     schema: {
       type: "object",

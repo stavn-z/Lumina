@@ -54,20 +54,26 @@ type Action = {
   schema?: Record<string, unknown>;
 };
 
+// Regras contra invenção, comuns às ações que escrevem a partir das demandas.
+const ONLY_GIVEN_DATA = [
+  "Use APENAS as informações presentes nos dados recebidos (título, descrição, status, tempo, datas). Nunca invente prazos, entregas, resultados, nomes, números ou compromissos que não estejam nos dados.",
+  "Se faltar informação para algo, omita em vez de preencher com suposição.",
+];
+
 const ACTIONS: Record<string, Action> = {
   closure_email: {
     maxTokens: 1500,
     system: [
-      "Você redige e-mails de fechamento semanal enviados por uma agência a seus clientes. Escreva em português do Brasil, com tom profissional, cordial e direto.",
+      "Você redige o corpo do e-mail de fechamento semanal que um analista de uma agência envia ao cliente, a partir das demandas da semana. Escreva em português do Brasil, com tom profissional, cordial e direto.",
+      ...ONLY_GIVEN_DATA,
       "Responda APENAS com o corpo do e-mail em texto puro: sem HTML, sem Markdown (nada de **, # ou crases), sem linha de assunto e sem comentários antes ou depois.",
-      "Estrutura obrigatória:",
-      "1. Comece exatamente com a linha \"Prezados(as),\".",
-      "2. Um parágrafo curto de abertura sobre o andamento da semana.",
-      "3. Uma seção \"Demandas finalizadas:\" e outra \"Demandas em andamento:\", cada item numa linha iniciada por \"- \", com o título e uma frase objetiva sobre o que foi feito ou o que falta. Omita a seção que não tiver itens.",
-      "4. Se o tempo das demandas for informado, cite-o ao fim de cada item entre parênteses, exatamente como recebido. Se não for informado, não mencione horas.",
-      "5. Se houver data ou link da reunião, um parágrafo convidando para a reunião com a data e o link exatamente como recebidos.",
-      "6. Termine exatamente com a linha \"Com os melhores cumprimentos,\". Não assine nome depois dela.",
-      "Use somente as informações recebidas; não invente demandas, prazos, números nem resultados.",
+      "Estrutura, nesta ordem:",
+      "1. A linha \"Prezados(as),\", uma linha em branco e \"Espero que se encontrem bem.\".",
+      "2. Uma frase de abertura. Se houver data da reunião, diga que segue o resumo da reunião de overview realizada nessa data, com os principais pontos e o estado das demandas; se não houver, diga que segue o resumo semanal com os principais pontos e o estado das demandas.",
+      "3. Se houver link da reunião, a linha \"Acesse a gravação da reunião: <link>\" com o link exatamente como recebido. Sem link, não mencione gravação.",
+      "4. A seção \"Demandas Finalizadas:\" e depois \"Demandas em Andamento:\". Cada demanda numa linha iniciada por \"- \" com o título, seguida de uma ou duas frases claras sobre o que foi feito (finalizadas) ou o que está em curso (em andamento), escritas só a partir da descrição. Sem descrição, deixe só o título. Omita a seção que não tiver demandas.",
+      "5. Se o tempo vier nos dados, ponha numa linha abaixo da demanda \"Tempo dedicado: <tempo>\", exatamente como recebido. Se não vier, não mencione horas.",
+      "6. Feche com \"Em caso de dúvidas, continuo à disposição.\", uma linha em branco e a linha final \"Com os melhores cumprimentos,\". Nada depois dela.",
     ].join("\n"),
     buildPrompt: (p) => {
       const includeTime = p.includeTime === true;
@@ -75,7 +81,7 @@ const ACTIONS: Record<string, Action> = {
         titulo: str(t.title, 200),
         status: t.status === "done" ? "finalizada" : "em andamento",
         descricao: str(t.description),
-        ...(includeTime ? { tempo: str(t.time, 40) } : {}),
+        ...(includeTime ? { tempo: str(t.time, 400) } : {}),
       }));
       if (tasks.length === 0) throw new FriendlyError("Este cliente não tem demandas para o e-mail.");
       return JSON.stringify({
@@ -92,8 +98,10 @@ const ACTIONS: Record<string, Action> = {
     maxTokens: 800,
     system: [
       "Você transforma uma frase solta em uma demanda de trabalho de uma agência. Escreva em português do Brasil, tom profissional e direto.",
-      "Devolva: um título curto (até 60 caracteres, começando por verbo no infinitivo quando fizer sentido), uma descrição objetiva de uma a três frases, e de 3 a 5 itens de checklist curtos e acionáveis, em ordem de execução.",
-      "Use só o que a frase informa ou implica com clareza. Não invente prazos, valores, nomes nem detalhes técnicos que não estejam na frase.",
+      ...ONLY_GIVEN_DATA,
+      "Devolva: um título curto (até 60 caracteres, começando por verbo no infinitivo quando fizer sentido), uma descrição objetiva de uma a três frases e de 3 a 5 itens de checklist curtos e acionáveis, em ordem de execução.",
+      "Não repita o nome do cliente na descrição nem no título: o cliente já fica registrado na demanda.",
+      "O checklist deve conter só passos que decorram do que foi escrito na frase, sem pressupor etapas, aprovações, revisões ou exigências que a frase não mencionou. Se a frase só sustentar menos de 3 passos, devolva menos (no mínimo 1) em vez de inventar.",
     ].join("\n"),
     schema: {
       type: "object",

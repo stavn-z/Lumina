@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Cell } from "recharts";
 import ComunicacaoArea from "./comunicacao/ComunicacaoArea";
+import { useLuminaAi } from "./luminaAi";
 
 // ==========================================
 // CONFIGURAÇÃO DO BANCO DE DADOS (SUPABASE)
@@ -5809,6 +5810,7 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
   // Confirmação antes de formalizar: a ação move cards de "Concluído" pra "Formalizar" de
   // uma vez (um cliente ou o sistema inteiro) e não tinha nenhuma trava contra clique acidental.
   const [confirmFormalize, setConfirmFormalize] = useState<{ clientId: string | null, clientName: string, count: number } | null>(null);
+  const closureAi = useLuminaAi<{ text: string }>('closure_email');
 
   const formatWorkedTime = (seconds: number) => {
     const totalMin = Math.round((seconds || 0) / 60);
@@ -5831,6 +5833,18 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
       return acc;
     }, {});
   }, [tasks]);
+
+  // Tempo de uma demanda para a IA, com o mesmo detalhamento por item do e-mail padrão.
+  const taskTimeText = (t: any, splitTimeByItem?: boolean) => {
+    const items = splitTimeByItem && hasItemTimers(t) ? (t.checklist || []).filter((c: any) => c.text && c.text.trim()) : [];
+    const total = formatWorkedTime(getElapsed(t));
+    if (items.length === 0) return total;
+    const parts = items.map((c: any) => {
+      const sec = c.timerRunning && c.timerStart ? (c.timerElapsed || 0) + (Date.now() - c.timerStart) / 1000 : (c.timerElapsed || 0);
+      return `${c.text}: ${formatWorkedTime(sec)}`;
+    });
+    return `${total} (${parts.join('; ')})`;
+  };
 
   const generateEmailText = (clientTasks: any, mData: any, includeTime?: boolean, splitTimeByItem?: boolean) => {
     let body = `Prezados(as),\n\nEspero que se encontrem bem.\n\n`;
@@ -5884,23 +5898,30 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
     return body;
   };
 
-  const generateEmailLink = (clientTasks: any, clientData: any, mData: any, includeTime?: boolean, splitTimeByItem?: boolean) => {
+  // bodyOverride: texto gerado pela IA e editado no popup; sem ele, vale o texto padrão.
+  const generateEmailLink = (clientTasks: any, clientData: any, mData: any, includeTime?: boolean, splitTimeByItem?: boolean, bodyOverride?: string | null) => {
     const emails = Array.isArray(clientData?.emails) ? clientData.emails : [];
     const emailTo = emails.join(',');
     const subject = `Atualização Semanal de Demandas - ${clientData ? clientData.name : 'Cliente'}`;
-    const body = generateEmailText(clientTasks, mData, includeTime, splitTimeByItem);
+    const body = bodyOverride ?? generateEmailText(clientTasks, mData, includeTime, splitTimeByItem);
 
     return `https://mail.google.com/mail/?view=cm&fs=1&to=${emailTo}&bcc=analistasrubeus@rubeus.com.br&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   };
 
-  const handleCopyText = (clientTasks: any, clientId: string, mData: any, includeTime?: boolean, splitTimeByItem?: boolean) => {
-    const text = generateEmailText(clientTasks, mData, includeTime, splitTimeByItem);
+  const handleCopyText = (clientTasks: any, clientId: string, mData: any, includeTime?: boolean, splitTimeByItem?: boolean, textOverride?: string | null) => {
+    const text = textOverride ?? generateEmailText(clientTasks, mData, includeTime, splitTimeByItem);
     navigator.clipboard.writeText(text);
     setCopiedId(clientId);
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const handleCopyNotion = (clientTasks: any, clientId: string) => {
+  const handleCopyNotion = (clientTasks: any, clientId: string, textOverride?: string | null) => {
+    if (textOverride != null) {
+      navigator.clipboard.writeText(textOverride);
+      setCopiedNotionId(clientId);
+      setTimeout(() => setCopiedNotionId(null), 2000);
+      return;
+    }
     let text = "";
     if (clientTasks.done.length > 0) {
       text += "CONCLUÍDAS\n\n";
@@ -5994,7 +6015,7 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-t border-[var(--border-primary)] pt-6">
                   <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
                     <button
-                      onClick={() => setEmailPopup({ clientId, date: mData.date || '', link: mData.link || '', includeTime: false, splitTimeByItem: false })}
+                      onClick={() => { closureAi.clearError(); setEmailPopup({ clientId, date: mData.date || '', link: mData.link || '', includeTime: false, splitTimeByItem: false, aiText: null }); }}
                       className="flex-1 sm:flex-none justify-center inline-flex items-center gap-2 px-5 py-3.5 sm:py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold uppercase tracking-widest transition-all shadow-[0_0_15px_rgba(79,70,229,0.3)]"
                     >
                       <Mail size={16} /> Preparar E-mail
@@ -6066,9 +6087,32 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
           }
         };
 
+        // A IA só sugere o texto: ele entra no campo editável e nada é enviado sem o clique em Abrir E-mail.
+        const generateWithAi = async () => {
+          const popupClientId = emailPopup.clientId;
+          const toPayload = (t: any, status: 'done' | 'in_progress') => ({
+            title: t.title,
+            description: t.description || '',
+            status,
+            ...(emailPopup.includeTime ? { time: taskTimeText(t, emailPopup.splitTimeByItem) } : {}),
+          });
+          const result = await closureAi.run({
+            clientName,
+            meetingDate: emailPopup.date ? emailPopup.date.split('-').reverse().slice(0, 2).join('/') : '',
+            meetingLink: emailPopup.link || '',
+            includeTime: !!emailPopup.includeTime,
+            tasks: [
+              ...clientTasks.done.map((t: any) => toPayload(t, 'done')),
+              ...clientTasks.inProgress.map((t: any) => toPayload(t, 'in_progress')),
+            ],
+          });
+          if (result?.text) setEmailPopup((prev: any) => prev && prev.clientId === popupClientId ? { ...prev, aiText: result.text } : prev);
+        };
+        const aiText: string | null = emailPopup.aiText ?? null;
+
         return (
           <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center px-3 pt-3 pb-24 sm:p-4 z-[95] fade-in" onClick={() => setEmailPopup(null)}>
-            <div className="w-full max-w-lg rounded-3xl sm:rounded-[32px] bg-[var(--bg-secondary)] border border-[var(--border-primary)] shadow-2xl overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
+            <div className="w-full max-w-lg rounded-3xl sm:rounded-[32px] bg-[var(--bg-secondary)] border border-[var(--border-primary)] shadow-2xl overflow-hidden animate-modal-pop flex flex-col max-h-[80dvh] sm:max-h-[88dvh]" onClick={e => e.stopPropagation()}>
               <div className="px-6 py-5 border-b border-[var(--border-primary)] flex items-center justify-between bg-[var(--bg-tertiary)]">
                 <div className="flex items-center gap-3">
                   <div className="p-2 bg-indigo-500/10 rounded-xl border border-indigo-500/20"><Mail size={18} className="text-indigo-400" /></div>
@@ -6080,7 +6124,7 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
                 <button onClick={() => setEmailPopup(null)} className="p-2 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"><X size={20} /></button>
               </div>
 
-              <div className="p-6 flex flex-col gap-5 bg-[var(--bg-primary)]">
+              <div className="p-6 flex flex-col gap-5 bg-[var(--bg-primary)] overflow-y-auto kp-scroll">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="text-[10px] text-[var(--text-muted)] uppercase font-bold tracking-widest mb-2 block ml-1">Data da Reunião (Opcional)</label>
@@ -6126,11 +6170,49 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
                     </button>
                   </label>
                 )}
+
+                <div className="flex flex-col gap-3">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={generateWithAi}
+                      disabled={closureAi.loading}
+                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold uppercase tracking-widest border border-indigo-500/40 text-indigo-500 bg-indigo-500/10 hover:bg-indigo-500/20 transition-colors disabled:opacity-60 disabled:cursor-wait"
+                    >
+                      {closureAi.loading ? 'Gerando…' : aiText !== null ? '✨ Gerar de novo com IA' : '✨ Gerar texto com IA'}
+                    </button>
+                    {aiText !== null && !closureAi.loading && (
+                      <button
+                        type="button"
+                        onClick={() => setEmailPopup((prev: any) => ({ ...prev, aiText: null }))}
+                        className="text-[11px] font-bold text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+                      >
+                        Voltar ao texto padrão
+                      </button>
+                    )}
+                  </div>
+                  {closureAi.error && (
+                    <div className="flex items-start gap-2 text-xs font-medium text-amber-500 bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3">
+                      <AlertTriangle size={14} className="shrink-0 mt-0.5" /> <span>{closureAi.error}</span>
+                    </div>
+                  )}
+                  {aiText !== null && (
+                    <div>
+                      <label className="text-[10px] text-[var(--text-muted)] uppercase font-bold tracking-widest mb-2 block ml-1">Texto do e-mail (gerado pela IA, revise antes de enviar)</label>
+                      <textarea
+                        value={aiText}
+                        onChange={e => setEmailPopup((prev: any) => ({ ...prev, aiText: e.target.value }))}
+                        rows={12}
+                        className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-3 text-[13px] leading-relaxed text-[var(--text-primary)] outline-none focus:border-indigo-500 resize-y kp-scroll"
+                      />
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="px-6 py-5 border-t border-[var(--border-primary)] bg-[var(--bg-tertiary)] flex flex-wrap items-center gap-3">
                 <a
-                  href={generateEmailLink(clientTasks, clientData, mData, emailPopup.includeTime, emailPopup.splitTimeByItem)}
+                  href={generateEmailLink(clientTasks, clientData, mData, emailPopup.includeTime, emailPopup.splitTimeByItem, aiText)}
                   target="_blank"
                   rel="noopener noreferrer"
                   onClick={() => setEmailPopup(null)}
@@ -6140,7 +6222,7 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
                 </a>
 
                 <button
-                  onClick={() => handleCopyText(clientTasks, emailPopup.clientId, mData, emailPopup.includeTime, emailPopup.splitTimeByItem)}
+                  onClick={() => handleCopyText(clientTasks, emailPopup.clientId, mData, emailPopup.includeTime, emailPopup.splitTimeByItem, aiText)}
                   className="flex-1 justify-center inline-flex items-center gap-2 px-5 py-3.5 bg-[var(--bg-overlay)] text-[var(--text-secondary)] border border-[var(--border-overlay)] hover:bg-[var(--bg-overlay-strong)] rounded-xl text-xs font-bold uppercase tracking-widest transition-colors"
                 >
                   {copiedId === emailPopup.clientId ? <Check size={16} className="text-emerald-400" /> : <Copy size={16} />}
@@ -6148,7 +6230,7 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
                 </button>
 
                 <button
-                  onClick={() => handleCopyNotion(clientTasks, emailPopup.clientId)}
+                  onClick={() => handleCopyNotion(clientTasks, emailPopup.clientId, aiText)}
                   className="flex-1 justify-center inline-flex items-center gap-2 px-5 py-3.5 bg-[var(--bg-overlay)] text-[var(--text-secondary)] border border-[var(--border-overlay)] hover:bg-[var(--bg-overlay-strong)] rounded-xl text-xs font-bold uppercase tracking-widest transition-colors"
                 >
                   {copiedNotionId === emailPopup.clientId ? <Check size={16} className="text-emerald-400" /> : <ClipboardList size={16} />}

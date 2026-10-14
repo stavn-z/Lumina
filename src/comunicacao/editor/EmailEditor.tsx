@@ -91,7 +91,7 @@ export function EmailEditor({ row, deleted, userId, names, upsertLocal, onToggle
       <EditorHeader
         row={ed.base} nome={S.nome} status={ed.autosave.status} error={ed.autosave.error} onRetry={() => void ed.autosave.retry()}
         actions={<>
-          <button type="button" onClick={restoreExample} className="h-10 px-3.5 rounded-xl border border-[var(--border-primary)] text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-overlay)] inline-flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"><RotateCcw size={13} />Restaurar exemplo</button>
+          <button type="button" onClick={restoreExample} aria-label="Restaurar exemplo" title="Restaurar exemplo" className="h-10 px-3 sm:px-3.5 rounded-xl border border-[var(--border-primary)] text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-overlay)] inline-flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"><RotateCcw size={13} /><span className="hidden sm:inline">Restaurar exemplo</span></button>
           <button type="button" onClick={copyHtml} className="h-10 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold uppercase tracking-widest inline-flex items-center gap-2 shadow-[0_0_15px_rgba(79,70,229,0.3)] outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"><Copy size={13} />Copiar HTML</button>
         </>}
       />

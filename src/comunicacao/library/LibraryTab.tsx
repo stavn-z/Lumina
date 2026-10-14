@@ -45,40 +45,47 @@ export function LibraryTab({ userId, rows, loading, error, openId, onNew, onOpen
 
   return (
     <div className="flex flex-col gap-4 min-h-0">
-      <div className="flex flex-wrap items-center gap-2.5">
-        <div className="flex items-stretch flex-[1_1_320px] max-w-[460px] min-w-0 h-10 rounded-xl border overflow-hidden focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/30" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-primary)' }}>
+      <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-stretch basis-full sm:basis-auto sm:flex-1 min-w-0 h-10 rounded-xl border overflow-hidden focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/30" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-primary)' }}>
           <select value={field} onChange={e => setField(e.target.value)} aria-label="Campo da busca" className="bg-[var(--bg-overlay)] border-r border-[var(--border-primary)] px-2.5 text-xs font-semibold text-[var(--text-secondary)] outline-none cursor-pointer max-w-[45%]">
             {SEARCH_FIELDS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
           <Search size={14} className="self-center ml-3 shrink-0 text-[var(--text-muted)]" aria-hidden="true" />
           <input type="search" value={q} onChange={e => setQ(e.target.value)} placeholder="contém…" aria-label="Texto da busca" className="flex-1 min-w-0 bg-transparent px-2.5 text-sm text-[var(--text-primary)] outline-none" />
         </div>
-        <div className="relative">
-          <select value={status} onChange={e => setStatus(e.target.value as RbFilter)} aria-label="Status na Rubeus" className={selectCls}>
-            {STATUS_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-          </select>
-          <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-[var(--text-muted)]" />
+        <div className="grid grid-cols-2 gap-2 basis-full sm:basis-auto sm:flex">
+          <div className="relative min-w-0">
+            <select value={status} onChange={e => setStatus(e.target.value as RbFilter)} aria-label="Status na Rubeus" className={selectCls + ' w-full'}>
+              {STATUS_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+            <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-[var(--text-muted)]" />
+          </div>
+          <div className="relative min-w-0">
+            <select value={sort} onChange={e => setSort(e.target.value as SortKey)} aria-label="Ordenar" className={selectCls + ' w-full'}>
+              {SORT_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+            <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-[var(--text-muted)]" />
+          </div>
         </div>
-        <div className="relative">
-          <select value={sort} onChange={e => setSort(e.target.value as SortKey)} aria-label="Ordenar" className={selectCls}>
-            {SORT_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-          </select>
-          <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-[var(--text-muted)]" />
-        </div>
-        <span className="flex-1 hidden lg:block" />
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
         <div role="group" aria-label="Filtrar por tipo" className="flex gap-0.5 p-1 rounded-xl border" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-primary)' }}>
           {TYPE_FILTERS.map(([v, l]) => (
-            <button key={v} type="button" aria-pressed={type === v} onClick={() => setType(v)} className={`h-8 px-2.5 sm:px-3 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${type === v ? 'bg-[var(--bg-overlay-strong)] text-[var(--text-primary)]' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}`}>{l}</button>
+            <button key={v} type="button" aria-pressed={type === v} onClick={() => setType(v)} className={`h-8 px-2 sm:px-3 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${type === v ? 'bg-[var(--bg-overlay-strong)] text-[var(--text-primary)]' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}`}>{l}</button>
           ))}
         </div>
-        <button type="button" onClick={onExport} disabled={!!backupProgress} title="Baixa um arquivo .json com todos os templates, clientes e cadastros" className="h-10 px-3 rounded-xl border border-[var(--border-primary)] text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-overlay)] inline-flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:opacity-50"><Download size={13} />Exportar backup</button>
-        <button type="button" onClick={() => importInput.current?.click()} disabled={!!backupProgress} title="Recupera templates de um arquivo de backup" className="h-10 px-3 rounded-xl border border-[var(--border-primary)] text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-overlay)] inline-flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:opacity-70">
-          {backupProgress ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}{backupProgress || 'Importar backup'}
+        <span className="flex-1" />
+        {/* Backup: só ícone (com nome acessível e dica), para a barra caber numa linha. */}
+        <button type="button" onClick={onExport} disabled={!!backupProgress} aria-label="Exportar backup" title="Exportar backup: baixa um arquivo .json com todos os templates, clientes e cadastros" className="h-10 w-10 grid place-items-center rounded-xl border border-[var(--border-primary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-overlay)] outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:opacity-50"><Download size={15} /></button>
+        <button type="button" onClick={() => importInput.current?.click()} disabled={!!backupProgress} aria-label={backupProgress || 'Importar backup'} title="Importar backup: recupera templates de um arquivo de backup" className={`h-10 ${backupProgress ? 'px-3' : 'w-10'} rounded-xl border border-[var(--border-primary)] text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-overlay)] inline-flex items-center justify-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:opacity-70`}>
+          {backupProgress ? <><Loader2 size={13} className="animate-spin" />{backupProgress}</> : <Upload size={15} />}
         </button>
         <input ref={importInput} type="file" accept="application/json,.json" hidden aria-label="Arquivo de backup" onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; onImport(f); }} />
         <button type="button" onClick={() => onNew(type === 'all' ? 'email' : type)} className="h-10 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold uppercase tracking-widest inline-flex items-center gap-2 shadow-[0_0_15px_rgba(79,70,229,0.3)] outline-none focus-visible:ring-2 focus-visible:ring-indigo-300">
           <Plus size={14} /> Novo template
         </button>
+      </div>
       </div>
 
       {error && <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3">{error}</p>}

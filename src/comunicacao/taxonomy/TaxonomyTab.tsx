@@ -317,6 +317,7 @@ function ClientTaxonomy({ clients, client, st, setSt, upsertLocal, removeLocal, 
             ))}
           </div>
           <div className="grid grid-cols-[minmax(0,1fr)_96px_36px] gap-2 text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-1.5"><span>Nome</span><span className="text-center">Sigla</span><span /></div>
+          {!lists[regTab].length && <p className="text-sm text-[var(--text-muted)] py-2">Nenhuma opção cadastrada em {LABELS[regTab].toLowerCase()}.</p>}
           <div ref={rowsRef} className="flex flex-col gap-2">
             {lists[regTab].map((o, i) => (
               <div key={i} className="grid grid-cols-[minmax(0,1fr)_96px_36px] gap-2">

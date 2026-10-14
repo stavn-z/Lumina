@@ -61,7 +61,7 @@ function Row({ k, children, copy }: { k: string, children: ReactNode, copy?: Rea
   );
 }
 
-export function TextEditor({ row, deleted, userId, names, upsertLocal, onToggleRubeus, onGone, registerSetNome }: EditorProps) {
+export function TextEditor({ row, deleted, userId, names, upsertLocal, onToggleRubeus, onGone }: EditorProps) {
   const ask = useAsk();
   const toast = useToast();
   const ed = useTemplateEditor<TextData>(row, userId, upsertLocal);
@@ -73,10 +73,6 @@ export function TextEditor({ row, deleted, userId, names, upsertLocal, onToggleR
   const [focusBtn, setFocusBtn] = useState(false);
   const btnList = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    registerSetNome?.(n => set(d => { d.nome = wpp ? String(n).toLowerCase() : n; }));
-    return () => registerSetNome?.(null);
-  }, [registerSetNome, set, wpp]);
 
   useEffect(() => {
     if (deleted && !ed.autosave.isDirty() && !ed.conflict) onGone();

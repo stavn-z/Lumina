@@ -2,14 +2,17 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { LayoutGrid, PenLine, Tag } from "lucide-react";
 import "./comunicacao.css";
-import { supa } from "./data/supa.ts";
-import { useTemplates } from "./data/useComData.ts";
+import { clone } from "./defaults.ts";
+import { errorText, supa } from "./data/supa.ts";
+import { saveTemplateContent } from "./data/templatesApi.ts";
+import { useTaxonomyClients, useTemplates } from "./data/useComData.ts";
 import { EmailEditor } from "./editor/EmailEditor.tsx";
 import { TextEditor } from "./editor/TextEditor.tsx";
 import { LibraryTab } from "./library/LibraryTab.tsx";
 import { useTemplateActions } from "./library/useTemplateActions.tsx";
+import { TaxonomyTab } from "./taxonomy/TaxonomyTab.tsx";
 import { DialogProvider } from "./ui/Dialogs.tsx";
-import { ToastProvider } from "./ui/Toast.tsx";
+import { ToastProvider, useToast } from "./ui/Toast.tsx";
 
 // Área "Comunicação": templates de e-mail, SMS e WhatsApp e taxonomia de nomes.
 // Renderizada dentro do OverlayModal do App.tsx (activeTab === 'comunicacao').
@@ -46,6 +49,8 @@ function Area({ user, onClose }: { user: ComUser, onClose: () => void }) {
   const tab: ComTab = storedTab === 'editor' || storedTab === 'tax' ? storedTab : 'lib';
   const [openId, setOpenId] = useStored(`lumina_com_open:${user.id}`, null);
   const { rows, loading, error, upsertLocal, removeLocal } = useTemplates();
+  const tax = useTaxonomyClients();
+  const toast = useToast();
   const [names, setNames] = useState<Record<string, string>>({});
 
   // Nomes da equipe para o histórico ("Alterado · Ana").
@@ -77,6 +82,26 @@ function Area({ user, onClose }: { user: ComUser, onClose: () => void }) {
   const lastOpen = useRef<typeof openRow>(null);
   if (openRow) lastOpen.current = openRow;
   const editRow = openRow || (lastOpen.current && lastOpen.current.id === openId ? lastOpen.current : null);
+
+  // "Usar no template" da Taxonomia: grava o nome no template aberto e leva para o editor.
+  // Só o nome muda, então um conflito de versão é resolvido reaplicando sobre a versão atual.
+  async function useNameInTemplate(name: string) {
+    if (!openRow) { toast('Abra um template em Meus templates antes de usar o nome'); return false; }
+    const nome = openRow.type === 'whatsapp' ? name.toLowerCase() : name;
+    try {
+      let base = openRow;
+      for (let i = 0; i < 3; i++) {
+        const res = await saveTemplateContent(base, { ...clone(base.data), nome }, user.id);
+        if (res.status === 'conflict') { if (!res.current) { toast('Este template não existe mais'); return false; } base = res.current; continue; }
+        upsertLocal(res.row);
+        setTab('editor');
+        toast('Nome aplicado ao template aberto');
+        return true;
+      }
+      toast('Não foi possível aplicar o nome agora. Tente de novo.');
+    } catch (e) { toast('Não foi possível aplicar o nome: ' + errorText(e)); }
+    return false;
+  }
 
   return (
     <div className="flex-1 min-h-0 flex flex-col gap-5">
@@ -121,7 +146,12 @@ function Area({ user, onClose }: { user: ComUser, onClose: () => void }) {
           return <Editor key={editRow.id} row={editRow} deleted={!openRow} userId={user.id} names={names} upsertLocal={upsertLocal} onToggleRubeus={actions.toggleRubeus} onGone={() => setOpenId(null)} />;
         })()}
         {tab === 'editor' && !editRow && <EmptyState icon={<PenLine size={28} />} title={loading ? 'Carregando…' : 'Nenhum template aberto'} text="Abra um template em Meus templates para editar." />}
-        {tab === 'tax' && <EmptyState icon={<Tag size={28} />} title="Taxonomia" text="Gere o nome padronizado da campanha ou do template." />}
+        {tab === 'tax' && (
+          <TaxonomyTab
+            userId={user.id} clients={tax.rows} loading={tax.loading} error={tax.error}
+            upsertLocal={tax.upsertLocal} removeLocal={tax.removeLocal} onUseName={useNameInTemplate}
+          />
+        )}
       </div>
     </div>
   );

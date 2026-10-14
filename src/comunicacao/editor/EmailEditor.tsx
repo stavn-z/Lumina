@@ -25,8 +25,6 @@ export interface EditorProps {
   upsertLocal: (r: TemplateRow) => void;
   onToggleRubeus: (r: TemplateRow) => void;
   onGone: () => void;
-  /** Recebe a função que troca o nome do template aberto (usada pela Taxonomia). */
-  registerSetNome?: (fn: ((nome: string) => void) | null) => void;
 }
 
 /** Valor do bloco "Dados do envio" com as variáveis trocadas e destacadas. */
@@ -36,7 +34,7 @@ function BlockValue({ raw, empty, vars }: { raw: string, empty: string, vars: Re
   return <span className="text-sm text-[var(--text-primary)] break-words min-w-0" dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
-export function EmailEditor({ row, deleted, userId, names, upsertLocal, onToggleRubeus, onGone, registerSetNome }: EditorProps) {
+export function EmailEditor({ row, deleted, userId, names, upsertLocal, onToggleRubeus, onGone }: EditorProps) {
   const ask = useAsk();
   const toast = useToast();
   const ed = useTemplateEditor<EmailData>(row, userId, upsertLocal);
@@ -48,11 +46,6 @@ export function EmailEditor({ row, deleted, userId, names, upsertLocal, onToggle
   const codeRef = useRef<HTMLDetailsElement>(null);
   const codeArea = useRef<HTMLTextAreaElement>(null);
 
-  // A Taxonomia pode aplicar um nome ao template aberto.
-  useEffect(() => {
-    registerSetNome?.(n => set(d => { d.nome = n; }));
-    return () => registerSetNome?.(null);
-  }, [registerSetNome, set]);
 
   // Excluído por outra pessoa: sai do editor se não houver nada pendente; senão o
   // salvamento cai no conflito (com a opção de salvar como novo template).

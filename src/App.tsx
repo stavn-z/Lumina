@@ -1690,19 +1690,23 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
     });
 
     if (modal.mode === "add") {
+      // Mesma regra da edição: "Est. Minutos" digitado vence; se não foi tocado, vale a soma
+      // do tempo já lançado/rodado nos itens do checklist (antes só entrava ao reabrir e salvar).
+      const newChecklist = freezeChecklistTimers(f.checklist || []);
+      const newItemsElapsed = checklistElapsed(newChecklist);
       const newTask = {
         id: nextId(),
         title: upper(f.title.trim()),
         description: capitalize(f.description.trim()),
         priority: f.priority || 'Média',
-        durationMin: parseInt(f.durationMin) || 0,
+        durationMin: (!durationTouched && newItemsElapsed > 0) ? Math.round(newItemsElapsed / 60) : (parseInt(f.durationMin) || 0),
         clientId: f.clientId || '',
         responsibleId: f.responsibleId || '',
         startDate: f.startDate || '',
         dueDate: f.dueDate || '',
         status: finalStatus,
         waitingFor: upper(f.waitingFor || ''),
-        checklist: freezeChecklistTimers(f.checklist || []),
+        checklist: newChecklist,
         timerRunning: false,
         timerStart: null,
         timerElapsed: 0,

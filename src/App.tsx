@@ -4962,6 +4962,7 @@ function QuickAddModal({ clients, onCreate, onClose }: any) {
                   <button type="button" onClick={() => setDraft({ ...draft, checklist: [...draft.checklist, ''] })} className="self-start inline-flex items-center gap-1.5 text-[11px] font-bold text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"><Plus size={12} /> Adicionar item</button>
                 </div>
               </div>
+              <p className="text-[10px] text-[var(--text-muted)] ml-1">Sugestão gerada por IA. Revise antes de usar.</p>
             </div>
           )}
           <div>
@@ -5059,13 +5060,139 @@ function TodayView({ tasks, clients, user, getElapsed, onOpen, onToggleTimer, on
 
   const nothing = overdue.length + dueToday.length + scheduledToday.length + inProgress.length + waiting.length === 0;
 
+  // Resumo da semana (IA): só leitura, nada é salvo. Entram as demandas ativas (Backlog só se
+  // estiver atrasada ou vencer nesta semana) e as concluídas desde segunda. A função aceita até
+  // 80 por chamada; acima disso vão as mais urgentes e o painel avisa quantas entraram.
+  const weekStartStr = `${ws.getFullYear()}-${pad(ws.getMonth() + 1)}-${pad(ws.getDate())}`;
+  const weekEnd = new Date(ws); weekEnd.setDate(ws.getDate() + 6);
+  const weekEndStr = `${weekEnd.getFullYear()}-${pad(weekEnd.getMonth() + 1)}-${pad(weekEnd.getDate())}`;
+  const summaryAi = useLuminaAi<{ moved: string[], blocked: string[], attention: string[] }>('weekly_summary');
+  const [summary, setSummary] = useState<{ moved: string[], blocked: string[], attention: string[], used: number, total: number } | null>(null);
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  const [summaryCopied, setSummaryCopied] = useState(false);
+  const SUMMARY_LIMIT = 80;
+  const summaryRank = (t: any) => {
+    if (overdue.includes(t)) return 0;
+    if (['waiting', 'paused'].includes(t.status)) return 1;
+    if (['inprogress', 'review'].includes(t.status)) return 2;
+    if (t.status === 'todo') return 3;
+    if (['done', 'formalize'].includes(t.status)) return 4;
+    return 5;
+  };
+  const weekTasks = mine
+    .filter((t: any) => {
+      if (t.status === 'cancelled') return false;
+      if (['done', 'formalize'].includes(t.status)) return !!t.completedAt && t.completedAt >= weekStartStr;
+      if (t.status === 'backlog') return overdue.includes(t) || (!!t.dueDate && t.dueDate <= weekEndStr);
+      return true;
+    })
+    .sort((a: any, b: any) => summaryRank(a) - summaryRank(b));
+  const generateSummary = async () => {
+    setSummaryOpen(true);
+    setSummaryCopied(false);
+    summaryAi.clearError();
+    setSummary(null);
+    if (weekTasks.length === 0) return;
+    const sent = weekTasks.slice(0, SUMMARY_LIMIT);
+    // Datas e tempo já no formato de leitura (dd/mm/aaaa, "1h20min"), para a IA repetir assim.
+    const hoursText = (sec: number) => { const m = Math.round(sec / 60), h = Math.floor(m / 60); return h > 0 ? `${h}h${m % 60 ? `${m % 60}min` : ''}` : `${m}min`; };
+    const dateBR = (v: string) => v ? fmtBR(v.slice(0, 10)) : '';
+    const res = await summaryAi.run({
+      today: dateBR(todayStr),
+      periodStart: dateBR(weekStartStr),
+      periodEnd: dateBR(weekEndStr),
+      tasks: sent.map((t: any) => ({
+        title: t.title,
+        client: clientName(t.clientId),
+        status: COLUMNS.find(c => c.id === t.status)?.name || t.status,
+        time: getElapsed(t) > 0 ? hoursText(getElapsed(t)) : '',
+        createdAt: dateBR(t.createdAt || ''),
+        dueDate: dateBR(t.dueDate || ''),
+        completedAt: dateBR(t.completedAt || ''),
+      })),
+    });
+    if (res) setSummary({
+      moved: Array.isArray(res.moved) ? res.moved : [],
+      blocked: Array.isArray(res.blocked) ? res.blocked : [],
+      attention: Array.isArray(res.attention) ? res.attention : [],
+      used: sent.length,
+      total: weekTasks.length,
+    });
+  };
+  const summaryBlocks = summary ? [
+    { label: 'O que andou', items: summary.moved, dot: 'bg-emerald-500' },
+    { label: 'Travou ou está aguardando', items: summary.blocked, dot: 'bg-pink-500' },
+    { label: 'Atrasado ou pede atenção', items: summary.attention, dot: 'bg-red-500' },
+  ] : [];
+  const copySummary = () => {
+    const text = [`Resumo da semana (${fmtBR(weekStartStr).slice(0, 5)} a ${fmtBR(weekEndStr).slice(0, 5)})`, ...summaryBlocks.map(b => `${b.label}:\n${b.items.length ? b.items.map(i => `- ${i}`).join('\n') : '- Nada'}`)].join('\n\n');
+    navigator.clipboard.writeText(text);
+    setSummaryCopied(true);
+    setTimeout(() => setSummaryCopied(false), 2000);
+  };
+
   return (
     <div className="flex flex-col h-full fade-in gap-6">
       {/* Saudação */}
-      <div className="shrink-0">
-        <h2 className="font-display text-xl sm:text-2xl font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>{greet}, {user.name.split(' ')[0]}</h2>
-        <p className="text-xs mt-1 capitalize" style={{ color: 'var(--text-muted)' }}>{new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }).format(nowD)}</p>
+      <div className="shrink-0 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="font-display text-xl sm:text-2xl font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>{greet}, {user.name.split(' ')[0]}</h2>
+          <p className="text-xs mt-1 capitalize" style={{ color: 'var(--text-muted)' }}>{new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }).format(nowD)}</p>
+        </div>
+        <button
+          type="button"
+          onClick={generateSummary}
+          disabled={summaryAi.loading}
+          className="shrink-0 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-widest border border-indigo-500/40 text-indigo-500 bg-indigo-500/10 hover:bg-indigo-500/20 transition-colors disabled:opacity-60 disabled:cursor-wait"
+        >
+          {summaryAi.loading ? 'Gerando…' : '✨ Resumo da semana'}
+        </button>
       </div>
+
+      {/* Resumo da semana (IA) */}
+      {summaryOpen && (
+        <div className="shrink-0 rounded-2xl border border-[var(--border-primary)] bg-[var(--bg-secondary)] p-4 sm:p-5 flex flex-col gap-4 max-h-[50dvh] overflow-y-auto kp-scroll">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-[10px] font-bold uppercase tracking-[0.2em]" style={{ color: 'var(--text-muted)' }}>Resumo da semana · {fmtBR(weekStartStr).slice(0, 5)} a {fmtBR(weekEndStr).slice(0, 5)}</h3>
+            <div className="flex items-center gap-2">
+              {summary && !summaryAi.loading && (
+                <button type="button" onClick={copySummary} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest border border-[var(--border-overlay)] bg-[var(--bg-overlay)] text-[var(--text-secondary)] hover:bg-[var(--bg-overlay-strong)] transition-colors">
+                  {summaryCopied ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />} {summaryCopied ? 'Copiado!' : 'Copiar'}
+                </button>
+              )}
+              <button type="button" onClick={() => setSummaryOpen(false)} className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors" title="Fechar resumo"><X size={14} /></button>
+            </div>
+          </div>
+          {weekTasks.length === 0 ? (
+            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Nada para resumir: você não tem demandas nesta semana.</p>
+          ) : summaryAi.loading ? (
+            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Gerando o resumo…</p>
+          ) : summaryAi.error ? (
+            <div className="flex items-start gap-2 text-xs font-medium text-amber-500 bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3">
+              <AlertTriangle size={14} className="shrink-0 mt-0.5" /> <span>{summaryAi.error}</span>
+            </div>
+          ) : summary && (
+            <>
+              {summary.used < summary.total && (
+                <p className="text-[11px] font-medium text-amber-500">O resumo considerou {summary.used} de {summary.total} demandas (as mais urgentes primeiro).</p>
+              )}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {summaryBlocks.map(b => (
+                  <div key={b.label} className="flex flex-col gap-2">
+                    <span className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)]"><span className={`w-1.5 h-1.5 rounded-full ${b.dot}`} />{b.label}</span>
+                    {b.items.length > 0 ? (
+                      <ul className="flex flex-col gap-1.5">
+                        {b.items.map((it, i) => <li key={i} className="text-[13px] leading-relaxed" style={{ color: 'var(--text-primary)' }}>• {it}</li>)}
+                      </ul>
+                    ) : <span className="text-[12px]" style={{ color: 'var(--text-muted)' }}>Nada aqui.</span>}
+                  </div>
+                ))}
+              </div>
+              <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>Sugestão gerada por IA. Revise antes de usar.</p>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Resumo */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 shrink-0">

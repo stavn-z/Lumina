@@ -9,6 +9,7 @@ import { useTaxonomyClients, useTemplates } from "./data/useComData.ts";
 import { EmailEditor } from "./editor/EmailEditor.tsx";
 import { TextEditor } from "./editor/TextEditor.tsx";
 import { LibraryTab } from "./library/LibraryTab.tsx";
+import { useBackup } from "./library/useBackup.tsx";
 import { useTemplateActions } from "./library/useTemplateActions.tsx";
 import { TaxonomyTab } from "./taxonomy/TaxonomyTab.tsx";
 import { DialogProvider } from "./ui/Dialogs.tsx";
@@ -75,6 +76,7 @@ function Area({ user, onClose }: { user: ComUser, onClose: () => void }) {
     onDeleted: id => { if (id === openId) setOpenId(null); },
   });
 
+  const backup = useBackup({ userId: user.id, rows, clients: tax.rows, upsertTemplate: upsertLocal, upsertClient: tax.upsertLocal });
   const openRow = rows.find(r => r.id === openId) || null;
   // Se o template aberto for excluído por outra pessoa, o editor continua montado com a
   // última versão conhecida: sem nada pendente ele fecha; com edição pendente, o salvamento
@@ -139,6 +141,9 @@ function Area({ user, onClose }: { user: ComUser, onClose: () => void }) {
             onHistory={actions.showHistory}
             onDelete={actions.remove}
             onToggleRubeus={actions.toggleRubeus}
+            onExport={backup.exportBackup}
+            onImport={f => void backup.importFile(f)}
+            backupProgress={backup.progress}
           />
         )}
         {tab === 'editor' && editRow && (() => {

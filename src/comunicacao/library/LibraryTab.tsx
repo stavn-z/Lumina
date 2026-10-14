@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { ChevronDown, Plus, Search } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, Download, Loader2, Plus, Search, Upload } from "lucide-react";
 import { fieldText, norm, rbState, SEARCH_FIELDS, SORT_OPTIONS, sortTemplates, STATUS_OPTIONS } from "../lib/library.ts";
 import type { RbFilter, SortKey } from "../lib/library.ts";
 import type { TemplateRow, TemplateType } from "../types.ts";
@@ -20,8 +20,9 @@ function usePref<T extends string>(key: string, initial: T, allowed: readonly st
 
 const selectCls = 'appearance-none bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl pl-3 pr-8 h-10 text-xs font-semibold text-[var(--text-secondary)] outline-none cursor-pointer focus:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-500/40';
 
-export function LibraryTab({ userId, rows, loading, error, openId, onNew, onOpen, onDuplicate, onHistory, onDelete, onToggleRubeus }: {
+export function LibraryTab({ userId, rows, loading, error, openId, onNew, onOpen, onDuplicate, onHistory, onDelete, onToggleRubeus, onExport, onImport, backupProgress }: {
   userId: string, rows: TemplateRow[], loading: boolean, error: string | null, openId: string | null,
+  onExport: () => void, onImport: (f: File | undefined) => void, backupProgress: string | null,
   onNew: (defaultType: TemplateType) => void, onOpen: (r: TemplateRow) => void, onDuplicate: (r: TemplateRow) => void,
   onHistory: (r: TemplateRow) => void, onDelete: (r: TemplateRow) => void, onToggleRubeus: (r: TemplateRow) => void,
 }) {
@@ -30,6 +31,7 @@ export function LibraryTab({ userId, rows, loading, error, openId, onNew, onOpen
   const [q, setQ] = useState('');
   const [status, setStatus] = useState<RbFilter>('all');
   const [type, setType] = useState<TypeFilter>('all');
+  const importInput = useRef<HTMLInputElement>(null);
 
   const all = useMemo(() => rows.filter(r => type === 'all' || r.type === type), [rows, type]);
   const nq = norm(q.trim());
@@ -69,6 +71,11 @@ export function LibraryTab({ userId, rows, loading, error, openId, onNew, onOpen
             <button key={v} type="button" aria-pressed={type === v} onClick={() => setType(v)} className={`h-8 px-2.5 sm:px-3 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${type === v ? 'bg-[var(--bg-overlay-strong)] text-[var(--text-primary)]' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}`}>{l}</button>
           ))}
         </div>
+        <button type="button" onClick={onExport} disabled={!!backupProgress} title="Baixa um arquivo .json com todos os templates, clientes e cadastros" className="h-10 px-3 rounded-xl border border-[var(--border-primary)] text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-overlay)] inline-flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:opacity-50"><Download size={13} />Exportar backup</button>
+        <button type="button" onClick={() => importInput.current?.click()} disabled={!!backupProgress} title="Recupera templates de um arquivo de backup" className="h-10 px-3 rounded-xl border border-[var(--border-primary)] text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-overlay)] inline-flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:opacity-70">
+          {backupProgress ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}{backupProgress || 'Importar backup'}
+        </button>
+        <input ref={importInput} type="file" accept="application/json,.json" hidden aria-label="Arquivo de backup" onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; onImport(f); }} />
         <button type="button" onClick={() => onNew(type === 'all' ? 'email' : type)} className="h-10 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold uppercase tracking-widest inline-flex items-center gap-2 shadow-[0_0_15px_rgba(79,70,229,0.3)] outline-none focus-visible:ring-2 focus-visible:ring-indigo-300">
           <Plus size={14} /> Novo template
         </button>

@@ -52,8 +52,8 @@ type Action = {
   buildPrompt: (payload: Record<string, unknown>) => string;
   // Quando definido, a resposta vem como JSON validado por este schema.
   schema?: Record<string, unknown>;
-  // Ajuste final de uma resposta em texto (sem schema), antes de devolvê-la.
-  postProcess?: (text: string) => string;
+  // Conferência final da resposta JSON contra o que foi enviado.
+  validate?: (data: unknown, payload: Record<string, unknown>) => unknown;
 };
 
 // Regras contra invenção, comuns às ações que escrevem a partir das demandas.
@@ -63,79 +63,61 @@ const ONLY_GIVEN_DATA = [
   "Não escreva comentários sobre o próprio pedido nem sobre os dados recebidos (por exemplo \"a frase não detalha…\" ou \"não há informação sobre…\").",
 ];
 
-// Espaçamento fixo das seções do e-mail: título da seção colado ao primeiro item, itens sem
-// linha em branco entre si e exatamente uma linha em branco antes e depois de cada seção.
-// Só mexe em quebras de linha; se algum caractere de conteúdo mudasse, devolve o original.
-const SECTION_HEADER = /^Demandas (Finalizadas|em Andamento):$/i;
-function normalizeEmailSpacing(text: string): string {
-  const lines = text.split(/\r?\n/);
-  const isBlank = (l: string) => /^\s*$/.test(l);
-  const out: string[] = [];
-  let i = 0;
-  while (i < lines.length) {
-    if (!SECTION_HEADER.test(lines[i].trim())) { out.push(lines[i]); i++; continue; }
-    while (out.length > 0 && isBlank(out[out.length - 1])) out.pop();
-    if (out.length > 0) out.push("");
-    out.push(lines[i]);
-    i++;
-    // Pertence à seção: linha não vazia logo após outra da seção, ou, depois de linha em branco,
-    // um novo item ("- ") ou o tempo dele. Qualquer outra coisa encerra a seção.
-    let prevBlank = false;
-    while (i < lines.length) {
-      const l = lines[i];
-      if (isBlank(l)) { prevBlank = true; i++; continue; }
-      if (SECTION_HEADER.test(l.trim())) break;
-      if (prevBlank && !/^\s*(- |Tempo dedicado:)/.test(l)) break;
-      out.push(l);
-      prevBlank = false;
-      i++;
-    }
-    if (i < lines.length) out.push("");
-  }
-  const result = out.join("\n");
-  const content = (t: string) => t.replace(/\s+/g, "");
-  return content(result) === content(text) ? result : text;
+// Demandas do e-mail de fechamento: só as que têm descrição, com id curto e único.
+function closureTasks(p: Record<string, unknown>) {
+  const tasks = taskList(p.tasks).map(t => ({
+    id: str(t.id, 40),
+    titulo: str(t.title, 200),
+    status: t.status === "done" ? "finalizada" : "em andamento",
+    descricao: str(t.description),
+  })).filter(t => t.descricao);
+  if (tasks.length === 0) throw new FriendlyError("Nenhuma demanda deste cliente tem descrição para a IA reescrever.");
+  const ids = new Set(tasks.map(t => t.id));
+  if (ids.has("") || ids.size !== tasks.length) throw new FriendlyError("Pedido inválido.");
+  return tasks;
 }
 
 const ACTIONS: Record<string, Action> = {
   closure_email: {
-    maxTokens: 1500,
+    maxTokens: 3000,
     system: [
-      "Você redige o corpo do e-mail de fechamento semanal que um analista de uma agência envia ao cliente, a partir das demandas da semana. Escreva em português do Brasil, com tom profissional, cordial e direto.",
+      "Você reescreve as descrições das demandas que entram no e-mail de fechamento semanal que um analista de uma agência envia ao cliente. Escreva em português do Brasil, com tom profissional, cordial e direto.",
       ...ONLY_GIVEN_DATA,
-      "Responda APENAS com o corpo do e-mail em texto puro: sem HTML, sem Markdown (nada de **, # ou crases), sem linha de assunto e sem comentários antes ou depois.",
-      "Estrutura, nesta ordem:",
-      "1. A linha \"Prezados(as),\", uma linha em branco e \"Espero que se encontrem bem.\".",
-      "2. Uma frase de abertura. Se houver data da reunião, diga que segue o resumo da reunião de overview realizada nessa data, com os principais pontos e o estado das demandas; se não houver, diga que segue o resumo semanal com os principais pontos e o estado das demandas.",
-      "3. Se houver link da reunião, a linha \"Acesse a gravação da reunião: <link>\" com o link exatamente como recebido. Sem link, não mencione gravação.",
-      "4. A seção \"Demandas Finalizadas:\" e depois \"Demandas em Andamento:\". Omita a seção que não tiver demandas. Cada demanda ocupa UMA linha, com o título e a descrição juntos, separados por dois-pontos: uma ou duas frases claras sobre o que foi feito (finalizadas) ou o que está em curso (em andamento), escritas só a partir da descrição. Sem descrição, a linha tem só o título.",
-      "5. Só quando o tempo vier nos dados, a linha logo abaixo da demanda é \"Tempo dedicado: <tempo>\", com o tempo exatamente como recebido. Sem tempo nos dados, não existe essa linha nem menção a horas.",
-      "Modelo literal de uma seção (repita a linha da demanda para cada uma, na mesma seção, sem linha em branco entre elas; a linha de tempo só existe se o tempo for enviado):",
-      "Demandas Finalizadas:",
-      "- TÍTULO DA DEMANDA: Descrição do que foi feito.",
-      "Tempo dedicado: 2h30min",
-      "- TÍTULO DE OUTRA DEMANDA: Descrição do que foi feito.",
-      "Tempo dedicado: 45min",
-      "Fim do modelo. O primeiro item vem na linha seguinte ao título da seção, sem linha em branco; entre seções há exatamente uma linha em branco.",
-      "6. Feche com \"Em caso de dúvidas, continuo à disposição.\", uma linha em branco e a linha final \"Com os melhores cumprimentos,\". Nada depois dela.",
+      "Para cada demanda recebida, devolva o mesmo id e UMA frase profissional que reescreve só a descrição recebida: o que foi feito, se a demanda está finalizada, ou o que está em curso, se está em andamento. Use o título apenas como contexto, sem repeti-lo.",
+      "A frase não leva saudação, abertura, fechamento, data, link, tempo nem nome do cliente: o restante do e-mail é montado fora daqui.",
+      "Sem Markdown e sem quebras de linha. Devolva todas as demandas recebidas, uma vez cada, sem criar outras.",
     ].join("\n"),
-    postProcess: normalizeEmailSpacing,
-    buildPrompt: (p) => {
-      const includeTime = p.includeTime === true;
-      const tasks = taskList(p.tasks).map(t => ({
-        titulo: str(t.title, 200),
-        status: t.status === "done" ? "finalizada" : "em andamento",
-        descricao: str(t.description),
-        ...(includeTime ? { tempo: str(t.time, 400) } : {}),
-      }));
-      if (tasks.length === 0) throw new FriendlyError("Este cliente não tem demandas para o e-mail.");
-      return JSON.stringify({
-        cliente: str(p.clientName, 120),
-        data_da_reuniao: str(p.meetingDate, 80) || null,
-        link_da_reuniao: str(p.meetingLink, 400) || null,
-        informar_tempo: includeTime,
-        demandas: tasks,
-      }, null, 1);
+    schema: {
+      type: "object",
+      properties: {
+        demandas: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: { id: { type: "string" }, descricao: { type: "string" } },
+            required: ["id", "descricao"],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ["demandas"],
+      additionalProperties: false,
+    },
+    buildPrompt: (p) => JSON.stringify({ demandas: closureTasks(p) }, null, 1),
+    // Cada id enviado volta exatamente uma vez, com uma frase não vazia em uma linha só.
+    validate: (data, p) => {
+      const sent = closureTasks(p).map(t => t.id);
+      const list = (data as { demandas?: unknown })?.demandas;
+      const incomplete = () => new FriendlyError("A IA devolveu uma resposta incompleta. Tente de novo.", 502);
+      if (!Array.isArray(list) || list.length !== sent.length) throw incomplete();
+      const byId = new Map<string, string>();
+      for (const item of list as { id?: unknown; descricao?: unknown }[]) {
+        const id = typeof item?.id === "string" ? item.id : "";
+        const descricao = typeof item?.descricao === "string" ? item.descricao.replace(/\s+/g, " ").trim() : "";
+        if (!sent.includes(id) || byId.has(id) || !descricao) throw incomplete();
+        byId.set(id, descricao);
+      }
+      return { demandas: sent.map(id => ({ id, descricao: byId.get(id)! })) };
     },
   },
 
@@ -178,6 +160,7 @@ const ACTIONS: Record<string, Action> = {
       "- attention: o que está atrasado (prazo anterior à data de hoje e não finalizado) ou pede atenção.",
       ...ONLY_GIVEN_DATA,
       "Cada bloco pode ficar vazio. Não repita a mesma demanda em dois blocos sem motivo. Não invente motivos, pessoas nem prazos: cite um motivo de bloqueio só se ele estiver nos dados.",
+      "Datas: criada_em é quando a demanda foi cadastrada, prazo é a data-limite e concluida_em é quando foi finalizada. Nunca escreva \"parado desde\", \"parada desde\" nem \"há X dias\". Para citar a data de criação, escreva \"criada em dd/mm\".",
     ].join("\n"),
     schema: {
       type: "object",
@@ -195,9 +178,9 @@ const ACTIONS: Record<string, Action> = {
         cliente: str(t.client, 120),
         status: str(t.status, 60),
         tempo: str(t.time, 40) || null,
-        criada_em: str(t.createdAt, 40) || null,
-        prazo: str(t.dueDate, 40) || null,
-        finalizada_em: str(t.completedAt, 40) || null,
+        criada_em: str(t.criada_em, 40) || null,
+        prazo: str(t.prazo, 40) || null,
+        concluida_em: str(t.concluida_em, 40) || null,
       }));
       if (tasks.length === 0) throw new FriendlyError("Você não tem demandas nesta semana para resumir.");
       return JSON.stringify({
@@ -265,7 +248,7 @@ function buildPrompt(action: Action, payload: Record<string, unknown>): string {
   return prompt;
 }
 
-async function runAction(action: Action, prompt: string): Promise<unknown> {
+async function runAction(action: Action, prompt: string, payload: Record<string, unknown>): Promise<unknown> {
   const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
   if (!apiKey) throw new FriendlyError("A IA não está configurada corretamente. Avise o administrador do Lumina.", 503);
   const client = new Anthropic({ apiKey, timeout: 45_000, maxRetries: 1 });
@@ -304,12 +287,14 @@ async function runAction(action: Action, prompt: string): Promise<unknown> {
     .trim();
   if (!text) throw new FriendlyError("A IA devolveu uma resposta vazia. Tente de novo.", 502);
 
-  if (!action.schema) return { text: action.postProcess ? action.postProcess(text) : text };
+  if (!action.schema) return { text };
+  let data: unknown;
   try {
-    return JSON.parse(text);
+    data = JSON.parse(text);
   } catch {
     throw new FriendlyError("A IA devolveu uma resposta em formato inesperado. Tente de novo.", 502);
   }
+  return action.validate ? action.validate(data, payload) : data;
 }
 
 // ---------- Handler ----------
@@ -341,7 +326,7 @@ Deno.serve(async (req) => {
     // Valida a entrada antes de contar o uso, para um pedido inválido não gastar a cota.
     const prompt = buildPrompt(action, payload);
     await checkRateLimit(admin, auth.user.id, body.action as string);
-    const data = await runAction(action, prompt);
+    const data = await runAction(action, prompt, payload);
     return json({ ok: true, data });
   } catch (err) {
     if (err instanceof FriendlyError) return json({ ok: false, error: err.message }, err.status);

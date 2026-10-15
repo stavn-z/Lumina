@@ -5130,9 +5130,9 @@ function TodayView({ tasks, clients, user, getElapsed, onOpen, onToggleTimer, on
         client: clientName(t.clientId),
         status: COLUMNS.find(c => c.id === t.status)?.name || t.status,
         time: getElapsed(t) > 0 ? hoursText(getElapsed(t)) : '',
-        createdAt: dateBR(t.createdAt || ''),
-        dueDate: dateBR(t.dueDate || ''),
-        completedAt: dateBR(t.completedAt || ''),
+        criada_em: dateBR(t.createdAt || ''),
+        prazo: dateBR(t.dueDate || ''),
+        concluida_em: dateBR(t.completedAt || ''),
       })),
     });
     if (res) setSummary({
@@ -6022,6 +6022,50 @@ function generateLimitEmailLink(clientData: any, consumedHours: number) {
   return `https://mail.google.com/mail/?view=cm&fs=1&to=${emailTo}&bcc=analistasrubeus@rubeus.com.br&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
 
+// E-mail de fechamento: o texto editável usa **negrito** e [texto](url). Dele saem a versão
+// simples (Abrir E-mail, Copiar Texto, Copiar Notion) e o HTML do "Copiar formatado".
+const CLOSURE_LINK_RE = /\[([^\]\n]+)\]\(([^()\s]+)\)/g;
+
+// Só http/https. Sem esquema (ex.: "meet.google.com/…"), assume https://.
+function closureSafeUrl(raw: string): string | null {
+  const v = (raw || '').trim();
+  if (!v || /[\s()<>"'\\]/.test(v)) return null;
+  const url = /^[a-z][a-z0-9+.-]*:/i.test(v) ? v : `https://${v}`;
+  try {
+    const u = new URL(url);
+    return (u.protocol === 'http:' || u.protocol === 'https:') && !!u.hostname ? url : null;
+  } catch { return null; }
+}
+
+const closureToPlain = (text: string) => text.replace(CLOSURE_LINK_RE, '$1: $2').replace(/\*\*/g, '');
+
+const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
+// Todo o texto é escapado; só viram tag o negrito e links http/https idênticos ao do texto.
+function closureToHtml(text: string): string {
+  const inline = (s: string) => {
+    let out = '';
+    let last = 0;
+    for (const m of s.matchAll(CLOSURE_LINK_RE)) {
+      out += escapeHtml(s.slice(last, m.index));
+      out += closureSafeUrl(m[2]) === m[2]
+        ? `<a href="${escapeHtml(m[2])}">${escapeHtml(m[1])}</a>`
+        : escapeHtml(`${m[1]}: ${m[2]}`);
+      last = (m.index || 0) + m[0].length;
+    }
+    return out + escapeHtml(s.slice(last));
+  };
+  const line = (l: string) => {
+    const parts = l.split('**');
+    // Marcador sem par: o trecho final fica sem negrito.
+    const unpaired = parts.length % 2 === 0;
+    return parts.map((p, i) => (i % 2 === 1 && !(unpaired && i === parts.length - 1) ? `<strong>${inline(p)}</strong>` : inline(p))).join('');
+  };
+  return `<div>${text.split(/\r?\n/).map(line).join('<br>')}</div>`;
+}
+
+const GMAIL_LINK_WARN = 6000;
+
 function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getElapsed }: any) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [copiedNotionId, setCopiedNotionId] = useState<string | null>(null);
@@ -6030,7 +6074,10 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
   // Confirmação antes de formalizar: a ação move cards de "Concluído" pra "Formalizar" de
   // uma vez (um cliente ou o sistema inteiro) e não tinha nenhuma trava contra clique acidental.
   const [confirmFormalize, setConfirmFormalize] = useState<{ clientId: string | null, clientName: string, count: number } | null>(null);
-  const closureAi = useLuminaAi<{ text: string }>('closure_email');
+  const closureAi = useLuminaAi<{ demandas: { id: string, descricao: string }[] }>('closure_email');
+  const [copiedHtmlId, setCopiedHtmlId] = useState<string | null>(null);
+  const [copyHtmlError, setCopyHtmlError] = useState('');
+  const copyingHtml = useRef(false);
 
   const formatWorkedTime = (seconds: number) => {
     const totalMin = Math.round((seconds || 0) / 60);
@@ -6054,90 +6101,93 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
     }, {});
   }, [tasks]);
 
-  // Tempo de uma demanda para a IA, com o mesmo detalhamento por item do e-mail padrão.
-  const taskTimeText = (t: any, splitTimeByItem?: boolean) => {
-    const items = splitTimeByItem && hasItemTimers(t) ? (t.checklist || []).filter((c: any) => c.text && c.text.trim()) : [];
-    const total = formatWorkedTime(getElapsed(t));
-    if (items.length === 0) return total;
-    const parts = items.map((c: any) => {
-      const sec = c.timerRunning && c.timerStart ? (c.timerElapsed || 0) + (Date.now() - c.timerStart) / 1000 : (c.timerElapsed || 0);
-      return `${c.text}: ${formatWorkedTime(sec)}`;
-    });
-    return `${total} (${parts.join('; ')})`;
-  };
-
-  const generateEmailText = (clientTasks: any, mData: any, includeTime?: boolean, splitTimeByItem?: boolean) => {
+  // Layout fixo do e-mail, com **negrito** e [texto](url). `descs` troca a descrição original
+  // pela reescrita da IA (chave = id da demanda); sem ela, vale a descrição cadastrada.
+  const generateEmailText = (clientTasks: any, mData: any, includeTime?: boolean, splitTimeByItem?: boolean, descs?: Record<string, string> | null) => {
     let body = `Prezados(as),\n\nEspero que se encontrem bem.\n\n`;
 
     let dateStr = "";
     if (mData?.date) {
-      const [y, m, d] = mData.date.split('-');
+      const [, m, d] = mData.date.split('-');
       dateStr = `${d}/${m}`;
     }
+    body += `Segue o resumo da reunião de overview${dateStr ? ` realizada em ${dateStr}` : ''}, com os principais pontos e o estado das demandas.`;
+    const link = closureSafeUrl(mData?.link || '');
+    if (link) body += `\n\n[Acesse a reunião](${link})`;
 
-    if (dateStr || mData?.link) {
-      body += `Segue o resumo da reunião de overview`;
-      if (dateStr) body += ` realizada a ${dateStr}`;
-      body += `, com os principais pontos discutidos e o estado das demandas:\n\n`;
-      if (mData?.link) body += `Acesse a gravação da reunião: ${mData.link}\n\n`;
-    } else {
-      body += `Segue o resumo semanal com os principais pontos e o estado das demandas:\n\n`;
-    }
-
-    const appendTask = (t: any) => {
-      body += `- ${t.title}\n`;
-      if (t.description) body += `  ${t.description}\n`;
+    const appendTask = (t: any, i: number) => {
+      if (i > 0) body += `\n\n`;
+      body += `**${t.title}**`;
+      const desc = (descs?.[t.id] ?? t.description ?? '').trim();
+      if (desc) body += `\n${desc}`;
       if (includeTime) {
-        // Horas separadas só existem pras demandas do modelo novo (cronômetro por item). Sem
-        // itens pra detalhar, cai de volta no tempo único de sempre.
+        body += `\nTempo dedicado: ${formatWorkedTime(getElapsed(t))}`;
+        // Horas separadas só existem pras demandas do modelo novo (cronômetro por item).
         const items = splitTimeByItem && hasItemTimers(t) ? (t.checklist || []).filter((c: any) => c.text && c.text.trim()) : [];
-        if (items.length > 0) {
-          items.forEach((c: any) => {
-            const sec = c.timerRunning && c.timerStart ? (c.timerElapsed || 0) + (Date.now() - c.timerStart) / 1000 : (c.timerElapsed || 0);
-            body += `  - ${c.text}: ${formatWorkedTime(sec)}\n`;
-          });
-          body += `  Tempo total: ${formatWorkedTime(getElapsed(t))}\n`;
-        } else {
-          body += `  Tempo dedicado: ${formatWorkedTime(getElapsed(t))}\n`;
-        }
+        items.forEach((c: any) => {
+          const sec = c.timerRunning && c.timerStart ? (c.timerElapsed || 0) + (Date.now() - c.timerStart) / 1000 : (c.timerElapsed || 0);
+          body += `\n   • ${c.text.trim()}: ${formatWorkedTime(sec)}`;
+        });
       }
-      body += `\n`;
     };
 
     if (clientTasks.done.length > 0) {
-      body += `Demandas Finalizadas:\n`;
+      body += `\n\n\n**DEMANDAS FINALIZADAS**\n`;
       clientTasks.done.forEach(appendTask);
     }
-
     if (clientTasks.inProgress.length > 0) {
-      body += `Demandas em Andamento:\n`;
+      body += `\n\n\n**DEMANDAS EM ANDAMENTO**\n`;
       clientTasks.inProgress.forEach(appendTask);
     }
 
-    body += `Em caso de dúvidas, continuo à disposição.\n\nCom os melhores cumprimentos,`;
+    body += `\n\n\nEm caso de dúvidas, continuo à disposição.\n\nCom os melhores cumprimentos,`;
     return body;
   };
 
-  // bodyOverride: texto gerado pela IA e editado no popup; sem ele, vale o texto padrão.
+  // bodyOverride: texto editado no popup; sem ele, vale o texto padrão. Sai sempre na versão simples.
   const generateEmailLink = (clientTasks: any, clientData: any, mData: any, includeTime?: boolean, splitTimeByItem?: boolean, bodyOverride?: string | null) => {
     const emails = Array.isArray(clientData?.emails) ? clientData.emails : [];
     const emailTo = emails.join(',');
     const subject = `Atualização Semanal de Demandas - ${clientData ? clientData.name : 'Cliente'}`;
-    const body = bodyOverride ?? generateEmailText(clientTasks, mData, includeTime, splitTimeByItem);
+    const body = closureToPlain(bodyOverride ?? generateEmailText(clientTasks, mData, includeTime, splitTimeByItem));
 
     return `https://mail.google.com/mail/?view=cm&fs=1&to=${emailTo}&bcc=analistasrubeus@rubeus.com.br&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   };
 
   const handleCopyText = (clientTasks: any, clientId: string, mData: any, includeTime?: boolean, splitTimeByItem?: boolean, textOverride?: string | null) => {
-    const text = textOverride ?? generateEmailText(clientTasks, mData, includeTime, splitTimeByItem);
+    const text = closureToPlain(textOverride ?? generateEmailText(clientTasks, mData, includeTime, splitTimeByItem));
     navigator.clipboard.writeText(text);
     setCopiedId(clientId);
     setTimeout(() => setCopiedId(null), 2000);
   };
 
+  // HTML (negrito e link clicável) e texto simples juntos; o app onde colar escolhe o formato.
+  const handleCopyFormatted = async (clientId: string, text: string) => {
+    if (copyingHtml.current) return;
+    copyingHtml.current = true;
+    setCopyHtmlError('');
+    try {
+      if (typeof ClipboardItem === 'undefined' || !navigator.clipboard?.write) throw new Error('sem ClipboardItem');
+      // Com limite de tempo: se o navegador não responder, a trava contra clique duplo não fica presa.
+      await Promise.race([
+        navigator.clipboard.write([new ClipboardItem({
+          'text/html': new Blob([closureToHtml(text)], { type: 'text/html' }),
+          'text/plain': new Blob([closureToPlain(text)], { type: 'text/plain' }),
+        })]),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('tempo esgotado')), 5000)),
+      ]);
+      setCopiedHtmlId(clientId);
+      setTimeout(() => setCopiedHtmlId(null), 2000);
+    } catch {
+      setCopyHtmlError('Não foi possível copiar com formatação neste navegador. Use Copiar Texto.');
+    } finally {
+      copyingHtml.current = false;
+    }
+  };
+
   const handleCopyNotion = (clientTasks: any, clientId: string, textOverride?: string | null) => {
     if (textOverride != null) {
-      navigator.clipboard.writeText(textOverride);
+      navigator.clipboard.writeText(closureToPlain(textOverride));
       setCopiedNotionId(clientId);
       setTimeout(() => setCopiedNotionId(null), 2000);
       return;
@@ -6311,27 +6361,33 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
         };
 
         // A IA só sugere o texto: ele entra no campo editável e nada é enviado sem o clique em Abrir E-mail.
+        // A IA só reescreve as descrições (uma frase cada); o resto do layout é montado aqui.
+        // Vai só o necessário: id curto, título como contexto, status e descrição.
         const generateWithAi = async () => {
           const popupClientId = emailPopup.clientId;
-          const toPayload = (t: any, status: 'done' | 'in_progress') => ({
-            title: t.title,
-            description: t.description || '',
-            status,
-            ...(emailPopup.includeTime ? { time: taskTimeText(t, emailPopup.splitTimeByItem) } : {}),
-          });
+          const all = [
+            ...clientTasks.done.map((t: any) => ({ t, status: 'done' })),
+            ...clientTasks.inProgress.map((t: any) => ({ t, status: 'in_progress' })),
+          ].filter(({ t }) => (t.description || '').trim());
+          if (all.length === 0) {
+            setEmailPopup((prev: any) => ({ ...prev, aiInfo: 'Nenhuma demanda deste cliente tem descrição para a IA reescrever.' }));
+            return;
+          }
+          setEmailPopup((prev: any) => ({ ...prev, aiInfo: '' }));
           const result = await closureAi.run({
-            clientName,
-            meetingDate: emailPopup.date ? emailPopup.date.split('-').reverse().slice(0, 2).join('/') : '',
-            meetingLink: emailPopup.link || '',
-            includeTime: !!emailPopup.includeTime,
-            tasks: [
-              ...clientTasks.done.map((t: any) => toPayload(t, 'done')),
-              ...clientTasks.inProgress.map((t: any) => toPayload(t, 'in_progress')),
-            ],
+            tasks: all.map(({ t, status }, i) => ({ id: `d${i + 1}`, title: t.title, status, description: t.description })),
           });
-          if (result?.text) setEmailPopup((prev: any) => prev && prev.clientId === popupClientId ? { ...prev, aiText: result.text } : prev);
+          if (!result?.demandas) return;
+          const descs: Record<string, string> = {};
+          result.demandas.forEach(d => { const i = Number(d.id.slice(1)) - 1; if (all[i]) descs[all[i].t.id] = d.descricao; });
+          setEmailPopup((prev: any) => prev && prev.clientId === popupClientId
+            ? { ...prev, aiText: generateEmailText(clientTasks, { date: prev.date, link: prev.link }, prev.includeTime, prev.splitTimeByItem, descs) }
+            : prev);
         };
         const aiText: string | null = emailPopup.aiText ?? null;
+        const emailText = aiText ?? generateEmailText(clientTasks, mData, emailPopup.includeTime, emailPopup.splitTimeByItem);
+        const emailLink = generateEmailLink(clientTasks, clientData, mData, emailPopup.includeTime, emailPopup.splitTimeByItem, aiText);
+        const linkInvalid = !!(emailPopup.link || '').trim() && !closureSafeUrl(emailPopup.link);
 
         return (
           <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center px-3 pt-3 pb-24 sm:p-4 z-[95] fade-in" onClick={() => setEmailPopup(null)}>
@@ -6367,6 +6423,7 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
                       className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500"
                       placeholder="Ex: meet.google.com/..."
                     />
+                    {linkInvalid && <p className="text-[11px] text-amber-500 mt-1.5 ml-1">Link inválido: use um endereço http ou https. Ele fica fora do e-mail.</p>}
                   </div>
                 </div>
 
@@ -6397,6 +6454,7 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
                 <div className="flex flex-col gap-3">
                   <AiButton onClick={generateWithAi} loading={closureAi.loading} label={aiText !== null ? 'Gerar de novo com IA' : 'Gerar texto com IA'} />
                   {closureAi.error && <AiAlert>{closureAi.error}</AiAlert>}
+                  {emailPopup.aiInfo && !closureAi.error && <AiAlert>{emailPopup.aiInfo}</AiAlert>}
                   {aiText !== null && (
                     <div className="flex flex-col gap-2">
                       <div className="flex items-center justify-between gap-3 px-1">
@@ -6421,11 +6479,25 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
                     </div>
                   )}
                 </div>
+
+                {/* Mesmo visual dos botões de IA: em linha própria e centralizado. */}
+                <div className="flex flex-col gap-3">
+                  <div className="flex justify-center">
+                    <button type="button" onClick={() => handleCopyFormatted(emailPopup.clientId, emailText)} className="h-10 px-5 inline-flex items-center justify-center gap-2 rounded-xl text-[11px] font-bold uppercase tracking-widest border border-indigo-500/40 text-indigo-500 bg-indigo-500/10 hover:bg-indigo-500/20 transition-colors">
+                      {copiedHtmlId === emailPopup.clientId ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+                      {copiedHtmlId === emailPopup.clientId ? 'Copiado!' : 'Copiar formatado'}
+                    </button>
+                  </div>
+                  {copyHtmlError && <AiAlert>{copyHtmlError}</AiAlert>}
+                  {emailLink.length > GMAIL_LINK_WARN && (
+                    <AiAlert>O link do Gmail ficou com {emailLink.length.toLocaleString('pt-BR')} caracteres e o texto pode ser cortado ao abrir. Prefira Copiar formatado e colar no e-mail.</AiAlert>
+                  )}
+                </div>
               </div>
 
               <div className="px-6 py-5 border-t border-[var(--border-primary)] bg-[var(--bg-tertiary)] flex flex-col sm:flex-row sm:items-center gap-3">
                 <a
-                  href={generateEmailLink(clientTasks, clientData, mData, emailPopup.includeTime, emailPopup.splitTimeByItem, aiText)}
+                  href={emailLink}
                   target="_blank"
                   rel="noopener noreferrer"
                   onClick={() => setEmailPopup(null)}

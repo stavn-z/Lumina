@@ -4871,6 +4871,28 @@ function SearchModal({ tasks, clients, onOpen, onClose }: any) {
   );
 }
 
+// Padrão visual dos recursos de IA: botão em linha própria e centralizado, aviso de revisão e
+// aviso de erro. Só aparência; o comportamento (carregamento, trava de clique) fica no useLuminaAi.
+function AiButton({ onClick, loading, disabled, label }: { onClick: () => void, loading: boolean, disabled?: boolean, label: string }) {
+  return (
+    <div className="flex justify-center">
+      <button type="button" onClick={onClick} disabled={loading || disabled} className="h-10 px-5 inline-flex items-center justify-center gap-2 rounded-xl text-[11px] font-bold uppercase tracking-widest border border-indigo-500/40 text-indigo-500 bg-indigo-500/10 hover:bg-indigo-500/20 transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
+        {loading ? 'Gerando…' : `✨ ${label}`}
+      </button>
+    </div>
+  );
+}
+function AiNotice() {
+  return <p className="text-[10px] text-center text-[var(--text-muted)]">Sugestão gerada por IA. Revise antes de usar.</p>;
+}
+function AiAlert({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex items-start gap-2 text-xs font-medium text-amber-500 bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3">
+      <AlertTriangle size={14} className="shrink-0 mt-0.5" /> <span>{children}</span>
+    </div>
+  );
+}
+
 function QuickAddModal({ clients, onCreate, onClose }: any) {
   const [title, setTitle] = useState('');
   const [clientId, setClientId] = useState('');
@@ -4926,17 +4948,11 @@ function QuickAddModal({ clients, onCreate, onClose }: any) {
             <div>
               <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Título *</label>
               <input autoFocus value={title} onChange={e => { setTitle(e.target.value); setError(''); }} onKeyDown={e => e.key === 'Enter' && save()} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 transition-colors" placeholder="O que precisa ser feito?" />
-              <div className="flex items-center gap-3 mt-3">
-                <button type="button" onClick={improveWithAi} disabled={draftAi.loading || !title.trim()} className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold uppercase tracking-widest border border-indigo-500/40 text-indigo-500 bg-indigo-500/10 hover:bg-indigo-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                  {draftAi.loading ? 'Gerando…' : '✨ Melhorar com IA'}
-                </button>
-                <span className="text-[10px] text-[var(--text-muted)] leading-snug">Sugere título, descrição e checklist para você revisar.</span>
+              <div className="flex flex-col gap-2 mt-4">
+                <AiButton onClick={improveWithAi} loading={draftAi.loading} disabled={!title.trim()} label="Melhorar com IA" />
+                <p className="text-[10px] text-center text-[var(--text-muted)]">Sugere título, descrição e checklist para você revisar.</p>
+                {draftAi.error && <AiAlert>{draftAi.error}</AiAlert>}
               </div>
-              {draftAi.error && (
-                <div className="mt-3 flex items-start gap-2 text-xs font-medium text-amber-500 bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3">
-                  <AlertTriangle size={14} className="shrink-0 mt-0.5" /> <span>{draftAi.error}</span>
-                </div>
-              )}
             </div>
           ) : (
             <div className="flex flex-col gap-4">
@@ -4951,11 +4967,7 @@ function QuickAddModal({ clients, onCreate, onClose }: any) {
               </div>
               <div>
                 <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Checklist *</label>
-                {!draftHasStep && (
-                  <div className="mb-2 flex items-start gap-2 text-xs font-medium text-amber-500 bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3">
-                    <AlertTriangle size={14} className="shrink-0 mt-0.5" /> <span>A frase não deixa claro nenhum passo. Preencha pelo menos 1 item para criar a demanda.</span>
-                  </div>
-                )}
+                {!draftHasStep && <div className="mb-2"><AiAlert>A frase não deixa claro nenhum passo. Preencha pelo menos 1 item para criar a demanda.</AiAlert></div>}
                 <div className="flex flex-col gap-2">
                   {draft.checklist.map((c, i) => (
                     <div key={i} className="flex items-center gap-2">
@@ -4966,7 +4978,7 @@ function QuickAddModal({ clients, onCreate, onClose }: any) {
                   <button type="button" onClick={() => setDraft({ ...draft, checklist: [...draft.checklist, ''] })} className="self-start inline-flex items-center gap-1.5 text-[11px] font-bold text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"><Plus size={12} /> Adicionar item</button>
                 </div>
               </div>
-              <p className="text-[10px] text-[var(--text-muted)] ml-1">Sugestão gerada por IA. Revise antes de usar.</p>
+              <AiNotice />
             </div>
           )}
           <div>
@@ -5146,19 +5158,13 @@ function TodayView({ tasks, clients, user, getElapsed, onOpen, onToggleTimer, on
   return (
     <div className="flex flex-col h-full fade-in gap-6">
       {/* Saudação */}
-      <div className="shrink-0 flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="font-display text-xl sm:text-2xl font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>{greet}, {user.name.split(' ')[0]}</h2>
-          <p className="text-xs mt-1 capitalize" style={{ color: 'var(--text-muted)' }}>{new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }).format(nowD)}</p>
-        </div>
-        <button
-          type="button"
-          onClick={generateSummary}
-          disabled={summaryAi.loading}
-          className="shrink-0 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-widest border border-indigo-500/40 text-indigo-500 bg-indigo-500/10 hover:bg-indigo-500/20 transition-colors disabled:opacity-60 disabled:cursor-wait"
-        >
-          {summaryAi.loading ? 'Gerando…' : '✨ Resumo da semana'}
-        </button>
+      <div className="shrink-0">
+        <h2 className="font-display text-xl sm:text-2xl font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>{greet}, {user.name.split(' ')[0]}</h2>
+        <p className="text-xs mt-1 capitalize" style={{ color: 'var(--text-muted)' }}>{new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }).format(nowD)}</p>
+      </div>
+
+      <div className="shrink-0 -mt-2">
+        <AiButton onClick={generateSummary} loading={summaryAi.loading} label="Resumo da semana" />
       </div>
 
       {/* Resumo da semana (IA) */}
@@ -5180,9 +5186,7 @@ function TodayView({ tasks, clients, user, getElapsed, onOpen, onToggleTimer, on
           ) : summaryAi.loading ? (
             <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Gerando o resumo…</p>
           ) : summaryAi.error ? (
-            <div className="flex items-start gap-2 text-xs font-medium text-amber-500 bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3">
-              <AlertTriangle size={14} className="shrink-0 mt-0.5" /> <span>{summaryAi.error}</span>
-            </div>
+            <AiAlert>{summaryAi.error}</AiAlert>
           ) : summary && (
             <>
               {summary.used < summary.total && (
@@ -5200,7 +5204,7 @@ function TodayView({ tasks, clients, user, getElapsed, onOpen, onToggleTimer, on
                   </div>
                 ))}
               </div>
-              <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>Sugestão gerada por IA. Revise antes de usar.</p>
+              <AiNotice />
             </>
           )}
         </div>
@@ -6388,39 +6392,29 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
                 )}
 
                 <div className="flex flex-col gap-3">
-                  <div className="flex flex-wrap items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={generateWithAi}
-                      disabled={closureAi.loading}
-                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold uppercase tracking-widest border border-indigo-500/40 text-indigo-500 bg-indigo-500/10 hover:bg-indigo-500/20 transition-colors disabled:opacity-60 disabled:cursor-wait"
-                    >
-                      {closureAi.loading ? 'Gerando…' : aiText !== null ? '✨ Gerar de novo com IA' : '✨ Gerar texto com IA'}
-                    </button>
-                    {aiText !== null && !closureAi.loading && (
-                      <button
-                        type="button"
-                        onClick={() => setEmailPopup((prev: any) => ({ ...prev, aiText: null }))}
-                        className="text-[11px] font-bold text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-                      >
-                        Voltar ao texto padrão
-                      </button>
-                    )}
-                  </div>
-                  {closureAi.error && (
-                    <div className="flex items-start gap-2 text-xs font-medium text-amber-500 bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3">
-                      <AlertTriangle size={14} className="shrink-0 mt-0.5" /> <span>{closureAi.error}</span>
-                    </div>
-                  )}
+                  <AiButton onClick={generateWithAi} loading={closureAi.loading} label={aiText !== null ? 'Gerar de novo com IA' : 'Gerar texto com IA'} />
+                  {closureAi.error && <AiAlert>{closureAi.error}</AiAlert>}
                   {aiText !== null && (
-                    <div>
-                      <label className="text-[10px] text-[var(--text-muted)] uppercase font-bold tracking-widest mb-2 block ml-1">Texto do e-mail (gerado pela IA, revise antes de enviar)</label>
+                    <div className="flex flex-col gap-2">
+                      <div className="flex items-center justify-between gap-3 px-1">
+                        <label className="text-[10px] text-[var(--text-muted)] uppercase font-bold tracking-widest">Texto do e-mail</label>
+                        {!closureAi.loading && (
+                          <button
+                            type="button"
+                            onClick={() => setEmailPopup((prev: any) => ({ ...prev, aiText: null }))}
+                            className="text-[11px] font-bold text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+                          >
+                            Voltar ao texto padrão
+                          </button>
+                        )}
+                      </div>
                       <textarea
                         value={aiText}
                         onChange={e => setEmailPopup((prev: any) => ({ ...prev, aiText: e.target.value }))}
                         rows={12}
                         className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-3 text-[13px] leading-relaxed text-[var(--text-primary)] outline-none focus:border-indigo-500 resize-y kp-scroll"
                       />
+                      <AiNotice />
                     </div>
                   )}
                 </div>

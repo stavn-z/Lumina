@@ -48,13 +48,16 @@ export function LibraryTab({ userId, rows, loading, error, openId, onNew, onOpen
       <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex items-stretch basis-full sm:basis-auto sm:flex-1 min-w-0 h-10 rounded-xl border overflow-hidden focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/30" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-primary)' }}>
-          <select value={field} onChange={e => setField(e.target.value)} aria-label="Campo da busca" className="bg-[var(--bg-overlay)] border-r border-[var(--border-primary)] px-2.5 text-xs font-semibold text-[var(--text-secondary)] outline-none cursor-pointer max-w-[45%]">
-            {SEARCH_FIELDS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-          </select>
+          <div className="relative flex max-w-[45%] shrink-0 border-r border-[var(--border-primary)] bg-[var(--bg-overlay)]">
+            <select value={field} onChange={e => setField(e.target.value)} aria-label="Campo da busca" className="appearance-none w-full bg-transparent pl-3 pr-8 text-xs font-semibold text-[var(--text-secondary)] outline-none cursor-pointer truncate">
+              {SEARCH_FIELDS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+            <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-[var(--text-muted)]" />
+          </div>
           <Search size={14} className="self-center ml-3 shrink-0 text-[var(--text-muted)]" aria-hidden="true" />
           <input type="search" value={q} onChange={e => setQ(e.target.value)} placeholder="contém…" aria-label="Texto da busca" className="flex-1 min-w-0 bg-transparent px-2.5 text-sm text-[var(--text-primary)] outline-none" />
         </div>
-        <div className="grid grid-cols-2 gap-2 basis-full sm:basis-auto sm:flex">
+        <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-2 basis-full sm:basis-auto sm:flex">
           <div className="relative min-w-0">
             <select value={status} onChange={e => setStatus(e.target.value as RbFilter)} aria-label="Status na Rubeus" className={selectCls + ' w-full'}>
               {STATUS_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
@@ -75,8 +78,9 @@ export function LibraryTab({ userId, rows, loading, error, openId, onNew, onOpen
             <button key={v} type="button" aria-pressed={type === v} onClick={() => setType(v)} className={`h-8 px-2 sm:px-3 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${type === v ? 'bg-[var(--bg-overlay-strong)] text-[var(--text-primary)]' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}`}>{l}</button>
           ))}
         </div>
-        <span className="flex-1" />
-        {/* Backup: só ícone (com nome acessível e dica), para a barra caber numa linha. */}
+        {/* Backup e Novo template andam juntos: quando falta espaço, quebram em bloco, à direita.
+            Backup só com ícone (com nome acessível e dica), para a barra caber numa linha. */}
+        <div className="flex items-center gap-2 ml-auto">
         <button type="button" onClick={onExport} disabled={!!backupProgress} aria-label="Exportar backup" title="Exportar backup: baixa um arquivo .json com todos os templates, clientes e cadastros" className="h-10 w-10 grid place-items-center rounded-xl border border-[var(--border-primary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-overlay)] outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:opacity-50"><Download size={15} /></button>
         <button type="button" onClick={() => importInput.current?.click()} disabled={!!backupProgress} aria-label={backupProgress || 'Importar backup'} title="Importar backup: recupera templates de um arquivo de backup" className={`h-10 ${backupProgress ? 'px-3' : 'w-10'} rounded-xl border border-[var(--border-primary)] text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-overlay)] inline-flex items-center justify-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:opacity-70`}>
           {backupProgress ? <><Loader2 size={13} className="animate-spin" />{backupProgress}</> : <Upload size={15} />}
@@ -85,6 +89,7 @@ export function LibraryTab({ userId, rows, loading, error, openId, onNew, onOpen
         <button type="button" onClick={() => onNew(type === 'all' ? 'email' : type)} className="h-10 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold uppercase tracking-widest inline-flex items-center gap-2 shadow-[0_0_15px_rgba(79,70,229,0.3)] outline-none focus-visible:ring-2 focus-visible:ring-indigo-300">
           <Plus size={14} /> Novo template
         </button>
+        </div>
       </div>
       </div>
 

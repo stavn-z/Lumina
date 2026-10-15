@@ -70,11 +70,16 @@ export function ImageField({ img, which, edit }: { img: EmailImage, which: 'bann
     <div className="flex flex-col gap-2">
       {img.upload && img.src ? (
         <div className="flex flex-wrap items-center gap-2 p-2 rounded-xl border" style={{ borderColor: 'var(--border-primary)', background: 'var(--bg-primary)' }}>
-          <img src={img.src} alt="" className="w-14 h-10 object-cover rounded-md bg-[var(--bg-tertiary)] shrink-0" />
-          <span className="text-xs font-mono text-[var(--text-secondary)] truncate flex-1 min-w-[100px]" title={img.upload}>{img.upload}</span>
-          <button type="button" onClick={() => setCropSrc(cropFrom(img))} className={miniBtn}><Crop size={12} />Recortar</button>
-          {img.orig && <button type="button" onClick={restoreOriginal} title="Voltar para a imagem original, sem recorte" className={miniBtn}><RotateCcw size={12} />Original</button>}
-          <button type="button" aria-label="Remover imagem" onClick={remove} className={xBtn}><X size={14} /></button>
+          <div className="flex items-center gap-2 flex-1 min-w-[140px]">
+            <img src={img.src} alt="" className="w-14 h-10 object-cover rounded-md bg-[var(--bg-tertiary)] shrink-0" />
+            <span className="text-xs font-mono text-[var(--text-secondary)] truncate min-w-0" title={img.upload}>{img.upload}</span>
+          </div>
+          {/* Ações juntas: quando falta espaço, quebram em bloco para a linha de baixo, à direita. */}
+          <div className="flex items-center gap-2 ml-auto">
+            <button type="button" onClick={() => setCropSrc(cropFrom(img))} className={miniBtn}><Crop size={12} />Recortar</button>
+            {img.orig && <button type="button" onClick={restoreOriginal} title="Voltar para a imagem original, sem recorte" className={miniBtn}><RotateCcw size={12} />Original</button>}
+            <button type="button" aria-label="Remover imagem" onClick={remove} className={xBtn}><X size={14} /></button>
+          </div>
         </div>
       ) : (
         <div className="flex flex-wrap gap-2">

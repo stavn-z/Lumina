@@ -5009,6 +5009,14 @@ function QuickAddModal({ clients, onCreate, onClose }: any) {
   );
 }
 
+// Negrito vindo da IA no formato **texto**: vira <strong> como elemento React (nunca innerHTML).
+function renderAiBold(text: string) {
+  return text.split(/(\*\*[^*]+\*\*)/g).map((part, i) =>
+    /^\*\*[^*]+\*\*$/.test(part) ? <strong key={i} className="font-bold">{part.slice(2, -2)}</strong> : part
+  );
+}
+const stripAiBold = (text: string) => text.replace(/\*\*/g, '');
+
 function TodayView({ tasks, clients, user, getElapsed, onOpen, onToggleTimer, onComplete, onOpenAgenda }: any) {
   const pad = (n: number) => String(n).padStart(2, '0');
   const nowD = new Date();
@@ -5129,7 +5137,7 @@ function TodayView({ tasks, clients, user, getElapsed, onOpen, onToggleTimer, on
     { label: 'Atrasado ou pede atenção', items: summary.attention, dot: 'bg-red-500' },
   ] : [];
   const copySummary = () => {
-    const text = [`Resumo da semana (${fmtBR(weekStartStr).slice(0, 5)} a ${fmtBR(weekEndStr).slice(0, 5)})`, ...summaryBlocks.map(b => `${b.label}:\n${b.items.length ? b.items.map(i => `- ${i}`).join('\n') : '- Nada'}`)].join('\n\n');
+    const text = [`Resumo da semana (${fmtBR(weekStartStr).slice(0, 5)} a ${fmtBR(weekEndStr).slice(0, 5)})`, ...summaryBlocks.map(b => `${b.label}:\n${b.items.length ? b.items.map(i => `- ${stripAiBold(i)}`).join('\n') : '- Nada'}`)].join('\n\n');
     navigator.clipboard.writeText(text);
     setSummaryCopied(true);
     setTimeout(() => setSummaryCopied(false), 2000);
@@ -5186,7 +5194,7 @@ function TodayView({ tasks, clients, user, getElapsed, onOpen, onToggleTimer, on
                     <span className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)]"><span className={`w-1.5 h-1.5 rounded-full ${b.dot}`} />{b.label}</span>
                     {b.items.length > 0 ? (
                       <ul className="flex flex-col gap-1.5">
-                        {b.items.map((it, i) => <li key={i} className="text-[13px] leading-relaxed" style={{ color: 'var(--text-primary)' }}>• {it}</li>)}
+                        {b.items.map((it, i) => <li key={i} className="text-[13px] leading-relaxed" style={{ color: 'var(--text-primary)' }}>• {renderAiBold(it)}</li>)}
                       </ul>
                     ) : <span className="text-[12px]" style={{ color: 'var(--text-muted)' }}>Nada aqui.</span>}
                   </div>

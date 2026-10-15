@@ -148,7 +148,8 @@ const ACTIONS: Record<string, Action> = {
       "Não repita o nome do cliente na descrição nem no título: o cliente já fica registrado na demanda.",
       "O checklist deve conter só passos que decorram do que foi escrito na frase, sem pressupor etapas, aprovações, revisões ou exigências que a frase não mencionou. Se a frase só sustentar poucos passos, devolva só esses. Nunca invente passos para completar a lista.",
       "Não crie passos de confirmar, levantar ou coletar informação, validar o escopo ou alinhar com o cliente, a menos que a própria frase peça isso.",
-      "Se a frase for vaga demais para indicar o que fazer, a descrição é uma reescrita fiel da frase, sem acrescentar nada, e o checklist fica VAZIO (lista sem itens).",
+      "Frase que relata um problema (por exemplo \"X indisponível\", \"erro em Y\", \"Z não funciona\", \"W fora do ar\") é um pedido para resolver esse problema. Nesse caso o checklist tem SEMPRE de 2 a 3 passos, nesta ordem e só destes tipos, cada um citando o assunto da frase: 1) começando por \"Identificar a causa\" (investigar o problema); 2) começando por \"Corrigir\" ou \"Restabelecer\" (aplicar a correção); 3) opcional, começando por \"Validar a correção\". Nenhum outro tipo de passo: nada de confirmar, verificar se está funcionando, levantar informação ou alinhar.",
+      "Frase vaga, que não relata um problema concreto nem pede uma ação concreta (por exemplo \"ver aquele problema do cliente\"), fica com a descrição como reescrita fiel da frase, sem acrescentar nada, e o checklist VAZIO (lista sem itens).",
     ].join("\n"),
     schema: {
       type: "object",
@@ -171,7 +172,7 @@ const ACTIONS: Record<string, Action> = {
     maxTokens: 1200,
     system: [
       "Você resume a semana de trabalho de uma pessoa de uma agência, a partir da lista das demandas dela. Escreva em português do Brasil, tom profissional e direto.",
-      "Separe em três blocos, cada um com itens de uma frase curta que citem a demanda e o cliente:",
+      "Separe em três blocos, cada um com itens de uma frase curta que citem a demanda e o cliente. Ao citar uma demanda, ponha o título e o nome do cliente entre marcadores de negrito, assim: **TÍTULO DA DEMANDA** (**Cliente**). Não use outra formatação.",
       "- moved: o que andou (finalizado ou com avanço na semana);",
       "- blocked: o que travou ou está aguardando alguém;",
       "- attention: o que está atrasado (prazo anterior à data de hoje e não finalizado) ou pede atenção.",

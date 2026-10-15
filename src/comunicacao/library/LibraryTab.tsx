@@ -55,7 +55,7 @@ export function LibraryTab({ userId, rows, loading, error, openId, onNew, onOpen
             <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-[var(--text-muted)]" />
           </div>
           <Search size={14} className="self-center ml-3 shrink-0 text-[var(--text-muted)]" aria-hidden="true" />
-          <input type="search" value={q} onChange={e => setQ(e.target.value)} placeholder="contém…" aria-label="Texto da busca" className="flex-1 min-w-0 bg-transparent px-2.5 text-sm text-[var(--text-primary)] outline-none" />
+          <input type="search" value={q} onChange={e => setQ(e.target.value)} placeholder="contém…" aria-label="Texto da busca" className="flex-1 min-w-0 bg-transparent px-2.5 text-sm text-[var(--text-primary)] outline-none placeholder:text-[color-mix(in_oklab,var(--text-primary)_50%,transparent)] [[data-theme=dark]_&]:placeholder:text-[var(--text-secondary)]" />
         </div>
         <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-2 basis-full sm:basis-auto sm:flex">
           <div className="relative min-w-0">

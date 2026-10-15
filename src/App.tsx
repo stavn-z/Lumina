@@ -6173,7 +6173,7 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
             <div className="p-2.5 bg-indigo-500/10 rounded-xl hidden sm:block text-indigo-400 border border-indigo-500/20"><Mail size={24} /></div>
             <div>
               <h3 className="font-display font-bold text-xl text-[var(--text-primary)] tracking-tight">Fechamento Semanal</h3>
-              <p className="text-xs text-[var(--text-muted)] mt-1 uppercase tracking-widest font-bold">Dispare os e-mails e copie os relatórios para o Notion.</p>
+              <p className="text-xs text-[var(--text-muted)] mt-1 uppercase tracking-widest font-bold">E-mails e relatórios da semana</p>
             </div>
           </div>
           <button onClick={onClose} className="p-2.5 rounded-xl text-[var(--text-muted)] hover:bg-[var(--bg-overlay)] hover:text-[var(--text-primary)] transition-colors shrink-0">
@@ -6184,7 +6184,7 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
         <div className="p-5 sm:p-8 overflow-y-auto kp-scroll flex flex-col gap-8 flex-1 bg-[var(--bg-primary)]">
           {Object.keys(tasksByClient).length === 0 && (
              <div className="text-center text-sm text-[var(--text-muted)] py-12 border border-dashed border-[var(--border-primary)] rounded-3xl">
-               Nenhuma demanda pendente para fechamento nesta semana.
+               Nada para fechar nesta semana.
              </div>
           )}
 
@@ -6242,13 +6242,16 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
                     </button>
                   </div>
 
+                  {/* Ações secundárias do cliente, agrupadas à direita (no celular, abaixo da principal). */}
                   {clientTasks.done.length > 0 && (
-                    <button
-                      onClick={() => setConfirmFormalize({ clientId, clientName, count: clientTasks.done.length })}
-                      className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3.5 sm:py-3 bg-transparent border border-[var(--border-primary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-emerald-500/50 hover:bg-emerald-500/10 rounded-xl text-xs font-bold uppercase tracking-widest transition-all"
-                    >
-                      <CheckCircle2 size={16} /> Formalizar ({clientTasks.done.length})
-                    </button>
+                    <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto sm:ml-auto">
+                      <button
+                        onClick={() => setConfirmFormalize({ clientId, clientName, count: clientTasks.done.length })}
+                        className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3.5 sm:py-3 bg-transparent border border-[var(--border-primary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-emerald-500/50 hover:bg-emerald-500/10 rounded-xl text-xs font-bold uppercase tracking-widest transition-all"
+                      >
+                        <CheckCircle2 size={16} /> Formalizar ({clientTasks.done.length})
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>
@@ -6256,13 +6259,13 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
           })}
         </div>
 
-        <div className="px-5 sm:px-8 py-5 border-t border-[var(--border-primary)] flex flex-col sm:flex-row items-center justify-between gap-4 bg-[var(--bg-tertiary)]">
-          <span className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-widest">Ação em lote (Formaliza tudo do sistema)</span>
+        <div className="px-5 sm:px-8 py-5 border-t border-[var(--border-primary)] flex flex-col sm:flex-row items-center sm:justify-end gap-3 sm:gap-4 bg-[var(--bg-tertiary)]">
+          <span className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-widest">Todos os clientes</span>
           <button
             onClick={() => setConfirmFormalize({ clientId: null, clientName: '', count: tasks.filter((t: any) => t.status === 'done').length })}
             className="w-full sm:w-auto flex items-center justify-center gap-2 px-8 py-4 sm:py-3.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold uppercase tracking-widest text-xs transition-all shadow-[0_0_15px_rgba(13,148,136,0.3)]"
           >
-            <Check size={18} /> Formalizar Todos
+            <Check size={18} /> Formalizar todos
           </button>
         </div>
       </div>
@@ -6332,7 +6335,7 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
 
         return (
           <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center px-3 pt-3 pb-24 sm:p-4 z-[95] fade-in" onClick={() => setEmailPopup(null)}>
-            <div className="w-full max-w-lg rounded-3xl sm:rounded-[32px] bg-[var(--bg-secondary)] border border-[var(--border-primary)] shadow-2xl overflow-hidden animate-modal-pop flex flex-col max-h-[80dvh] sm:max-h-[88dvh]" onClick={e => e.stopPropagation()}>
+            <div className="w-full max-w-lg sm:max-w-xl rounded-3xl sm:rounded-[32px] bg-[var(--bg-secondary)] border border-[var(--border-primary)] shadow-2xl overflow-hidden animate-modal-pop flex flex-col max-h-[80dvh] sm:max-h-[88dvh]" onClick={e => e.stopPropagation()}>
               <div className="px-6 py-5 border-b border-[var(--border-primary)] flex items-center justify-between bg-[var(--bg-tertiary)]">
                 <div className="flex items-center gap-3">
                   <div className="p-2 bg-indigo-500/10 rounded-xl border border-indigo-500/20"><Mail size={18} className="text-indigo-400" /></div>
@@ -6347,7 +6350,7 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
               <div className="p-6 flex flex-col gap-5 bg-[var(--bg-primary)] overflow-y-auto kp-scroll">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="text-[10px] text-[var(--text-muted)] uppercase font-bold tracking-widest mb-2 block ml-1">Data da Reunião (Opcional)</label>
+                    <label className="text-[10px] text-[var(--text-muted)] uppercase font-bold tracking-widest mb-2 block ml-1">Data da reunião · opcional</label>
                     <input
                       type="date"
                       value={emailPopup.date || ''}
@@ -6356,7 +6359,7 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
                     />
                   </div>
                   <div>
-                    <label className="text-[10px] text-[var(--text-muted)] uppercase font-bold tracking-widest mb-2 block ml-1">Link da Gravação (Opcional)</label>
+                    <label className="text-[10px] text-[var(--text-muted)] uppercase font-bold tracking-widest mb-2 block ml-1">Link da gravação · opcional</label>
                     <input
                       type="text"
                       value={emailPopup.link || ''}
@@ -6368,7 +6371,7 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
                 </div>
 
                 <label className="flex items-center justify-between gap-3 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-3.5 cursor-pointer">
-                  <span className="text-xs font-bold text-[var(--text-secondary)] min-w-0 flex-1">Incluir horas trabalhadas de cada demanda</span>
+                  <span className="text-xs font-bold text-[var(--text-secondary)] min-w-0 flex-1">Incluir horas trabalhadas</span>
                   <button
                     type="button"
                     onClick={() => setEmailPopup({ ...emailPopup, includeTime: !emailPopup.includeTime })}
@@ -6380,7 +6383,7 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
 
                 {emailPopup.includeTime && (
                   <label className="flex items-center justify-between gap-3 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-3.5 cursor-pointer animate-fade-in">
-                    <span className="text-xs font-bold text-[var(--text-secondary)] min-w-0 flex-1">Detalhar horas por item do checklist <span className="block sm:inline text-[10px] font-medium text-[var(--text-muted)] normal-case">(quando a demanda tiver cronômetro por item)</span></span>
+                    <span className="text-xs font-bold text-[var(--text-secondary)] min-w-0 flex-1">Horas por item do checklist</span>
                     <button
                       type="button"
                       onClick={() => setEmailPopup({ ...emailPopup, splitTimeByItem: !emailPopup.splitTimeByItem })}
@@ -6420,20 +6423,21 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
                 </div>
               </div>
 
-              <div className="px-6 py-5 border-t border-[var(--border-primary)] bg-[var(--bg-tertiary)] flex flex-wrap items-center gap-3">
+              <div className="px-6 py-5 border-t border-[var(--border-primary)] bg-[var(--bg-tertiary)] flex flex-col sm:flex-row sm:items-center gap-3">
                 <a
                   href={generateEmailLink(clientTasks, clientData, mData, emailPopup.includeTime, emailPopup.splitTimeByItem, aiText)}
                   target="_blank"
                   rel="noopener noreferrer"
                   onClick={() => setEmailPopup(null)}
-                  className="flex-1 justify-center inline-flex items-center gap-2 px-5 py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold uppercase tracking-widest transition-all shadow-[0_0_15px_rgba(79,70,229,0.3)]"
+                  className="sm:order-last sm:ml-auto justify-center inline-flex items-center gap-2 px-6 py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold uppercase tracking-widest whitespace-nowrap transition-all shadow-[0_0_15px_rgba(79,70,229,0.3)]"
                 >
                   <Mail size={16} /> Abrir E-mail
                 </a>
 
+                <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-3">
                 <button
                   onClick={() => handleCopyText(clientTasks, emailPopup.clientId, mData, emailPopup.includeTime, emailPopup.splitTimeByItem, aiText)}
-                  className="flex-1 justify-center inline-flex items-center gap-2 px-5 py-3.5 bg-[var(--bg-overlay)] text-[var(--text-secondary)] border border-[var(--border-overlay)] hover:bg-[var(--bg-overlay-strong)] rounded-xl text-xs font-bold uppercase tracking-widest transition-colors"
+                  className="justify-center inline-flex items-center gap-2 px-4 py-3.5 bg-[var(--bg-overlay)] text-[var(--text-secondary)] border border-[var(--border-overlay)] hover:bg-[var(--bg-overlay-strong)] rounded-xl text-xs font-bold uppercase tracking-widest whitespace-nowrap transition-colors"
                 >
                   {copiedId === emailPopup.clientId ? <Check size={16} className="text-emerald-400" /> : <Copy size={16} />}
                   {copiedId === emailPopup.clientId ? "Copiado!" : "Copiar Texto"}
@@ -6441,11 +6445,12 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
 
                 <button
                   onClick={() => handleCopyNotion(clientTasks, emailPopup.clientId, aiText)}
-                  className="flex-1 justify-center inline-flex items-center gap-2 px-5 py-3.5 bg-[var(--bg-overlay)] text-[var(--text-secondary)] border border-[var(--border-overlay)] hover:bg-[var(--bg-overlay-strong)] rounded-xl text-xs font-bold uppercase tracking-widest transition-colors"
+                  className="justify-center inline-flex items-center gap-2 px-4 py-3.5 bg-[var(--bg-overlay)] text-[var(--text-secondary)] border border-[var(--border-overlay)] hover:bg-[var(--bg-overlay-strong)] rounded-xl text-xs font-bold uppercase tracking-widest whitespace-nowrap transition-colors"
                 >
                   {copiedNotionId === emailPopup.clientId ? <Check size={16} className="text-emerald-400" /> : <ClipboardList size={16} />}
-                  {copiedNotionId === emailPopup.clientId ? "Copiado!" : "Copiar (Notion)"}
+                  {copiedNotionId === emailPopup.clientId ? "Copiado!" : "Copiar Notion"}
                 </button>
+                </div>
               </div>
             </div>
           </div>

@@ -60,11 +60,14 @@ export function TemplateCard({ row, editing, onOpen, onDuplicate, onHistory, onD
         <span className="w-4 h-4 rounded-[5px] border-2 border-current grid place-items-center shrink-0 text-[11px] leading-none">{st === 'done' ? <Check size={10} strokeWidth={3} /> : st === 'changed' ? '!' : ''}</span>
         <span className="min-w-0">{rbText(row, st)}</span>
       </button>
-      <div className="flex flex-wrap items-center gap-1.5 px-3.5 pt-2 pb-3.5 mt-auto">
-        <button type="button" onClick={onOpen} className={`${mini} bg-indigo-600 border-indigo-600 text-white hover:bg-indigo-500`}>Abrir</button>
+      {/* Ação principal na linha inteira; secundárias agrupadas embaixo, com Excluir à direita. */}
+      <div className="flex flex-col gap-1.5 px-3.5 pt-2 pb-3.5 mt-auto">
+        <button type="button" onClick={onOpen} className={`${mini} w-full justify-center bg-indigo-600 border-indigo-600 text-white hover:bg-indigo-500`}>Abrir</button>
+        <div className="flex items-center gap-1.5">
         <button type="button" onClick={onDuplicate} className={`${mini} border-[var(--border-primary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-overlay)]`}><Copy size={12} />Duplicar</button>
         <button type="button" onClick={onHistory} className={`${mini} border-[var(--border-primary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-overlay)]`}><History size={12} />Histórico</button>
         <button type="button" onClick={onDelete} aria-label={'Excluir ' + nome} title="Excluir template" className="ml-auto h-8 w-8 grid place-items-center rounded-lg border border-[var(--border-primary)] text-[var(--text-muted)] hover:text-red-400 hover:border-red-500/40 hover:bg-red-500/10 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"><X size={14} /></button>
+        </div>
       </div>
     </article>
   );

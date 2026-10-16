@@ -208,11 +208,13 @@ function isCoverExpired(c: any, today = getBrasiliaDate()) {
 function isClientArchived(c: any) {
   return !!c.archived || isCoverExpired(c);
 }
+// Período de atuação na cobertura: "13/10 a 22/10"; com o ano quando o período vira o ano.
 function coverPeriodLabel(c: any) {
-  const fmt = (iso: string) => iso ? iso.split('-').reverse().slice(0, 2).join('/') : '';
-  if (c.coverFrom && c.coverUntil) return `${fmt(c.coverFrom)}–${fmt(c.coverUntil)}`;
+  const withYear = !!(c.coverFrom && c.coverUntil && c.coverFrom.slice(0, 4) !== c.coverUntil.slice(0, 4));
+  const fmt = (iso: string) => iso ? iso.split('-').reverse().slice(0, withYear ? 3 : 2).join('/') : '';
+  if (c.coverFrom && c.coverUntil) return `${fmt(c.coverFrom)} a ${fmt(c.coverUntil)}`;
   if (c.coverUntil) return `até ${fmt(c.coverUntil)}`;
-  if (c.coverFrom) return `desde ${fmt(c.coverFrom)}`;
+  if (c.coverFrom) return `a partir de ${fmt(c.coverFrom)}`;
   return '';
 }
 
@@ -2625,7 +2627,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                               <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
                                 <div className="flex items-center gap-2 flex-wrap">
                                   {client && <span className="flex items-center gap-1 text-[9px] uppercase tracking-wider px-2 py-1 rounded-md bg-[var(--bg-overlay)] text-[var(--text-secondary)] font-bold max-w-[140px] truncate border border-[var(--border-overlay)]"><Building2 size={10} /> {client.name}</span>}
-                                  {client?.isCover && <span title={`Cobertura${client.coverFor ? ` de ${client.coverFor}` : ''}${coverPeriodLabel(client) ? ` · ${coverPeriodLabel(client)}` : ''}`} className="flex items-center gap-1 text-[9px] uppercase tracking-wider px-2 py-1 rounded-md bg-sky-500/10 text-sky-400 border border-sky-500/20 font-bold whitespace-nowrap">Cobertura{coverPeriodLabel(client) ? ` · ${coverPeriodLabel(client)}` : ''}</span>}
+                                  {client?.isCover && <CoverBadge client={client} className="py-1" />}
                                   <span className={`flex items-center gap-1 text-[9px] uppercase tracking-wider px-2 py-1 rounded-md border font-bold ${prStyle.bg} ${prStyle.text} ${prStyle.border}`}>
                                     <span className={`w-1 h-1 rounded-full ${prStyle.dot}`} /> {t.priority}
                                   </span>
@@ -2952,7 +2954,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
           {coversEndingTomorrow.map((c: any) => (
             <div key={c.id} className="flex items-center gap-2 pl-3 pr-1.5 py-2 rounded-xl bg-[var(--bg-secondary)] border border-sky-500/30 shadow-lg text-xs text-[var(--text-secondary)] animate-fade-in">
               <CalendarDays size={14} className="text-sky-400 shrink-0" />
-              <span className="flex-1 min-w-0">Cobertura de <span className="font-bold text-[var(--text-primary)]">{c.name}</span> termina amanhã</span>
+              <span className="flex-1 min-w-0">Período de atuação em <span className="font-bold text-[var(--text-primary)]">{c.name}</span> termina amanhã ({c.coverUntil.split('-').reverse().slice(0, 2).join('/')})</span>
               <button onClick={() => setDismissedCoverAlerts((prev) => new Set([...prev, `${c.id}:${c.coverUntil}`]))} className="p-1 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors shrink-0" title="Dispensar"><X size={14} /></button>
             </div>
           ))}
@@ -3376,12 +3378,14 @@ function CustomSelect({ label, value, onChange, options, hasError, required }: a
   );
 }
 
-// Selo discreto de cliente de cobertura temporária, com o período (e quem está sendo coberto no title).
-function CoverBadge({ client }: { client: any }) {
+// Selo discreto de cliente de cobertura temporária, com o período de atuação (e quem está sendo
+// coberto no title). Sem espaço, o período desce para a linha de baixo, dentro do selo.
+function CoverBadge({ client, className = 'py-0.5' }: { client: any, className?: string }) {
   const period = coverPeriodLabel(client);
   return (
-    <span title={`Cobertura${client.coverFor ? ` de ${client.coverFor}` : ''}${period ? ` · ${period}` : ''}`} className="inline-flex items-center gap-1 text-[9px] uppercase tracking-wider px-2 py-0.5 rounded-md bg-sky-500/10 text-sky-400 border border-sky-500/20 font-bold whitespace-nowrap">
-      Cobertura{period ? ` · ${period}` : ''}
+    <span title={`Cobertura${client.coverFor ? ` de ${client.coverFor}` : ''}${period ? ` · Período de atuação: ${period}` : ''}`} className={`inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5 max-w-full text-[9px] px-2 rounded-md bg-sky-500/10 text-sky-400 border border-sky-500/20 ${className}`}>
+      <span className="uppercase tracking-wider font-bold whitespace-nowrap">Cobertura</span>
+      {period && <span className="font-semibold whitespace-nowrap">Período de atuação: {period}</span>}
     </span>
   );
 }
@@ -3813,7 +3817,7 @@ function ClientModal({ modal, setModal, setClients, user }: any) {
        coverFrom: form.isCover && form.coverFrom ? form.coverFrom : null,
        coverUntil: form.isCover && form.coverUntil ? form.coverUntil : null,
     };
-    if (finalForm.isCover && finalForm.coverFrom && finalForm.coverUntil && finalForm.coverFrom > finalForm.coverUntil) { setValidationError("A data \"De\" da cobertura não pode ser depois do \"Até\"."); return; }
+    if (finalForm.isCover && finalForm.coverFrom && finalForm.coverUntil && finalForm.coverFrom > finalForm.coverUntil) { setValidationError("O início da atuação não pode ser depois do fim da atuação."); return; }
     // Cobertura que já terminou é salva arquivada. Estender o "Até" de uma cobertura que tinha
     // sido arquivada por expirar a traz de volta às listas; arquivamento manual não é tocado.
     if (isCoverExpired(finalForm)) finalForm.archived = true;
@@ -3851,7 +3855,7 @@ function ClientModal({ modal, setModal, setClients, user }: any) {
               <span className={`mt-0.5 w-4 h-4 rounded flex items-center justify-center shrink-0 border transition-colors ${form.isCover ? 'bg-purple-500 border-purple-500 text-white' : 'border-[var(--border-hover)] text-transparent'}`}><Check size={11} strokeWidth={3}/></span>
               <span>
                 <span className="block text-xs font-bold text-[var(--text-primary)]">Cliente de cobertura</span>
-                <span className="block text-[10px] text-[var(--text-muted)] mt-1 leading-relaxed">Cliente de um colega que você cobre por um período. Depois do "Até", é arquivado sozinho, sem perder histórico.</span>
+                <span className="block text-[10px] text-[var(--text-muted)] mt-1 leading-relaxed">Cliente de um colega que você cobre por um período. Depois do fim da atuação, é arquivado sozinho, sem perder histórico.</span>
               </span>
             </button>
 
@@ -3863,11 +3867,11 @@ function ClientModal({ modal, setModal, setClients, user }: any) {
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">De</label>
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Início da atuação</label>
                     <input type="date" value={form.coverFrom || ''} onChange={(e) => { setForm({ ...form, coverFrom: e.target.value }); setValidationError(null); }} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-3 py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-purple-500 transition-colors [color-scheme:dark]" />
                   </div>
                   <div>
-                    <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Até</label>
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Fim da atuação</label>
                     <input type="date" value={form.coverUntil || ''} onChange={(e) => { setForm({ ...form, coverUntil: e.target.value }); setValidationError(null); }} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-3 py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-purple-500 transition-colors [color-scheme:dark]" />
                   </div>
                 </div>
@@ -3998,8 +4002,11 @@ function ClientDetailModal({ client, tasks, getElapsed, user, theme, onClose, on
         <div className="px-5 sm:px-8 py-5 border-b border-[var(--border-primary)] flex items-center justify-between bg-[var(--bg-tertiary)] shrink-0">
           <div className="flex items-center gap-3 min-w-0">
             <div className="p-2.5 bg-purple-500/10 rounded-xl border border-purple-500/20 shrink-0"><Building2 size={22} className="text-purple-400" /></div>
-            <h3 className="font-display font-bold text-xl text-[var(--text-primary)] tracking-tight truncate">{client.name}</h3>
-            {client.isCover && <div className="mt-1"><CoverBadge client={client} /></div>}
+            {/* Nome e selo de cobertura quebram linha juntos: sem espaço, o selo desce e o nome não é cortado. */}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0">
+              <h3 className="font-display font-bold text-xl text-[var(--text-primary)] tracking-tight truncate max-w-full">{client.name}</h3>
+              {client.isCover && <CoverBadge client={client} />}
+            </div>
           </div>
           <button onClick={onClose} className="p-2.5 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-overlay)] transition-colors shrink-0"><X size={20} /></button>
         </div>
@@ -4263,7 +4270,7 @@ function ClientsPanelContent({ clients, setClients, tasks, setTasks, user, getEl
                         <button onClick={() => { setConfirmRemoveText(''); setConfirmRemoveClient(c); }} className="px-3 py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-widest text-red-400/60 hover:text-red-400 hover:bg-red-500/10 transition-colors flex items-center gap-1.5">
                           <Trash2 size={13} /> Excluir definitivamente
                         </button>
-                        <button onClick={() => openEdit(c)} title={isCoverExpired(c) ? 'Editar (ex.: estender o "Até" da cobertura)' : 'Editar'} className="p-2.5 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-overlay)] transition-colors">
+                        <button onClick={() => openEdit(c)} title={isCoverExpired(c) ? 'Editar (ex.: estender o fim da atuação)' : 'Editar'} className="p-2.5 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-overlay)] transition-colors">
                           <Pencil size={14} />
                         </button>
                         <button onClick={() => setArchived(c.id, false)} className="px-5 py-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-[10px] font-bold uppercase tracking-widest transition-colors flex items-center gap-2">

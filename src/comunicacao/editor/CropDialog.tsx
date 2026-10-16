@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { PointerEvent as RPointerEvent } from "react";
 import { Crop, Loader2 } from "lucide-react";
 import { inputCls } from "./parts.tsx";
+import { ScreenOverlay } from "../ui/ScreenOverlay.tsx";
 
 // Recorte de imagem — port do recorte do protótipo (caixa arrastável, cantos para
 // redimensionar, proporções Livre/Original/3:1/2:1/16:9/1:1 e largura final).
@@ -80,11 +81,18 @@ export function CropDialog({ src, onCancel, onApply, onLoadError }: {
 
   async function apply() {
     const el = img.current!; const sc = scale();
-    const sx = box.x * sc, sy = box.y * sc, sW = box.w * sc, sH = box.h * sc;
+    // Área de origem sempre dentro da imagem: o tamanho exibido é arredondado e uma sobra de
+    // fração de pixel ficaria sem pintar (preta no JPEG) na borda do recorte.
+    const nW = el.naturalWidth, nH = el.naturalHeight;
+    const sx = Math.min(Math.max(0, box.x * sc), nW - 1), sy = Math.min(Math.max(0, box.y * sc), nH - 1);
+    const sW = Math.min(box.w * sc, nW - sx), sH = Math.min(box.h * sc, nH - sy);
     const w = Math.round(+width || sW), h = Math.round(w * sH / sW);
-    const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
-    const ctx = cv.getContext('2d')!; ctx.imageSmoothingQuality = 'high'; ctx.drawImage(el, sx, sy, sW, sH, 0, 0, w, h);
     const ext = extOf(src);
+    const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+    const ctx = cv.getContext('2d')!; ctx.imageSmoothingQuality = 'high';
+    // JPEG não tem transparência: fundo branco em vez de preto para pixels transparentes.
+    if (ext !== 'png') { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h); }
+    ctx.drawImage(el, sx, sy, sW, sH, 0, 0, w, h);
     let blob: Blob | null = null;
     try { blob = await new Promise<Blob | null>(res => cv.toBlob(res, ext === 'png' ? 'image/png' : 'image/jpeg', 0.9)); } catch { blob = null; }
     if (!blob) { onLoadError(); return; }
@@ -94,7 +102,7 @@ export function CropDialog({ src, onCancel, onApply, onLoadError }: {
 
   const handle = 'absolute w-4 h-4 bg-white rounded shadow-[0_1px_3px_rgba(0,0,0,.4)] touch-none';
   return (
-    <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center px-3 pt-3 pb-24 sm:p-4 z-[115] fade-in" onClick={() => !busy && onCancel()}>
+    <ScreenOverlay className="px-3 pt-3 pb-24 sm:p-4 z-[115]" onClick={() => !busy && onCancel()}>
       <div role="dialog" aria-modal="true" aria-labelledby="com-crop-title" className="w-full max-w-3xl max-h-[90dvh] overflow-y-auto kp-scroll rounded-[32px] bg-[var(--bg-secondary)] border border-[var(--border-primary)] p-5 sm:p-7 shadow-2xl animate-modal-pop" onClick={e => e.stopPropagation()}>
         <div className="flex items-center gap-3 mb-2 text-indigo-400">
           <div className="p-3 bg-indigo-500/10 rounded-2xl"><Crop size={22} /></div>
@@ -110,11 +118,18 @@ export function CropDialog({ src, onCancel, onApply, onLoadError }: {
               onLoad={() => { setLoaded(true); requestAnimationFrame(() => requestAnimationFrame(() => fit(null))); }}
               onError={onLoadError}
             />
+            {/* A sombra que escurece o que fica fora do recorte vive numa camada cortada no
+                tamanho da imagem; solta, ela escurecia o popup inteiro (controles e botões). */}
+            {loaded && (
+              <div aria-hidden="true" className="absolute inset-0 overflow-hidden pointer-events-none">
+                <div className="absolute" style={{ left: box.x, top: box.y, width: box.w, height: box.h, boxShadow: '0 0 0 9999px rgba(0,0,0,.55)' }} />
+              </div>
+            )}
             {loaded && (
               <div
                 onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}
                 className="absolute border-2 border-white cursor-move touch-none"
-                style={{ left: box.x, top: box.y, width: box.w, height: box.h, boxShadow: '0 0 0 9999px rgba(0,0,0,.55)' }}
+                style={{ left: box.x, top: box.y, width: box.w, height: box.h }}
               >
                 <span data-h="nw" className={handle + ' -left-2 -top-2 cursor-nwse-resize'} />
                 <span data-h="ne" className={handle + ' -right-2 -top-2 cursor-nesw-resize'} />
@@ -148,6 +163,6 @@ export function CropDialog({ src, onCancel, onApply, onLoadError }: {
           </button>
         </div>
       </div>
-    </div>
+    </ScreenOverlay>
   );
 }

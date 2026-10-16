@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { AlertTriangle, HelpCircle, Trash2 } from "lucide-react";
+import { ScreenOverlay } from "./ScreenOverlay.tsx";
 
 // Diálogos da área Comunicação, no mesmo visual das confirmações do Lumina
 // (ex.: "Apagar Card"). Uso no estilo do uiAsk do protótipo:
@@ -83,7 +84,7 @@ export function AskDialog({ o, done }: { o: AskOptions, done: (v: any) => void }
   const field = 'w-full bg-[var(--bg-primary)] border border-[var(--border-primary)] rounded-xl px-4 py-3 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-500/40';
 
   return (
-    <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center px-4 pt-4 pb-24 sm:p-4 z-[110] fade-in" onClick={() => done(cancelValue)}>
+    <ScreenOverlay className="px-4 pt-4 pb-24 sm:p-4 z-[110]" onClick={() => done(cancelValue)}>
       <div role="dialog" aria-modal="true" aria-labelledby="com-ask-title" className={`w-full ${o.wide ? 'max-w-lg' : 'max-w-sm'} rounded-[32px] bg-[var(--bg-secondary)] border border-[var(--border-primary)] p-5 sm:p-8 shadow-2xl relative animate-modal-pop max-h-[85dvh] flex flex-col`} onClick={e => e.stopPropagation()}>
         <div className={`flex items-center gap-3 mb-4 ${TONE_COLOR[tone]}`}>
           <div className={`p-3 ${TONE_BG[tone]} rounded-2xl shadow-inner shrink-0`}>{o.icon || TONE_ICON[tone]}</div>
@@ -118,6 +119,6 @@ export function AskDialog({ o, done }: { o: AskOptions, done: (v: any) => void }
           </button>
         </div>
       </div>
-    </div>
+    </ScreenOverlay>
   );
 }

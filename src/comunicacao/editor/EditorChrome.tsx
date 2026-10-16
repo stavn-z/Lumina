@@ -5,6 +5,7 @@ import { fmtDate, rbState, TYPES } from "../lib/library.ts";
 import { SaveIndicator } from "../ui/SaveIndicator.tsx";
 import type { SaveStatus } from "../data/autosave.ts";
 import type { TemplateRow } from "../types.ts";
+import { ScreenOverlay } from "../ui/ScreenOverlay.tsx";
 
 // Partes comuns aos editores: cabeçalho, linha "Criado na Rubeus" e aviso de conflito.
 
@@ -62,7 +63,7 @@ export function ConflictDialog({ current, names, onLoadTheirs, onKeepMine, onSav
   const when = current ? new Date(current.updated_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
   const btn = 'w-full py-3 rounded-2xl font-bold transition-all text-sm outline-none focus-visible:ring-2 focus-visible:ring-indigo-500';
   return (
-    <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center px-4 pt-4 pb-24 sm:p-4 z-[115] fade-in">
+    <ScreenOverlay className="px-4 pt-4 pb-24 sm:p-4 z-[115]">
       <div role="alertdialog" aria-modal="true" aria-labelledby="com-conflict-title" className="w-full max-w-md rounded-[32px] bg-[var(--bg-secondary)] border border-[var(--border-primary)] p-5 sm:p-8 shadow-2xl animate-modal-pop">
         <div className="flex items-center gap-3 mb-4 text-amber-500">
           <div className="p-3 bg-amber-500/10 rounded-2xl shadow-inner"><AlertTriangle size={24} /></div>
@@ -88,6 +89,6 @@ export function ConflictDialog({ current, names, onLoadTheirs, onKeepMine, onSav
           )}
         </div>
       </div>
-    </div>
+    </ScreenOverlay>
   );
 }

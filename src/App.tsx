@@ -13,6 +13,7 @@ import {
 import { ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Cell } from "recharts";
 import ComunicacaoArea from "./comunicacao/ComunicacaoArea";
 import { useLuminaAi } from "./luminaAi";
+import { norm } from "./comunicacao/lib/library";
 
 // ==========================================
 // CONFIGURAÇÃO DO BANCO DE DADOS (SUPABASE)
@@ -875,17 +876,21 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
 
   // Monitora se está em Mobile
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+  // Abaixo do breakpoint sm (640px) a busca do quadro vira lupa.
+  const [isNarrow, setIsNarrow] = useState(window.innerWidth < 640);
   useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth <= 768);
+    const handleResize = () => { setIsMobile(window.innerWidth <= 768); setIsNarrow(window.innerWidth < 640); };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  // Ctrl/Cmd + K leva ao campo de busca do quadro (preenchido mais abaixo, depois do estado da busca).
+  const focusBoardSearchRef = useRef<() => void>(() => {});
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
         e.preventDefault();
-        setSearchOpen(true);
+        focusBoardSearchRef.current();
       }
     };
     window.addEventListener('keydown', onKey);
@@ -1405,7 +1410,17 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
   const [modal, setModal] = useState<any>(null); 
   const [profileModal, setProfileModal] = useState(false);
   const [quickAdd, setQuickAdd] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false);
+  // Busca inline do quadro: só filtra o que aparece, não é salva e não altera dados.
+  const [boardSearch, setBoardSearch] = useState('');
+  const [boardSearchQuery, setBoardSearchQuery] = useState('');
+  const [boardSearchField, setBoardSearchField] = useState('all');
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const boardSearchInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const id = setTimeout(() => setBoardSearchQuery(boardSearch), 150);
+    return () => clearTimeout(id);
+  }, [boardSearch]);
+  const clearBoardSearch = () => { setBoardSearch(''); setBoardSearchQuery(''); };
   const [dueAlert, setDueAlert] = useState<any>(null);
   const dueAlertedRef = useRef<Set<string>>(new Set());
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
@@ -1565,6 +1580,78 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
       filterByPeriod(t.createdAt, filterCreatedStart, filterCreatedEnd) &&
       filterByPeriod(t.completedAt, filterCompletedStart, filterCompletedEnd) &&
       (filterTags.length === 0 || filterTags.every((tag) => Array.isArray(t.tags) && t.tags.includes(tag)))
+  );
+
+  // Busca inline: aplicada por cima do painel Filtros, só no quadro (indicadores e relatórios não mudam).
+  // "#tag" no texto vale como busca no campo Tags, com a mesma normalização usada ao gravar as tags.
+  const boardSearchIsTag = boardSearchQuery.trim().startsWith('#');
+  const boardSearchNorm = norm(boardSearchIsTag ? normalizeTag(boardSearchQuery) : boardSearchQuery.trim());
+  const boardSearchEffectiveField = boardSearchIsTag ? 'tags' : boardSearchField;
+  const boardTasks = useMemo(() => {
+    if (!boardSearchNorm) return filteredTasks;
+    const clientName = (id: string) => clients.find((c: any) => c.id === id)?.name || '';
+    const respName = (id: string) => responsibles.find((r: any) => r.id === id)?.name || '';
+    const fieldText = (t: any, f: string) => {
+      const parts: Record<string, string> = {
+        title: t.title,
+        description: t.description,
+        checklist: (Array.isArray(t.checklist) ? t.checklist : []).map((c: any) => c.text).join(' '),
+        client: clientName(t.clientId),
+        responsible: respName(t.responsibleId),
+        waitingFor: t.waitingFor,
+        tags: normalizeTags(t.tags).join(' '),
+      };
+      return f === 'all' ? Object.values(parts).join(' ') : (parts[f] || '');
+    };
+    // No campo Tags cada tag é comparada sozinha, para o texto não "atravessar" de uma tag para a outra.
+    const matches = (t: any) => boardSearchEffectiveField === 'tags'
+      ? normalizeTags(t.tags).some(tag => norm(tag).includes(boardSearchNorm))
+      : norm(fieldText(t, boardSearchEffectiveField)).includes(boardSearchNorm);
+    return filteredTasks.filter(matches);
+  }, [filteredTasks, boardSearchNorm, boardSearchEffectiveField, clients, responsibles]);
+  focusBoardSearchRef.current = () => {
+    setActiveTab('board');
+    setMobileSearchOpen(true);
+    setTimeout(() => { boardSearchInputRef.current?.focus(); boardSearchInputRef.current?.select(); }, 0);
+  };
+  const plural = (n: number) => n + (n === 1 ? ' demanda' : ' demandas');
+  // Um só campo, renderizado na linha do topo (sm+) ou expandido pela lupa (celular): nunca os dois
+  // ao mesmo tempo, então o ref do input sempre aponta para o que está na tela.
+  // "X de Y demandas": Y já respeita o painel Filtros. No celular vai abaixo do campo, para não espremer a caixa.
+  const boardSearchCount = (
+    <span className={`shrink-0 text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] whitespace-nowrap ${isNarrow ? 'mt-1 px-1' : 'self-center pl-2'}`} aria-live="polite">
+      {boardTasks.length} de {plural(filteredTasks.length)}
+    </span>
+  );
+  const boardSearchBox = (
+    <>
+      <div className="flex items-stretch w-full min-w-0 h-11 rounded-xl border overflow-hidden shadow-sm focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/30" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-primary)' }}>
+        <div className="relative flex max-w-[48%] shrink-0 border-r border-[var(--border-primary)] bg-[var(--bg-overlay)]">
+          <select value={boardSearchField} onChange={e => setBoardSearchField(e.target.value)} aria-label="Campo da busca" className="appearance-none w-full min-w-[164px] bg-transparent pl-3 pr-9 text-xs font-semibold text-[var(--text-secondary)] outline-none cursor-pointer truncate">
+            {BOARD_SEARCH_FIELDS.map(([v, l]) => <option key={v} value={v} className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">{l}</option>)}
+          </select>
+          <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-[var(--text-muted)]" />
+        </div>
+        <Search size={14} className="self-center ml-3 shrink-0 text-[var(--text-muted)]" aria-hidden="true" />
+        <input
+          ref={boardSearchInputRef}
+          value={boardSearch}
+          onChange={e => setBoardSearch(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); clearBoardSearch(); } }}
+          placeholder="contém…"
+          aria-label="Texto da busca"
+          title="Buscar (Ctrl/Cmd + K)"
+          className="flex-1 min-w-0 bg-transparent px-2.5 text-sm text-[var(--text-primary)] outline-none placeholder:text-[color-mix(in_oklab,var(--text-primary)_50%,transparent)] [[data-theme=dark]_&]:placeholder:text-[var(--text-secondary)]"
+        />
+        {boardSearchNorm && !isNarrow && boardSearchCount}
+        {boardSearch && (
+          <button type="button" onClick={() => { clearBoardSearch(); boardSearchInputRef.current?.focus(); }} title="Limpar busca (Esc)" aria-label="Limpar busca" className="shrink-0 px-3 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">
+            <X size={16} />
+          </button>
+        )}
+      </div>
+      {boardSearchNorm && isNarrow && boardSearchCount}
+    </>
   );
 
   // Todas as tags já usadas (autocomplete do TaskModal e opções do filtro), mais usadas primeiro.
@@ -2082,13 +2169,15 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
     });
   };
 
+  // As setas trocam com o vizinho VISÍVEL na coluna (respeitando painel Filtros e busca).
   const moveTaskVertical = (taskId: string, direction: 'up' | 'down') => {
+    const shown = new Set(boardTasks.map((t: any) => t.id));
     setTasks(prev => {
       const idx = prev.findIndex(t => t.id.toString() === taskId.toString());
       if (idx === -1) return prev;
       
       const task = prev[idx];
-      const colTasks = prev.filter(t => t.status === task.status);
+      const colTasks = prev.filter(t => t.status === task.status && (shown.has(t.id) || t.id === task.id));
       const colIdx = colTasks.findIndex(t => t.id === task.id);
       
       if (direction === 'up' && colIdx <= 0) return prev;
@@ -2434,13 +2523,20 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                      {activeFilterCount > 0 && <span className={`min-w-[16px] h-4 px-1 rounded-full text-[9px] leading-4 text-center ${showFilters ? 'bg-white text-indigo-600' : 'bg-indigo-500 text-white'}`}>{activeFilterCount}</span>}
                    </button>
 
-                   <button
-                     onClick={() => setSearchOpen(true)}
-                     title="Buscar (Ctrl/Cmd + K)"
-                     className="h-11 flex-1 lg:flex-none lg:w-auto px-3 lg:px-4 flex items-center justify-center gap-2 rounded-xl transition-all shadow-sm border font-bold uppercase tracking-widest text-[10px] glass-panel text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                   {!isNarrow && (
+                     <div className="flex flex-col shrink min-w-0 w-[340px] lg:w-[460px] xl:w-[520px]">
+                       {boardSearchBox}
+                     </div>
+                   )}
+                   {isNarrow && <button
+                     onClick={() => { if (mobileSearchOpen) { clearBoardSearch(); setMobileSearchOpen(false); } else focusBoardSearchRef.current(); }}
+                     title="Buscar"
+                     aria-label="Buscar"
+                     aria-expanded={mobileSearchOpen}
+                     className={`h-11 w-11 flex items-center justify-center rounded-xl transition-all shadow-sm shrink-0 border ${mobileSearchOpen || boardSearch ? 'bg-indigo-600 text-white border-indigo-500 shadow-[0_0_15px_rgba(79,70,229,0.3)]' : 'glass-panel text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
                    >
-                     <Search size={16} /> <span>Buscar</span>
-                   </button>
+                     <Search size={16} />
+                   </button>}
 
                    <div className="glass-panel h-11 w-full order-last sm:w-auto sm:flex-1 sm:order-none flex items-center px-4 rounded-xl gap-2 shadow-sm min-w-0">
                      <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] shrink-0">Progresso</span>
@@ -2474,6 +2570,9 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
                     )}
                 </div>
              </div>
+
+             {/* Busca no celular: abre pela lupa, em largura total acima do quadro */}
+             {isNarrow && mobileSearchOpen && <div className="w-full flex flex-col animate-fade-in">{boardSearchBox}</div>}
 
              {/* Filtros Container Expansível */}
              {showFilters && (
@@ -2542,7 +2641,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
             <div ref={boardScrollRef} className="absolute inset-0 overflow-x-auto overflow-y-hidden px-4 md:px-8 pb-4 md:pb-8 kp-scroll">
               <div className="flex gap-4 sm:gap-5 h-full min-w-max items-stretch">
                 {COLUMNS.map((col) => {
-                  const colTasks = filteredTasks.filter((t) => t.status === col.id);
+                  const colTasks = boardTasks.filter((t) => t.status === col.id);
                   return (
                     <div key={col.id} data-column-id={col.id} className="w-[88vw] max-w-[340px] sm:w-[340px] shrink-0 glass-panel rounded-2xl flex flex-col h-full shadow-sm relative">
                       
@@ -3039,7 +3138,6 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
         <Plus size={24} />
       </button>
       {quickAdd && <QuickAddModal clients={activeClients} onClose={() => setQuickAdd(false)} onCreate={(data: any) => setTasks((prev: any) => [...prev, { id: nextId(), title: upper(data.title), description: capitalize((data.description || '').trim()), priority: data.priority, durationMin: 0, clientId: data.clientId, responsibleId: user.id, startDate: '', dueDate: '', status: 'backlog', waitingFor: '', checklist: (data.checklist || []).map((text: string) => ({ id: nextId(), text: capitalize(text.trim()), done: false, timerRunning: false, timerStart: null, timerElapsed: 0 })), timerRunning: false, timerStart: null, timerElapsed: 0, createdAt: getBrasiliaDate(), completedAt: '', history: [histEntry('created')] }])} />}
-      {searchOpen && <SearchModal tasks={visibleTasks} clients={clients} onOpen={openEditModal} onClose={() => setSearchOpen(false)} />}
 
       {/* Modais de Popups Principais */}
       {closureModal && <ClosureModal tasks={tasksForClosure} clients={clients} responsibles={responsibles} getElapsed={getElapsed} onClose={() => setClosureModal(false)} onFormalize={(clientId: string | null) => { if (clientId) { setTasks((prev: any) => prev.map((t: any) => (t.status === 'done' && t.clientId === clientId) ? { ...t, status: 'formalize' } : t)); } else { setTasks((prev: any) => prev.map((t: any) => t.status === 'done' ? { ...t, status: 'formalize' } : t)); setClosureModal(false); } }} />}
@@ -4812,71 +4910,11 @@ function FocusSection({ label, count, dot, children }: any) {
   );
 }
 
-function SearchModal({ tasks, clients, onOpen, onClose }: any) {
-  const [q, setQ] = useState('');
-  const query = q.trim().toLowerCase();
-  const clientName = (id: string) => clients.find((c: any) => c.id === id)?.name || '';
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
-  const results = query.length === 0 ? [] : tasks.filter((t: any) => {
-    // Tags entram na busca com e sem "#", então "#integração" e "integração" acham a demanda.
-    const tags = Array.isArray(t.tags) ? t.tags : [];
-    const hay = `${t.title || ''} ${t.description || ''} ${clientName(t.clientId)} ${tags.join(' ')} ${tags.map((x: string) => '#' + x).join(' ')}`.toLowerCase();
-    return hay.includes(query);
-  }).slice(0, 40);
-
-  return (
-    <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-start justify-center px-3 pt-[12vh] pb-24 sm:p-4 sm:pt-[12vh] z-[95] fade-in" onClick={onClose}>
-      <div className="w-full max-w-xl rounded-3xl bg-[var(--bg-secondary)] border border-[var(--border-primary)] shadow-2xl overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center gap-3 px-5 py-4 border-b border-[var(--border-primary)]">
-          <Search size={18} className="text-[var(--text-muted)] shrink-0" />
-          <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar por título, cliente, descrição ou #tag..." className="flex-1 bg-transparent text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]" />
-          <button onClick={onClose} className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"><X size={18} /></button>
-        </div>
-        <div className="max-h-[52vh] overflow-y-auto kp-scroll p-2">
-          {query.length === 0 && (
-            <div className="text-center text-xs text-[var(--text-muted)] py-12">Digite para buscar entre suas demandas.</div>
-          )}
-          {query.length > 0 && results.length === 0 && (
-            <div className="text-center text-xs text-[var(--text-muted)] py-12">Nenhuma demanda encontrada para "{q}".</div>
-          )}
-          {results.map((t: any) => {
-            const col = COLUMNS.find(c => c.id === t.status);
-            const cn = clientName(t.clientId);
-            const pr = PRIORITY_STYLE[t.priority] || PRIORITY_STYLE['Média'];
-            return (
-              <button key={t.id} onClick={() => { onOpen(t); onClose(); }} className="w-full text-left flex items-center gap-3 p-3 rounded-xl hover:bg-[var(--bg-overlay)] transition-colors group">
-                <span className={`w-2 h-2 rounded-full shrink-0 ${col?.dot || 'bg-neutral-500'}`} />
-                <div className="min-w-0 flex-1">
-                  <div className="text-[13px] font-bold text-[var(--text-primary)] truncate">{t.title}</div>
-                  <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-widest font-bold mt-0.5 flex items-center gap-2 flex-wrap">
-                    {cn && <><span className="truncate max-w-[140px]">{cn}</span><span className="opacity-40">·</span></>}
-                    <span>{col?.name || t.status}</span>
-                    <span className="opacity-40">·</span>
-                    <span className={pr.text}>{t.priority}</span>
-                    {Array.isArray(t.tags) && t.tags.length > 0 && <><span className="opacity-40">·</span><span className="normal-case tracking-normal font-medium truncate max-w-[180px]">{t.tags.map((x: string) => '#' + x).join(' ')}</span></>}
-                  </div>
-                </div>
-                <ChevronRight size={16} className="text-[var(--text-muted)] group-hover:text-[var(--text-secondary)] shrink-0 transition-colors" />
-              </button>
-            );
-          })}
-        </div>
-        {results.length > 0 && (
-          <div className="px-5 py-3 border-t border-[var(--border-primary)] text-[10px] text-[var(--text-muted)] uppercase tracking-widest font-bold flex items-center justify-between">
-            <span>{results.length} resultado{results.length > 1 ? 's' : ''}</span>
-            <span>Esc para fechar</span>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
+// Campos da busca inline do quadro (mesmo formato do SEARCH_FIELDS de Comunicação > Meus templates).
+const BOARD_SEARCH_FIELDS: [string, string][] = [
+  ['all', 'Todos os campos'], ['title', 'Título'], ['description', 'Descrição'], ['checklist', 'Checklist'],
+  ['client', 'Cliente'], ['responsible', 'Responsável'], ['waitingFor', 'Aguardando por'], ['tags', 'Tags'],
+];
 
 // Padrão visual dos recursos de IA: botão em linha própria e centralizado, aviso de revisão e
 // aviso de erro. Só aparência; o comportamento (carregamento, trava de clique) fica no useLuminaAi.

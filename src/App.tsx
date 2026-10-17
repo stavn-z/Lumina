@@ -1583,7 +1583,10 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
   );
 
   // Busca inline: aplicada por cima do painel Filtros, só no quadro (indicadores e relatórios não mudam).
-  const boardSearchNorm = norm(boardSearchQuery.trim());
+  // "#tag" no texto vale como busca no campo Tags, com a mesma normalização usada ao gravar as tags.
+  const boardSearchIsTag = boardSearchQuery.trim().startsWith('#');
+  const boardSearchNorm = norm(boardSearchIsTag ? normalizeTag(boardSearchQuery) : boardSearchQuery.trim());
+  const boardSearchEffectiveField = boardSearchIsTag ? 'tags' : boardSearchField;
   const boardTasks = useMemo(() => {
     if (!boardSearchNorm) return filteredTasks;
     const clientName = (id: string) => clients.find((c: any) => c.id === id)?.name || '';
@@ -1596,11 +1599,16 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
         client: clientName(t.clientId),
         responsible: respName(t.responsibleId),
         waitingFor: t.waitingFor,
+        tags: normalizeTags(t.tags).join(' '),
       };
       return f === 'all' ? Object.values(parts).join(' ') : (parts[f] || '');
     };
-    return filteredTasks.filter((t: any) => norm(fieldText(t, boardSearchField)).includes(boardSearchNorm));
-  }, [filteredTasks, boardSearchNorm, boardSearchField, clients, responsibles]);
+    // No campo Tags cada tag é comparada sozinha, para o texto não "atravessar" de uma tag para a outra.
+    const matches = (t: any) => boardSearchEffectiveField === 'tags'
+      ? normalizeTags(t.tags).some(tag => norm(tag).includes(boardSearchNorm))
+      : norm(fieldText(t, boardSearchEffectiveField)).includes(boardSearchNorm);
+    return filteredTasks.filter(matches);
+  }, [filteredTasks, boardSearchNorm, boardSearchEffectiveField, clients, responsibles]);
   focusBoardSearchRef.current = () => {
     setActiveTab('board');
     setMobileSearchOpen(true);
@@ -1619,7 +1627,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
     <>
       <div className="flex items-stretch w-full min-w-0 h-11 rounded-xl border overflow-hidden shadow-sm focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/30" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-primary)' }}>
         <div className="relative flex max-w-[48%] shrink-0 border-r border-[var(--border-primary)] bg-[var(--bg-overlay)]">
-          <select value={boardSearchField} onChange={e => setBoardSearchField(e.target.value)} aria-label="Campo da busca" className="appearance-none w-full bg-transparent pl-3 pr-9 text-xs font-semibold text-[var(--text-secondary)] outline-none cursor-pointer truncate">
+          <select value={boardSearchField} onChange={e => setBoardSearchField(e.target.value)} aria-label="Campo da busca" className="appearance-none w-full min-w-[164px] bg-transparent pl-3 pr-9 text-xs font-semibold text-[var(--text-secondary)] outline-none cursor-pointer truncate">
             {BOARD_SEARCH_FIELDS.map(([v, l]) => <option key={v} value={v} className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">{l}</option>)}
           </select>
           <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-[var(--text-muted)]" />
@@ -4905,7 +4913,7 @@ function FocusSection({ label, count, dot, children }: any) {
 // Campos da busca inline do quadro (mesmo formato do SEARCH_FIELDS de Comunicação > Meus templates).
 const BOARD_SEARCH_FIELDS: [string, string][] = [
   ['all', 'Todos os campos'], ['title', 'Título'], ['description', 'Descrição'], ['checklist', 'Checklist'],
-  ['client', 'Cliente'], ['responsible', 'Responsável'], ['waitingFor', 'Aguardando por'],
+  ['client', 'Cliente'], ['responsible', 'Responsável'], ['waitingFor', 'Aguardando por'], ['tags', 'Tags'],
 ];
 
 // Padrão visual dos recursos de IA: botão em linha própria e centralizado, aviso de revisão e

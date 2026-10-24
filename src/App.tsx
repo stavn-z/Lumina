@@ -825,7 +825,7 @@ function ChartTooltip({ active, payload, label }: any) {
     <div className="bg-[var(--bg-tertiary)] border border-[var(--border-primary)] rounded-xl px-3 py-2 shadow-xl text-[11px]">
       {label && <div className="text-[var(--text-muted)] font-bold uppercase tracking-widest text-[9px] mb-1">{label}</div>}
       {payload.map((p: any, i: number) => (
-        <div key={i} className="flex items-center gap-2 font-bold" style={{ color: p.color || p.fill }}>
+        <div key={i} className="flex items-center gap-2 font-bold" style={{ color: p.color || p.fill || 'var(--text-primary)' }}>
           {p.name}: {typeof p.value === 'number' ? p.value.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) : p.value}
         </div>
       ))}
@@ -2423,6 +2423,8 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
         input[type=number] { -moz-appearance: textfield; }
         
         input[type="date"]::-webkit-calendar-picker-indicator { opacity: 0.5; cursor: pointer; }
+        input[type="date"], input[type="time"] { color-scheme: dark; }
+        :root[data-theme="light"] input[type="date"], :root[data-theme="light"] input[type="time"] { color-scheme: light; }
         input[type="date"] { -webkit-appearance: none; appearance: none; display: flex; align-items: center; }
         input[type="date"]::-webkit-date-and-time-value { text-align: left; margin: 0; }
         input[type="date"]::-webkit-datetime-edit { padding: 0; line-height: 1; }
@@ -2939,7 +2941,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
               {validationError && <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs px-4 py-3 rounded-xl flex items-center gap-2 animate-pulse"><AlertTriangle size={14} className="shrink-0" /> {Array.isArray(validationError) ? validationError.join(", ") : String(validationError)}</div>}
               <div>
                 <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Data Real de Entrega *</label>
-                <input type="date" value={donePrompt.date || ''} onChange={e => { setDonePrompt({...donePrompt, date: e.target.value}); setValidationError(null); }} className="w-full bg-[var(--bg-primary)] border border-[var(--border-primary)] rounded-xl px-4 py-4 text-sm text-[var(--text-primary)] outline-none focus:border-emerald-500 [color-scheme:dark]" />
+                <input type="date" value={donePrompt.date || ''} onChange={e => { setDonePrompt({...donePrompt, date: e.target.value}); setValidationError(null); }} className="w-full bg-[var(--bg-primary)] border border-[var(--border-primary)] rounded-xl px-4 py-4 text-sm text-[var(--text-primary)] outline-none focus:border-emerald-500" />
               </div>
               <div>
                 <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Tempo Total Gasto (Minutos) *</label>
@@ -3966,11 +3968,11 @@ function ClientModal({ modal, setModal, setClients, user }: any) {
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Início da atuação</label>
-                    <input type="date" value={form.coverFrom || ''} onChange={(e) => { setForm({ ...form, coverFrom: e.target.value }); setValidationError(null); }} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-3 py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-purple-500 transition-colors [color-scheme:dark]" />
+                    <input type="date" value={form.coverFrom || ''} onChange={(e) => { setForm({ ...form, coverFrom: e.target.value }); setValidationError(null); }} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-3 py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-purple-500 transition-colors" />
                   </div>
                   <div>
                     <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Fim da atuação</label>
-                    <input type="date" value={form.coverUntil || ''} onChange={(e) => { setForm({ ...form, coverUntil: e.target.value }); setValidationError(null); }} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-3 py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-purple-500 transition-colors [color-scheme:dark]" />
+                    <input type="date" value={form.coverUntil || ''} onChange={(e) => { setForm({ ...form, coverUntil: e.target.value }); setValidationError(null); }} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-3 py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-purple-500 transition-colors" />
                   </div>
                 </div>
               </div>
@@ -4016,7 +4018,7 @@ function ClientModal({ modal, setModal, setClients, user }: any) {
                   <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Feriados Extras deste Cliente</label>
                   <p className="text-[10px] text-[var(--text-muted)] mb-3 -mt-1">Além dos feriados nacionais.</p>
                   <div className="flex flex-col sm:flex-row items-center gap-3 mb-3">
-                    <input type="date" value={newHoliday} onChange={e => setNewHoliday(e.target.value)} className="w-full sm:flex-1 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-purple-500 transition-colors [color-scheme:dark]" />
+                    <input type="date" value={newHoliday} onChange={e => setNewHoliday(e.target.value)} className="w-full sm:flex-1 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-purple-500 transition-colors" />
                     <button onClick={handleAddHoliday} className="w-full sm:w-auto justify-center px-6 py-3.5 bg-[var(--bg-overlay)] border border-[var(--border-overlay)] hover:bg-[var(--bg-overlay-strong)] text-[var(--text-primary)] rounded-xl text-xs font-bold uppercase tracking-widest transition-colors flex items-center gap-2 shrink-0"><Plus size={16}/> Add</button>
                   </div>
                   <div className="flex flex-col gap-2 max-h-32 overflow-y-auto kp-scroll pr-1">
@@ -6456,7 +6458,7 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
                       type="date"
                       value={emailPopup.date || ''}
                       onChange={e => updateField({ date: e.target.value })}
-                      className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 [color-scheme:dark]"
+                      className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500"
                     />
                   </div>
                   <div>
@@ -6767,8 +6769,8 @@ function TaskModal({ modal, setModal, clients, responsibles, closeModal, saveMod
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5"><CustomSelect label="Responsável *" required hasError={validationError && String(validationError).includes("Responsável")} value={modal.form.responsibleId || ''} onChange={(e: any) => updateForm({ responsibleId: e.target.value })} options={<><option value="" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Selecione a pessoa...</option>{responsibles.map((r: any) => <option key={r.id} value={r.id} className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">{r.name}</option>)}</>} /><CustomSelect label="Cliente *" required hasError={validationError && String(validationError).includes("Cliente")} value={modal.form.clientId || ''} onChange={(e: any) => updateForm({ clientId: e.target.value })} options={<><option value="" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Selecione a empresa...</option>{clientOptions.map((c: any) => <option key={c.id} value={c.id} className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">{c.name}{isClientArchived(c) ? ' (arquivado)' : ''}</option>)}</>} /></div>
           
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-            <div><label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Data de Início</label><input type="date" value={modal.form.startDate || ''} onChange={(e) => updateForm({ startDate: e.target.value })} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-4 sm:py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 [color-scheme:dark] shadow-sm" /></div>
-            <div><label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Prazo / Deadline</label><input type="date" value={modal.form.dueDate || ''} onChange={(e) => updateForm({ dueDate: e.target.value })} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-4 sm:py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 [color-scheme:dark] shadow-sm" /></div>
+            <div><label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Data de Início</label><input type="date" value={modal.form.startDate || ''} onChange={(e) => updateForm({ startDate: e.target.value })} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-4 sm:py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 shadow-sm" /></div>
+            <div><label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Prazo / Deadline</label><input type="date" value={modal.form.dueDate || ''} onChange={(e) => updateForm({ dueDate: e.target.value })} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-4 sm:py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 shadow-sm" /></div>
           </div>
           
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">

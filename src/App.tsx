@@ -6104,7 +6104,9 @@ function closureToHtml(text: string): string {
     const parts = l.split('**');
     // Marcador sem par: o trecho final fica sem negrito.
     const unpaired = parts.length % 2 === 0;
-    return parts.map((p, i) => (i % 2 === 1 && !(unpaired && i === parts.length - 1) ? `<strong>${inline(p)}</strong>` : inline(p))).join('');
+    const html = parts.map((p, i) => (i % 2 === 1 && !(unpaired && i === parts.length - 1) ? `<strong>${inline(p)}</strong>` : inline(p))).join('');
+    // Espaços do começo da linha (recuo) somem no HTML; viram &nbsp;.
+    return html.replace(/^ +/, (sp) => '&nbsp;'.repeat(sp.length));
   };
   return `<div>${text.split(/\r?\n/).map(line).join('<br>')}</div>`;
 }
@@ -6156,34 +6158,41 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
       const [, m, d] = mData.date.split('-');
       dateStr = `${d}/${m}`;
     }
-    body += `Segue o resumo da reunião de overview${dateStr ? ` realizada em ${dateStr}` : ''}, com os principais pontos e o estado das demandas.`;
+    // Só fala de reunião com data ou link válido; sem os dois, o texto é o resumo da semana.
     const link = closureSafeUrl(mData?.link || '');
-    if (link) body += `\n\n[Acesse a reunião](${link})`;
+    if (dateStr || link) {
+      body += `Segue o resumo da reunião de overview${dateStr ? ` realizada em ${dateStr}` : ''}, com os principais pontos e o estado das demandas.`;
+      if (link) body += `\n\n[Acesse a reunião](${link})`;
+    } else {
+      body += `Segue o resumo da semana, com os principais pontos e o estado das demandas.`;
+    }
 
-    const appendTask = (t: any, i: number) => {
+    // Organização em texto puro: marcador antes do título, recuo de 2 espaços na descrição e no
+    // tempo, 4 espaços nos itens do checklist. O negrito é só um extra do "Copiar formatado".
+    const appendTask = (marker: string) => (t: any, i: number) => {
       if (i > 0) body += `\n\n`;
-      body += `**${t.title}**`;
+      body += `${marker} **${t.title}**`;
       const desc = (descs?.[t.id] ?? t.description ?? '').trim();
-      if (desc) body += `\n${desc}`;
+      if (desc) body += '\n' + desc.split(/\r?\n/).map((l: string) => `  ${l.trim()}`).join('\n');
       if (includeTime) {
-        body += `\nTempo dedicado: ${formatWorkedTime(getElapsed(t))}`;
+        body += `\n  Tempo dedicado: ${formatWorkedTime(getElapsed(t))}`;
         // Horas separadas só existem pras demandas do modelo novo (cronômetro por item).
         const items = splitTimeByItem && hasItemTimers(t) ? (t.checklist || []).filter((c: any) => c.text && c.text.trim()) : [];
         items.forEach((c: any) => {
           const sec = c.timerRunning && c.timerStart ? (c.timerElapsed || 0) + (Date.now() - c.timerStart) / 1000 : (c.timerElapsed || 0);
-          body += `\n   • ${c.text.trim()}: ${formatWorkedTime(sec)}`;
+          body += `\n    - ${c.text.trim()}: ${formatWorkedTime(sec)}`;
         });
       }
     };
 
-    if (clientTasks.done.length > 0) {
-      body += `\n\n\n**DEMANDAS FINALIZADAS**\n`;
-      clientTasks.done.forEach(appendTask);
-    }
-    if (clientTasks.inProgress.length > 0) {
-      body += `\n\n\n**DEMANDAS EM ANDAMENTO**\n`;
-      clientTasks.inProgress.forEach(appendTask);
-    }
+    // Duas linhas em branco antes de cada seção; título em caixa alta com traços logo abaixo.
+    const section = (title: string, list: any[], marker: string) => {
+      if (list.length === 0) return;
+      body += `\n\n\n**${title}**\n${'-'.repeat(title.length)}\n`;
+      list.forEach(appendTask(marker));
+    };
+    section('DEMANDAS FINALIZADAS', clientTasks.done, '✓');
+    section('DEMANDAS EM ANDAMENTO', clientTasks.inProgress, '•');
 
     body += `\n\n\nEm caso de dúvidas, continuo à disposição.\n\nCom os melhores cumprimentos,`;
     return body;
@@ -6230,31 +6239,9 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
     }
   };
 
-  const handleCopyNotion = (clientTasks: any, clientId: string, textOverride?: string | null) => {
-    if (textOverride != null) {
-      navigator.clipboard.writeText(closureToPlain(textOverride));
-      setCopiedNotionId(clientId);
-      setTimeout(() => setCopiedNotionId(null), 2000);
-      return;
-    }
-    let text = "";
-    if (clientTasks.done.length > 0) {
-      text += "CONCLUÍDAS\n\n";
-      clientTasks.done.forEach((t: any) => {
-        const timeMin = getElapsed(t) > 0 ? Math.round(getElapsed(t) / 60) : (t.durationMin || 0);
-        const dateStr = t.dueDate ? t.dueDate.split('-').reverse().join('/') : 'Sem data';
-        text += `- ${t.title}\n  Descrição: ${t.description || 'Sem descrição'}\n  Tempo: ${timeMin} min\n  Data: ${dateStr}\n\n`;
-      });
-    }
-    if (clientTasks.inProgress.length > 0) {
-      text += "EM ANDAMENTO\n\n";
-      clientTasks.inProgress.forEach((t: any) => {
-        const timeMin = getElapsed(t) > 0 ? Math.round(getElapsed(t) / 60) : (t.durationMin || 0);
-        const dateStr = t.dueDate ? t.dueDate.split('-').reverse().join('/') : 'Sem data';
-        text += `- ${t.title}\n  Descrição: ${t.description || 'Sem descrição'}\n  Tempo: ${timeMin} min\n  Data: ${dateStr}\n\n`;
-      });
-    }
-    navigator.clipboard.writeText(text);
+  // Copiar Notion leva o mesmo texto simples do e-mail (padrão ou editado).
+  const handleCopyNotion = (clientId: string, text: string) => {
+    navigator.clipboard.writeText(closureToPlain(text));
     setCopiedNotionId(clientId);
     setTimeout(() => setCopiedNotionId(null), 2000);
   };
@@ -6561,7 +6548,7 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
                 </button>
 
                 <button
-                  onClick={() => handleCopyNotion(clientTasks, emailPopup.clientId, aiText)}
+                  onClick={() => handleCopyNotion(emailPopup.clientId, emailText)}
                   className="justify-center inline-flex items-center gap-2 px-4 py-3.5 bg-[var(--bg-overlay)] text-[var(--text-secondary)] border border-[var(--border-overlay)] hover:bg-[var(--bg-overlay-strong)] rounded-xl text-xs font-bold uppercase tracking-widest whitespace-nowrap transition-colors"
                 >
                   {copiedNotionId === emailPopup.clientId ? <Check size={16} className="text-emerald-400" /> : <ClipboardList size={16} />}

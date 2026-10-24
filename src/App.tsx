@@ -210,6 +210,24 @@ function isClientArchived(c: any) {
   return !!c.archived || isCoverExpired(c);
 }
 // Período de atuação na cobertura: "13/10 a 22/10"; com o ano quando o período vira o ano.
+// E-mail(s) do analista coberto: separados por vírgula ou ponto e vírgula; minúsculas, sem espaços,
+// sem duplicatas. Devolve os válidos e os inválidos (o formulário não grava se houver inválido).
+const EMAIL_RE = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;.]{2,}$/;
+function parseEmailList(raw: string) {
+  const valid: string[] = [], invalid: string[] = [];
+  String(raw || '').split(/[,;]/).map(e => e.replace(/\s+/g, '').toLowerCase()).filter(Boolean).forEach(e => {
+    const list = EMAIL_RE.test(e) ? valid : invalid;
+    if (!list.includes(e)) list.push(e);
+  });
+  return { valid, invalid };
+}
+// Cópia (CC) do e-mail de fechamento: e-mails válidos do analista coberto que ainda não estão no "Para".
+function coverCcEmails(c: any) {
+  if (!c?.isCover) return [];
+  const to = (Array.isArray(c.emails) ? c.emails : []).map((e: string) => String(e).trim().toLowerCase());
+  return parseEmailList(c.coverForEmail).valid.filter(e => !to.includes(e));
+}
+
 // Texto curto para seletores e chips: "cobertura até dd/mm" (ou só "cobertura" sem data de fim).
 function coverShortLabel(c: any) {
   if (!c?.isCover) return '';
@@ -867,6 +885,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
   // ignorar ecos dos próprios saves vindos do Realtime.
   const lastSyncedTasksRef = useRef<Record<string, string>>({});
   const lastSyncedClientsRef = useRef<Record<string, string>>({});
+  const clientsHasCoverEmailRef = useRef(true);
   const lastSyncedNotesRef = useRef<Record<string, string>>({});
 
   // Estado do alerta "hora de finalizar" (declarado cedo pois é usado por um efeito no topo do componente)
@@ -1176,7 +1195,11 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
             coverFor: c.coverFor || '',
             coverFrom: c.coverFrom || null,
             coverUntil: c.coverUntil || null,
+            coverForEmail: c.coverForEmail || '',
           }));
+          // A coluna "coverForEmail" pode ainda não existir no banco (SQL aplicado depois do deploy):
+          // com select('*'), ela vem em todas as linhas quando existe. Sem ela, o upsert não envia o campo.
+          if (resClients.data.length > 0) clientsHasCoverEmailRef.current = resClients.data.some((c: any) => 'coverForEmail' in c);
           setClients(normalizedClients);
           normalizedClients.forEach((c: any) => { lastSyncedClientsRef.current[c.id] = stableStringify(c); });
         }
@@ -1245,9 +1268,17 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
     const changed = clients.filter(c => lastSyncedClientsRef.current[c.id] !== stableStringify(c));
     if (changed.length === 0) return;
     changed.forEach(c => { lastSyncedClientsRef.current[c.id] = stableStringify(c); });
-    (window as any).supabaseClient.from('clients').upsert(changed).then(({ error }: any) => {
+    const withoutCoverEmail = (list: any[]) => list.map(({ coverForEmail, ...rest }: any) => rest);
+    const report = ({ error }: any) => {
       if (error) { console.error("Erro ao sincronizar clientes:", error); setSyncError(`Falha ao salvar cliente${changed.length > 1 ? 's' : ''} na nuvem: ${error.message || 'erro desconhecido'}.`); }
       else setSyncError(null);
+    };
+    const db = (window as any).supabaseClient.from('clients');
+    db.upsert(clientsHasCoverEmailRef.current ? changed : withoutCoverEmail(changed)).then((res: any) => {
+      if (res.error && clientsHasCoverEmailRef.current && String(res.error.message || '').includes('coverForEmail')) {
+        clientsHasCoverEmailRef.current = false;
+        (window as any).supabaseClient.from('clients').upsert(withoutCoverEmail(changed)).then(report);
+      } else report(res);
     });
   }, [clients, isCloudSynced, user.isAdmin]);
 
@@ -3927,10 +3958,13 @@ function ClientModal({ modal, setModal, setClients, user }: any) {
        extraHolidays: Array.isArray(form.extraHolidays) ? form.extraHolidays : [],
        isCover: !!form.isCover,
        coverFor: form.isCover ? (form.coverFor || '').trim() : '',
+       coverForEmail: form.isCover ? parseEmailList(form.coverForEmail).valid.join(',') : '',
        // Colunas "date" no Supabase não aceitam '' — vazio vai como null.
        coverFrom: form.isCover && form.coverFrom ? form.coverFrom : null,
        coverUntil: form.isCover && form.coverUntil ? form.coverUntil : null,
     };
+    const coverEmailInvalid = form.isCover ? parseEmailList(form.coverForEmail).invalid : [];
+    if (coverEmailInvalid.length) { setValidationError(`E-mail do analista inválido: ${coverEmailInvalid.join(', ')}.`); return; }
     if (finalForm.isCover && finalForm.coverFrom && finalForm.coverUntil && finalForm.coverFrom > finalForm.coverUntil) { setValidationError("O início da atuação não pode ser depois do fim da atuação."); return; }
     // Cobertura que já terminou é salva arquivada. Estender o "Até" de uma cobertura que tinha
     // sido arquivada por expirar a traz de volta às listas; arquivamento manual não é tocado.
@@ -3978,6 +4012,11 @@ function ClientModal({ modal, setModal, setClients, user }: any) {
                 <div>
                   <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Cobrindo quem</label>
                   <input spellCheck={false} value={form.coverFor || ''} onChange={(e) => setForm({ ...form, coverFor: e.target.value })} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-purple-500 transition-colors" placeholder="Nome do colega" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">E-mail do analista (cópia no e-mail de fechamento)</label>
+                  <input spellCheck={false} type="text" inputMode="email" value={form.coverForEmail || ''} onChange={(e) => { setForm({ ...form, coverForEmail: e.target.value }); setValidationError(null); }} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-purple-500 transition-colors" placeholder="Ex.: analista@rubeus.com.br; outro@rubeus.com.br" />
+                  {parseEmailList(form.coverForEmail).invalid.length > 0 && <p className="text-[11px] text-amber-500 mt-1.5 ml-1">E-mail inválido: {parseEmailList(form.coverForEmail).invalid.join(', ')}. Corrija para salvar.</p>}
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -6247,7 +6286,8 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, coun
     const subject = `Atualização Semanal de Demandas - ${clientData ? clientData.name : 'Cliente'}`;
     const body = closureToPlain(bodyOverride ?? generateEmailText(clientTasks, mData, includeTime, splitTimeByItem));
 
-    return `https://mail.google.com/mail/?view=cm&fs=1&to=${emailTo}&bcc=analistasrubeus@rubeus.com.br&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    const cc = coverCcEmails(clientData);
+    return `https://mail.google.com/mail/?view=cm&fs=1&to=${emailTo}${cc.length ? `&cc=${cc.join(',')}` : ''}&bcc=analistasrubeus@rubeus.com.br&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   };
 
   const handleCopyText = (clientTasks: any, clientId: string, mData: any, includeTime?: boolean, splitTimeByItem?: boolean, textOverride?: string | null) => {
@@ -6503,6 +6543,7 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, coun
               </div>
 
               <div className="p-6 flex flex-col gap-5 bg-[var(--bg-primary)] overflow-y-auto kp-scroll">
+                {coverCcEmails(clientData).length > 0 && <p className="text-[11px] text-[var(--text-muted)] -mt-1 ml-1 break-all">Cópia (CC): {coverCcEmails(clientData).join(', ')}</p>}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="text-[10px] text-[var(--text-muted)] uppercase font-bold tracking-widest mb-2 block ml-1">Data da reunião · opcional</label>

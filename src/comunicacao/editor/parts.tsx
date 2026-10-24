@@ -73,7 +73,7 @@ export function ColorField({ value, onChange }: { value: string, onChange: (v: s
   return (
     <div className="flex items-center gap-2 min-w-0">
       <input type="color" aria-label="Escolher cor" value={/^#[0-9a-f]{6}$/i.test(value) ? value : '#000000'} onChange={e => onChange(e.target.value)} className="w-10 h-10 shrink-0 rounded-lg border border-[var(--border-primary)] bg-transparent cursor-pointer p-0.5" />
-      <input
+      <input spellCheck={false}
         type="text" aria-label="Código da cor" maxLength={7} value={text}
         onChange={e => { setText(e.target.value); let v = e.target.value.trim(); if (v && v[0] !== '#') v = '#' + v; if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(v)) onChange(v); }}
         className={inputCls + ' font-mono'}
@@ -139,7 +139,7 @@ export function KeyValueRows({ kind, items, onChange }: { kind: 'vars' | 'links'
       <div ref={listRef} className="flex flex-col gap-2">
         {items.map((it, i) => (
           <div key={i} className="grid grid-cols-[minmax(64px,96px)_auto_minmax(0,1fr)_auto] items-center gap-2">
-            <input
+            <input spellCheck={false}
               aria-label={isLink ? 'Nome do link' : 'Número da variável'}
               value={isLink && editingKey !== i ? '[' + it.k + ']' : it.k}
               onFocus={() => setEditingKey(i)}
@@ -148,7 +148,7 @@ export function KeyValueRows({ kind, items, onChange }: { kind: 'vars' | 'links'
               className={inputCls + ' font-mono text-center ' + (isLink ? 'text-sky-500' : 'text-pink-500')}
             />
             <span className="text-[var(--text-muted)] font-bold">=</span>
-            <input data-val aria-label={isLink ? 'Endereço do link' : 'Valor da variável'} value={it.v || ''} placeholder={isLink ? 'https://www.rubeus.com.br/' : '@@nome_da_pessoa@@'} onChange={e => set(i, { v: isLink ? e.target.value.trim() : e.target.value })} className={inputCls} />
+            <input spellCheck={false} data-val aria-label={isLink ? 'Endereço do link' : 'Valor da variável'} value={it.v || ''} placeholder={isLink ? 'https://www.rubeus.com.br/' : '@@nome_da_pessoa@@'} onChange={e => set(i, { v: isLink ? e.target.value.trim() : e.target.value })} className={inputCls} />
             <button type="button" aria-label={isLink ? 'Remover link' : 'Remover variável'} onClick={() => remove(i)} className={xBtn}><X size={14} /></button>
           </div>
         ))}

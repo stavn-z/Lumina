@@ -585,7 +585,7 @@ function LoginScreen({ authError, clearAuthError }: any) {
           {mode === 'signup' && (
             <div>
               <label className="text-[11px] font-bold uppercase tracking-widest text-neutral-500 mb-1.5 block ml-1">Nome</label>
-              <input
+              <input spellCheck={false}
                 className="w-full bg-[#09090b] border border-[#27272a] rounded-xl px-4 py-3.5 text-sm text-white outline-none focus:border-indigo-500 transition-colors"
                 placeholder="Seu nome completo"
                 value={name}
@@ -595,7 +595,7 @@ function LoginScreen({ authError, clearAuthError }: any) {
           )}
           <div>
             <label className="text-[11px] font-bold uppercase tracking-widest text-neutral-500 mb-1.5 block ml-1">E-mail</label>
-            <input
+            <input spellCheck={false}
               autoFocus
               type="email"
               className="w-full bg-[#09090b] border border-[#27272a] rounded-xl px-4 py-3.5 text-sm text-white outline-none focus:border-indigo-500 transition-colors"
@@ -608,7 +608,7 @@ function LoginScreen({ authError, clearAuthError }: any) {
           <div>
             <label className="text-[11px] font-bold uppercase tracking-widest text-neutral-500 mb-1.5 block ml-1">Senha</label>
             <div className="relative">
-              <input
+              <input spellCheck={false}
                 type={showPassword ? "text" : "password"}
                 className="w-full bg-[#09090b] border border-[#27272a] rounded-xl px-4 py-3.5 pr-10 text-sm text-white outline-none focus:border-indigo-500 transition-colors"
                 placeholder="Mínimo de 6 caracteres"
@@ -1633,7 +1633,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
           <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-[var(--text-muted)]" />
         </div>
         <Search size={14} className="self-center ml-3 shrink-0 text-[var(--text-muted)]" aria-hidden="true" />
-        <input
+        <input spellCheck={false}
           ref={boardSearchInputRef}
           value={boardSearch}
           onChange={e => setBoardSearch(e.target.value)}
@@ -2939,11 +2939,11 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
               {validationError && <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs px-4 py-3 rounded-xl flex items-center gap-2 animate-pulse"><AlertTriangle size={14} className="shrink-0" /> {Array.isArray(validationError) ? validationError.join(", ") : String(validationError)}</div>}
               <div>
                 <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Data Real de Entrega *</label>
-                <input type="date" value={donePrompt.date || ''} onChange={e => { setDonePrompt({...donePrompt, date: e.target.value}); setValidationError(null); }} className="w-full bg-[var(--bg-primary)] border border-[var(--border-primary)] rounded-xl px-4 py-4 text-sm text-[var(--text-primary)] outline-none focus:border-emerald-500 [color-scheme:dark]" />
+                <input spellCheck={false} type="date" value={donePrompt.date || ''} onChange={e => { setDonePrompt({...donePrompt, date: e.target.value}); setValidationError(null); }} className="w-full bg-[var(--bg-primary)] border border-[var(--border-primary)] rounded-xl px-4 py-4 text-sm text-[var(--text-primary)] outline-none focus:border-emerald-500 [color-scheme:dark]" />
               </div>
               <div>
                 <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Tempo Total Gasto (Minutos) *</label>
-                <input type="number" value={donePrompt.durationMin ?? ''} onChange={e => { setDonePrompt({...donePrompt, durationMin: e.target.value}); setValidationError(null); }} className="w-full bg-[var(--bg-primary)] border border-[var(--border-primary)] rounded-xl px-4 py-4 text-sm text-[var(--text-primary)] outline-none focus:border-emerald-500" placeholder="Ex: 45" />
+                <input spellCheck={false} type="number" value={donePrompt.durationMin ?? ''} onChange={e => { setDonePrompt({...donePrompt, durationMin: e.target.value}); setValidationError(null); }} className="w-full bg-[var(--bg-primary)] border border-[var(--border-primary)] rounded-xl px-4 py-4 text-sm text-[var(--text-primary)] outline-none focus:border-emerald-500" placeholder="Ex: 45" />
               </div>
               <button type="button" onClick={() => setDonePrompt({...donePrompt, continueNextMonth: !donePrompt.continueNextMonth})} className={`w-full flex items-start gap-3 text-left p-4 rounded-xl border transition-colors ${donePrompt.continueNextMonth ? 'bg-teal-500/10 border-teal-500/40' : 'bg-[var(--bg-primary)] border-[var(--border-primary)] hover:border-[var(--border-hover)]'}`}>
                 <span className={`mt-0.5 w-4 h-4 rounded flex items-center justify-center shrink-0 border transition-colors ${donePrompt.continueNextMonth ? 'bg-teal-500 border-teal-500 text-white' : 'border-[var(--border-hover)] text-transparent'}`}><Check size={11} strokeWidth={3}/></span>
@@ -3304,7 +3304,7 @@ function ProfileModal({ user, responsibles, onClose, onUpdate }: any) {
 
           <div>
             <label className="text-[10px] font-bold uppercase tracking-widest mb-2 block ml-1" style={{ color: 'var(--text-muted)' }}>Nova Senha</label>
-            <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="w-full rounded-xl px-4 py-3.5 text-sm outline-none focus:border-indigo-500 transition-colors" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-primary)', color: 'var(--text-primary)' }} placeholder="Deixe em branco para manter a atual" />
+            <input spellCheck={false} type="password" value={password} onChange={e => setPassword(e.target.value)} className="w-full rounded-xl px-4 py-3.5 text-sm outline-none focus:border-indigo-500 transition-colors" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-primary)', color: 'var(--text-primary)' }} placeholder="Deixe em branco para manter a atual" />
           </div>
         </div>
 
@@ -3439,11 +3439,11 @@ function DateRangeFilter({ title, icon, accent, start, end, onChange, theme }: {
       <div className="grid grid-cols-2 gap-2">
         <div className="flex flex-col gap-1">
           <label className="text-[9px] uppercase font-bold ml-0.5" style={{ color: 'var(--text-muted)' }}>De</label>
-          <input type="date" value={start} onChange={(e) => onChange(e.target.value, end, null)} className={`w-full rounded-lg px-3 h-10 text-xs outline-none ${accentFocus}`} style={inputStyle} />
+          <input spellCheck={false} type="date" value={start} onChange={(e) => onChange(e.target.value, end, null)} className={`w-full rounded-lg px-3 h-10 text-xs outline-none ${accentFocus}`} style={inputStyle} />
         </div>
         <div className="flex flex-col gap-1">
           <label className="text-[9px] uppercase font-bold ml-0.5" style={{ color: 'var(--text-muted)' }}>Até</label>
-          <input type="date" value={end} onChange={(e) => onChange(start, e.target.value, null)} className={`w-full rounded-lg px-3 h-10 text-xs outline-none ${accentFocus}`} style={inputStyle} />
+          <input spellCheck={false} type="date" value={end} onChange={(e) => onChange(start, e.target.value, null)} className={`w-full rounded-lg px-3 h-10 text-xs outline-none ${accentFocus}`} style={inputStyle} />
         </div>
       </div>
     </div>
@@ -3537,7 +3537,7 @@ function ChecklistItemElapsed({ item, onSetElapsed }: { item: any, onSetElapsed?
 
   if (editing) {
     return (
-      <input
+      <input spellCheck={false}
         autoFocus
         type="number"
         min="0"
@@ -3633,8 +3633,8 @@ function NoteEditorModal({ note, onSave, onDiscard, onDelete }: any) {
   return (
     <OverlayModal title={isNew ? 'Nova Nota' : 'Editar Nota'} icon={<StickyNote size={20} className="text-amber-400"/>} onClose={onDiscard}>
       <div className="flex flex-col gap-4 h-full">
-        <input autoFocus value={title} onChange={e => setTitle(e.target.value)} placeholder="Título" className="w-full bg-transparent outline-none font-bold text-lg placeholder:text-[var(--text-muted)]" style={{ color: 'var(--text-primary)' }} />
-        <textarea value={content} onChange={e => setContent(e.target.value)} placeholder="Escreva sua nota..." className="w-full flex-1 min-h-[45vh] bg-transparent outline-none text-sm leading-relaxed placeholder:text-[var(--text-muted)] resize-none" style={{ color: 'var(--text-secondary)' }} />
+        <input spellCheck={true} lang="pt-BR" autoFocus value={title} onChange={e => setTitle(e.target.value)} placeholder="Título" className="w-full bg-transparent outline-none font-bold text-lg placeholder:text-[var(--text-muted)]" style={{ color: 'var(--text-primary)' }} />
+        <textarea spellCheck={true} lang="pt-BR" value={content} onChange={e => setContent(e.target.value)} placeholder="Escreva sua nota..." className="w-full flex-1 min-h-[45vh] bg-transparent outline-none text-sm leading-relaxed placeholder:text-[var(--text-muted)] resize-none" style={{ color: 'var(--text-secondary)' }} />
         <div className="flex flex-col gap-3 pt-4 border-t" style={{ borderColor: 'var(--border-primary)' }}>
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div className="flex items-center flex-wrap gap-2">
@@ -3826,7 +3826,7 @@ function ResponsiblesPanelContent({ responsibles, setResponsibles, tasks, user }
                 </div>
                 <div className="flex flex-col min-w-0 flex-1">
                   {isEditing ? (
-                    <input
+                    <input spellCheck={false}
                       autoFocus
                       value={editName}
                       onChange={e => setEditName(e.target.value)}
@@ -3940,12 +3940,12 @@ function ClientModal({ modal, setModal, setClients, user }: any) {
         <div className="p-5 sm:p-8 flex flex-col gap-6 bg-[var(--bg-primary)] flex-1 overflow-y-auto kp-scroll">
           <div>
             <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Nome da Empresa *</label>
-            <input autoFocus value={form.name || ''} onChange={(e) => { setForm({ ...form, name: e.target.value }); setValidationError(null); }} className={`w-full bg-[var(--bg-secondary)] border rounded-xl px-4 py-4 sm:py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-purple-500 transition-colors ${validationError && String(validationError).includes("nome") ? "border-red-500" : "border-[var(--border-primary)]"}`} placeholder="Ex: Acme Corp" />
+            <input spellCheck={true} lang="pt-BR" autoFocus value={form.name || ''} onChange={(e) => { setForm({ ...form, name: e.target.value }); setValidationError(null); }} className={`w-full bg-[var(--bg-secondary)] border rounded-xl px-4 py-4 sm:py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-purple-500 transition-colors ${validationError && String(validationError).includes("nome") ? "border-red-500" : "border-[var(--border-primary)]"}`} placeholder="Ex: Acme Corp" />
           </div>
 
           <div>
             <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Teto de Horas Contratadas (Mensal)</label>
-            <input type="number" value={form.contractedHours === 0 ? '' : form.contractedHours} onChange={(e) => setForm({ ...form, contractedHours: e.target.value })} className={`w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-4 sm:py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-purple-500 transition-colors`} placeholder="Ex: 50" />
+            <input spellCheck={false} type="number" value={form.contractedHours === 0 ? '' : form.contractedHours} onChange={(e) => setForm({ ...form, contractedHours: e.target.value })} className={`w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-4 sm:py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-purple-500 transition-colors`} placeholder="Ex: 50" />
           </div>
 
           <div className="rounded-2xl border border-[var(--border-primary)] p-4 sm:p-5 flex flex-col gap-4">
@@ -3961,16 +3961,16 @@ function ClientModal({ modal, setModal, setClients, user }: any) {
               <div className="flex flex-col gap-4 animate-fade-in">
                 <div>
                   <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Cobrindo quem</label>
-                  <input value={form.coverFor || ''} onChange={(e) => setForm({ ...form, coverFor: e.target.value })} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-purple-500 transition-colors" placeholder="Nome do colega" />
+                  <input spellCheck={false} value={form.coverFor || ''} onChange={(e) => setForm({ ...form, coverFor: e.target.value })} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-purple-500 transition-colors" placeholder="Nome do colega" />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Início da atuação</label>
-                    <input type="date" value={form.coverFrom || ''} onChange={(e) => { setForm({ ...form, coverFrom: e.target.value }); setValidationError(null); }} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-3 py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-purple-500 transition-colors [color-scheme:dark]" />
+                    <input spellCheck={false} type="date" value={form.coverFrom || ''} onChange={(e) => { setForm({ ...form, coverFrom: e.target.value }); setValidationError(null); }} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-3 py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-purple-500 transition-colors [color-scheme:dark]" />
                   </div>
                   <div>
                     <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Fim da atuação</label>
-                    <input type="date" value={form.coverUntil || ''} onChange={(e) => { setForm({ ...form, coverUntil: e.target.value }); setValidationError(null); }} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-3 py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-purple-500 transition-colors [color-scheme:dark]" />
+                    <input spellCheck={false} type="date" value={form.coverUntil || ''} onChange={(e) => { setForm({ ...form, coverUntil: e.target.value }); setValidationError(null); }} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-3 py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-purple-500 transition-colors [color-scheme:dark]" />
                   </div>
                 </div>
               </div>
@@ -3981,7 +3981,7 @@ function ClientModal({ modal, setModal, setClients, user }: any) {
           <div>
             <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">E-mails (Contatos)</label>
             <div className="flex flex-col sm:flex-row items-center gap-3 mb-4">
-              <input value={newEmail || ''} onChange={e => setNewEmail(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddEmail()} className="w-full sm:flex-1 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-4 sm:py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-purple-500 transition-colors" placeholder="Ex: gestor@empresa.com" />
+              <input spellCheck={false} value={newEmail || ''} onChange={e => setNewEmail(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddEmail()} className="w-full sm:flex-1 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-4 sm:py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-purple-500 transition-colors" placeholder="Ex: gestor@empresa.com" />
               <button onClick={handleAddEmail} className="w-full sm:w-auto justify-center px-6 py-4 sm:py-3.5 bg-[var(--bg-overlay)] border border-[var(--border-overlay)] hover:bg-[var(--bg-overlay-strong)] text-[var(--text-primary)] rounded-xl text-xs font-bold uppercase tracking-widest transition-colors flex items-center gap-2 shrink-0"><Plus size={16}/> Add</button>
             </div>
 
@@ -4009,14 +4009,14 @@ function ClientModal({ modal, setModal, setClients, user }: any) {
               <div className="flex flex-col gap-4 animate-fade-in">
                 <div>
                   <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Minutos por Dia Útil</label>
-                  <input type="number" value={form.dailyLogMinutes ?? 60} onChange={(e) => setForm({ ...form, dailyLogMinutes: e.target.value })} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-purple-500 transition-colors" placeholder="Ex: 60" />
+                  <input spellCheck={false} type="number" value={form.dailyLogMinutes ?? 60} onChange={(e) => setForm({ ...form, dailyLogMinutes: e.target.value })} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-purple-500 transition-colors" placeholder="Ex: 60" />
                 </div>
 
                 <div>
                   <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Feriados Extras deste Cliente</label>
                   <p className="text-[10px] text-[var(--text-muted)] mb-3 -mt-1">Além dos feriados nacionais.</p>
                   <div className="flex flex-col sm:flex-row items-center gap-3 mb-3">
-                    <input type="date" value={newHoliday} onChange={e => setNewHoliday(e.target.value)} className="w-full sm:flex-1 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-purple-500 transition-colors [color-scheme:dark]" />
+                    <input spellCheck={false} type="date" value={newHoliday} onChange={e => setNewHoliday(e.target.value)} className="w-full sm:flex-1 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-purple-500 transition-colors [color-scheme:dark]" />
                     <button onClick={handleAddHoliday} className="w-full sm:w-auto justify-center px-6 py-3.5 bg-[var(--bg-overlay)] border border-[var(--border-overlay)] hover:bg-[var(--bg-overlay-strong)] text-[var(--text-primary)] rounded-xl text-xs font-bold uppercase tracking-widest transition-colors flex items-center gap-2 shrink-0"><Plus size={16}/> Add</button>
                   </div>
                   <div className="flex flex-col gap-2 max-h-32 overflow-y-auto kp-scroll pr-1">
@@ -4397,7 +4397,7 @@ function ClientsPanelContent({ clients, setClients, tasks, setTasks, user, getEl
             </p>
             <p className="text-sm text-[var(--text-secondary)] mb-4 leading-relaxed">Se a ideia é só tirar o cliente do dia a dia, deixe-o arquivado.</p>
             <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Digite o nome do cliente para confirmar</label>
-            <input autoFocus value={confirmRemoveText} onChange={(e) => setConfirmRemoveText(e.target.value)} placeholder={confirmRemoveClient.name} className="w-full bg-[var(--bg-primary)] border border-[var(--border-primary)] rounded-xl px-4 py-3 text-sm text-[var(--text-primary)] outline-none focus:border-red-500 mb-6" />
+            <input spellCheck={false} autoFocus value={confirmRemoveText} onChange={(e) => setConfirmRemoveText(e.target.value)} placeholder={confirmRemoveClient.name} className="w-full bg-[var(--bg-primary)] border border-[var(--border-primary)] rounded-xl px-4 py-3 text-sm text-[var(--text-primary)] outline-none focus:border-red-500 mb-6" />
             <div className="flex flex-col sm:flex-row items-center gap-3">
               <button onClick={() => setConfirmRemoveClient(null)} className="w-full sm:flex-1 py-3.5 sm:py-3 rounded-2xl border border-[var(--border-primary)] hover:bg-[var(--bg-overlay)] text-[var(--text-primary)] font-bold transition-all text-sm">Cancelar</button>
               <button disabled={confirmRemoveText.trim().toUpperCase() !== String(confirmRemoveClient.name || '').trim().toUpperCase()} onClick={() => { const id = confirmRemoveClient.id; setConfirmRemoveClient(null); remove(id); }} className="w-full sm:flex-1 py-3.5 sm:py-3 rounded-2xl bg-red-600 hover:bg-red-500 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-red-600 text-white font-bold transition-all text-sm shadow-lg shadow-red-600/10">Excluir</button>
@@ -4791,7 +4791,7 @@ function AnalyticsModal({ onClose, tasks, clients, responsibles, getElapsed, isC
                      <p className="text-sm text-[var(--text-secondary)] leading-relaxed max-w-md mx-auto">Configure aqui o Link de Incorporação (Embed) do Looker Studio para o painel de uso da sua equipe interna.</p>
                    </div>
                    <div className="w-full">
-                      <input value={inputUrl} onChange={e => setInputUrl(e.target.value)} placeholder="https://lookerstudio.google.com/embed/reporting/..." className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-2xl px-6 py-5 text-sm text-[var(--text-primary)] outline-none focus:border-blue-500 text-center shadow-inner mb-5" />
+                      <input spellCheck={false} value={inputUrl} onChange={e => setInputUrl(e.target.value)} placeholder="https://lookerstudio.google.com/embed/reporting/..." className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-2xl px-6 py-5 text-sm text-[var(--text-primary)] outline-none focus:border-blue-500 text-center shadow-inner mb-5" />
                       <button onClick={saveUrl} className="w-full py-5 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-bold uppercase tracking-widest text-sm transition-all shadow-[0_0_20px_rgba(37,99,235,0.3)]">Ligar Relatório Global</button>
                    </div>
                    {globalLookerUrl && <button onClick={() => setIsEditing(false)} className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-widest hover:text-[var(--text-primary)] mt-2">Cancelar</button>}
@@ -4992,7 +4992,7 @@ function QuickAddModal({ clients, onCreate, onClose }: any) {
           {!draft ? (
             <div>
               <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Título *</label>
-              <input autoFocus value={title} onChange={e => { setTitle(e.target.value); setError(''); }} onKeyDown={e => e.key === 'Enter' && save()} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 transition-colors" placeholder="O que precisa ser feito?" />
+              <input spellCheck={true} lang="pt-BR" autoFocus value={title} onChange={e => { setTitle(e.target.value); setError(''); }} onKeyDown={e => e.key === 'Enter' && save()} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 transition-colors" placeholder="O que precisa ser feito?" />
               <div className="flex flex-col gap-2 mt-4">
                 <AiButton onClick={improveWithAi} loading={draftAi.loading} disabled={!title.trim()} label="Melhorar com IA" />
                 <p className="text-[10px] text-center text-[var(--text-muted)]">Sugere título, descrição e checklist para você revisar.</p>
@@ -5004,11 +5004,11 @@ function QuickAddModal({ clients, onCreate, onClose }: any) {
               <div className="text-[10px] font-bold uppercase tracking-widest text-indigo-500 ml-1">Prévia sugerida pela IA · revise antes de criar</div>
               <div>
                 <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Título *</label>
-                <input value={draft.title} onChange={e => { setDraft({ ...draft, title: e.target.value }); setError(''); }} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-3 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 transition-colors" />
+                <input spellCheck={true} lang="pt-BR" value={draft.title} onChange={e => { setDraft({ ...draft, title: e.target.value }); setError(''); }} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-3 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 transition-colors" />
               </div>
               <div>
                 <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Descrição</label>
-                <textarea value={draft.description} onChange={e => setDraft({ ...draft, description: e.target.value })} rows={3} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-3 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 transition-colors resize-y" />
+                <textarea spellCheck={true} lang="pt-BR" value={draft.description} onChange={e => setDraft({ ...draft, description: e.target.value })} rows={3} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-3 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 transition-colors resize-y" />
               </div>
               <div>
                 <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Checklist *</label>
@@ -5016,7 +5016,7 @@ function QuickAddModal({ clients, onCreate, onClose }: any) {
                 <div className="flex flex-col gap-2">
                   {draft.checklist.map((c, i) => (
                     <div key={i} className="flex items-center gap-2">
-                      <input value={c} onChange={e => setStep(i, e.target.value)} className="flex-1 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-3 py-2.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 transition-colors" placeholder="Passo" />
+                      <input spellCheck={true} lang="pt-BR" value={c} onChange={e => setStep(i, e.target.value)} className="flex-1 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-3 py-2.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 transition-colors" placeholder="Passo" />
                       <button type="button" onClick={() => setDraft({ ...draft, checklist: draft.checklist.filter((_, j) => j !== i) })} className="p-2 rounded-lg text-[var(--text-muted)] hover:text-red-400 transition-colors" title="Remover item"><X size={14} /></button>
                     </div>
                   ))}
@@ -5798,7 +5798,7 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove, user, onCre
                   ))}
                 </div>
                 <div className="flex items-center gap-2">
-                  <input type="number" min={5} step={5} value={scDuration} onChange={e => setScDuration(Math.max(5, parseInt(e.target.value) || 0))} className="w-24 rounded-xl px-3 py-2 text-sm outline-none focus:border-teal-500 transition-colors" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)', color: 'var(--text-primary)' }} />
+                  <input spellCheck={false} type="number" min={5} step={5} value={scDuration} onChange={e => setScDuration(Math.max(5, parseInt(e.target.value) || 0))} className="w-24 rounded-xl px-3 py-2 text-sm outline-none focus:border-teal-500 transition-colors" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)', color: 'var(--text-primary)' }} />
                   <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>minutos exatos {![30, 60, 90, 120].includes(scDuration) && <span className="text-amber-400 font-bold">(valor já agendado)</span>}</span>
                 </div>
                 <p className="text-[10px] mt-2 ml-1 leading-relaxed" style={{ color: 'var(--text-muted)' }}>Isso só define o bloco na Agenda — não altera o "Est. Minutos" da demanda.</p>
@@ -5851,11 +5851,11 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove, user, onCre
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-[10px] font-bold uppercase tracking-widest mb-2 block ml-1" style={{ color: 'var(--text-muted)' }}>Data</label>
-                  <input type="date" value={esDate} onChange={e => setEsDate(e.target.value)} className="w-full rounded-xl px-4 py-3.5 text-sm outline-none focus:border-teal-500 transition-colors" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)', color: 'var(--text-primary)' }} />
+                  <input spellCheck={false} type="date" value={esDate} onChange={e => setEsDate(e.target.value)} className="w-full rounded-xl px-4 py-3.5 text-sm outline-none focus:border-teal-500 transition-colors" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)', color: 'var(--text-primary)' }} />
                 </div>
                 <div>
                   <label className="text-[10px] font-bold uppercase tracking-widest mb-2 block ml-1" style={{ color: 'var(--text-muted)' }}>Hora</label>
-                  <input type="time" value={esTime} onChange={e => setEsTime(e.target.value)} className="w-full rounded-xl px-4 py-3.5 text-sm outline-none focus:border-teal-500 transition-colors" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)', color: 'var(--text-primary)' }} />
+                  <input spellCheck={false} type="time" value={esTime} onChange={e => setEsTime(e.target.value)} className="w-full rounded-xl px-4 py-3.5 text-sm outline-none focus:border-teal-500 transition-colors" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)', color: 'var(--text-primary)' }} />
                 </div>
               </div>
               <div>
@@ -5866,7 +5866,7 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove, user, onCre
                   ))}
                 </div>
                 <div className="flex items-center gap-2">
-                  <input type="number" min={5} step={5} value={esDur} onChange={e => setEsDur(Math.max(5, parseInt(e.target.value) || 0))} className="w-24 rounded-xl px-3 py-2 text-sm outline-none focus:border-teal-500 transition-colors" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)', color: 'var(--text-primary)' }} />
+                  <input spellCheck={false} type="number" min={5} step={5} value={esDur} onChange={e => setEsDur(Math.max(5, parseInt(e.target.value) || 0))} className="w-24 rounded-xl px-3 py-2 text-sm outline-none focus:border-teal-500 transition-colors" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)', color: 'var(--text-primary)' }} />
                   <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>minutos exatos {![30, 60, 90, 120, 180].includes(esDur) && <span className="text-amber-400 font-bold">(valor já agendado)</span>}</span>
                 </div>
                 <p className="text-[10px] mt-2 ml-1" style={{ color: 'var(--text-muted)' }}>Funciona mesmo se a demanda já estiver "Em Andamento" — ajusta só o horário e a duração na Agenda, sem tocar no "Est. Minutos" da demanda.</p>
@@ -5932,16 +5932,16 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove, user, onCre
               {cErr && <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs px-3 py-2.5 rounded-lg flex items-center gap-2"><AlertTriangle size={14} className="shrink-0" /> {cErr}</div>}
               <div>
                 <label className="text-[10px] font-bold uppercase tracking-widest mb-2 block ml-1" style={{ color: 'var(--text-muted)' }}>Título *</label>
-                <input autoFocus value={cTitle} onChange={e => { setCTitle(e.target.value); setCErr(''); }} onKeyDown={e => e.key === 'Enter' && createEvent()} className="w-full rounded-xl px-4 py-3.5 text-sm outline-none focus:border-teal-500 transition-colors" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)', color: 'var(--text-primary)' }} placeholder="Reunião, almoço, academia, demanda..." />
+                <input spellCheck={true} lang="pt-BR" autoFocus value={cTitle} onChange={e => { setCTitle(e.target.value); setCErr(''); }} onKeyDown={e => e.key === 'Enter' && createEvent()} className="w-full rounded-xl px-4 py-3.5 text-sm outline-none focus:border-teal-500 transition-colors" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)', color: 'var(--text-primary)' }} placeholder="Reunião, almoço, academia, demanda..." />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-[10px] font-bold uppercase tracking-widest mb-2 block ml-1" style={{ color: 'var(--text-muted)' }}>Data</label>
-                  <input type="date" value={cDate} onChange={e => setCDate(e.target.value)} className="w-full rounded-xl px-4 py-3.5 text-sm outline-none focus:border-teal-500 transition-colors" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)', color: 'var(--text-primary)' }} />
+                  <input spellCheck={false} type="date" value={cDate} onChange={e => setCDate(e.target.value)} className="w-full rounded-xl px-4 py-3.5 text-sm outline-none focus:border-teal-500 transition-colors" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)', color: 'var(--text-primary)' }} />
                 </div>
                 <div>
                   <label className="text-[10px] font-bold uppercase tracking-widest mb-2 block ml-1" style={{ color: 'var(--text-muted)' }}>Hora</label>
-                  <input type="time" value={cTime} onChange={e => setCTime(e.target.value)} className="w-full rounded-xl px-4 py-3.5 text-sm outline-none focus:border-teal-500 transition-colors" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)', color: 'var(--text-primary)' }} />
+                  <input spellCheck={false} type="time" value={cTime} onChange={e => setCTime(e.target.value)} className="w-full rounded-xl px-4 py-3.5 text-sm outline-none focus:border-teal-500 transition-colors" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)', color: 'var(--text-primary)' }} />
                 </div>
               </div>
               <div>
@@ -6452,7 +6452,7 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="text-[10px] text-[var(--text-muted)] uppercase font-bold tracking-widest mb-2 block ml-1">Data da reunião · opcional</label>
-                    <input
+                    <input spellCheck={false}
                       type="date"
                       value={emailPopup.date || ''}
                       onChange={e => updateField({ date: e.target.value })}
@@ -6461,7 +6461,7 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
                   </div>
                   <div>
                     <label className="text-[10px] text-[var(--text-muted)] uppercase font-bold tracking-widest mb-2 block ml-1">Link da gravação · opcional</label>
-                    <input
+                    <input spellCheck={false}
                       type="text"
                       value={emailPopup.link || ''}
                       onChange={e => updateField({ link: e.target.value })}
@@ -6514,7 +6514,7 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
                           </button>
                         )}
                       </div>
-                      <textarea
+                      <textarea spellCheck={true} lang="pt-BR"
                         value={aiText}
                         onChange={e => setEmailPopup((prev: any) => ({ ...prev, aiText: e.target.value }))}
                         rows={12}
@@ -6600,7 +6600,7 @@ function TagInput({ tags, onChange, suggestions }: { tags: string[], onChange: (
               <button type="button" onClick={() => onChange(tags.filter((t) => t !== tag))} className="p-0.5 rounded text-[var(--text-muted)] hover:text-red-400 transition-colors" title="Remover tag"><X size={10} /></button>
             </span>
           ))}
-          <input
+          <input spellCheck={false}
             value={draft}
             onChange={(e) => { if (e.target.value.endsWith(',')) add(e.target.value.slice(0, -1)); else setDraft(e.target.value); }}
             onKeyDown={(e) => {
@@ -6761,14 +6761,14 @@ function TaskModal({ modal, setModal, clients, responsibles, closeModal, saveMod
       <div className="w-full max-w-xl rounded-[32px] bg-[var(--bg-secondary)] border border-[var(--border-primary)] flex flex-col max-h-[80dvh] sm:max-h-[85dvh] shadow-2xl overflow-hidden animate-modal-pop" onClick={e => e.stopPropagation()}>
         <div className="px-6 sm:px-8 py-5 border-b border-[var(--border-primary)] flex items-center justify-between bg-[var(--bg-tertiary)] shrink-0"><h3 className="font-display font-bold text-xl text-[var(--text-primary)] tracking-tight">{modal.mode === "add" ? "Nova Demanda" : "Editar Demanda"}</h3><button onClick={closeModal} className="p-2.5 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-overlay)] transition-colors"><X size={20} /></button></div>
         <div className="p-6 sm:p-8 overflow-y-auto kp-scroll flex flex-col gap-6 bg-[var(--bg-primary)] flex-1">
-          <div><label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Título do Card *</label><input autoFocus value={modal.form.title || ''} onChange={(e) => updateForm({ title: e.target.value })} className={`w-full bg-[var(--bg-secondary)] border rounded-xl px-4 py-4 sm:py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 transition-all ${validationError && String(validationError).includes("Título") ? "border-red-500" : "border-[var(--border-primary)]"}`} placeholder="Ex: Ajustar Fluxo de E-mails..." /></div>
-          <div><label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Contexto / Descrição *</label><textarea value={modal.form.description || ''} onChange={(e) => updateForm({ description: e.target.value })} rows={4} className={`w-full bg-[var(--bg-secondary)] border rounded-xl px-4 py-4 sm:py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 resize-none transition-all ${validationError && String(validationError).includes("Descrição") ? "border-red-500" : "border-[var(--border-primary)]"}`} placeholder="Descreva os requisitos técnicos ou regras de negócio..." /></div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5"><CustomSelect label="Prioridade *" required hasError={validationError && String(validationError).includes("Prioridade")} value={modal.form.priority || ''} onChange={(e: any) => updateForm({ priority: e.target.value })} options={<><option value="" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Selecione...</option><option value="Baixa" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Baixa</option><option value="Média" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Média</option><option value="Alta" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Alta</option></>} /><div><label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Est. Minutos</label><input type="number" value={(!modal.form.durationTouched && liveTask ? liveTask.durationMin : modal.form.durationMin) ?? ''} onChange={(e) => updateForm({ durationMin: e.target.value, durationTouched: true })} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-4 sm:py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 shadow-sm" placeholder="Ex: 60" /></div></div>
+          <div><label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Título do Card *</label><input spellCheck={true} lang="pt-BR" autoFocus value={modal.form.title || ''} onChange={(e) => updateForm({ title: e.target.value })} className={`w-full bg-[var(--bg-secondary)] border rounded-xl px-4 py-4 sm:py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 transition-all ${validationError && String(validationError).includes("Título") ? "border-red-500" : "border-[var(--border-primary)]"}`} placeholder="Ex: Ajustar Fluxo de E-mails..." /></div>
+          <div><label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Contexto / Descrição *</label><textarea spellCheck={true} lang="pt-BR" value={modal.form.description || ''} onChange={(e) => updateForm({ description: e.target.value })} rows={4} className={`w-full bg-[var(--bg-secondary)] border rounded-xl px-4 py-4 sm:py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 resize-none transition-all ${validationError && String(validationError).includes("Descrição") ? "border-red-500" : "border-[var(--border-primary)]"}`} placeholder="Descreva os requisitos técnicos ou regras de negócio..." /></div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5"><CustomSelect label="Prioridade *" required hasError={validationError && String(validationError).includes("Prioridade")} value={modal.form.priority || ''} onChange={(e: any) => updateForm({ priority: e.target.value })} options={<><option value="" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Selecione...</option><option value="Baixa" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Baixa</option><option value="Média" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Média</option><option value="Alta" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Alta</option></>} /><div><label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Est. Minutos</label><input spellCheck={false} type="number" value={(!modal.form.durationTouched && liveTask ? liveTask.durationMin : modal.form.durationMin) ?? ''} onChange={(e) => updateForm({ durationMin: e.target.value, durationTouched: true })} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-4 sm:py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 shadow-sm" placeholder="Ex: 60" /></div></div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5"><CustomSelect label="Responsável *" required hasError={validationError && String(validationError).includes("Responsável")} value={modal.form.responsibleId || ''} onChange={(e: any) => updateForm({ responsibleId: e.target.value })} options={<><option value="" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Selecione a pessoa...</option>{responsibles.map((r: any) => <option key={r.id} value={r.id} className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">{r.name}</option>)}</>} /><CustomSelect label="Cliente *" required hasError={validationError && String(validationError).includes("Cliente")} value={modal.form.clientId || ''} onChange={(e: any) => updateForm({ clientId: e.target.value })} options={<><option value="" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Selecione a empresa...</option>{clientOptions.map((c: any) => <option key={c.id} value={c.id} className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">{c.name}{isClientArchived(c) ? ' (arquivado)' : ''}</option>)}</>} /></div>
           
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-            <div><label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Data de Início</label><input type="date" value={modal.form.startDate || ''} onChange={(e) => updateForm({ startDate: e.target.value })} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-4 sm:py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 [color-scheme:dark] shadow-sm" /></div>
-            <div><label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Prazo / Deadline</label><input type="date" value={modal.form.dueDate || ''} onChange={(e) => updateForm({ dueDate: e.target.value })} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-4 sm:py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 [color-scheme:dark] shadow-sm" /></div>
+            <div><label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Data de Início</label><input spellCheck={false} type="date" value={modal.form.startDate || ''} onChange={(e) => updateForm({ startDate: e.target.value })} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-4 sm:py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 [color-scheme:dark] shadow-sm" /></div>
+            <div><label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Prazo / Deadline</label><input spellCheck={false} type="date" value={modal.form.dueDate || ''} onChange={(e) => updateForm({ dueDate: e.target.value })} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-4 sm:py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 [color-scheme:dark] shadow-sm" /></div>
           </div>
           
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
@@ -6794,7 +6794,7 @@ function TaskModal({ modal, setModal, clients, responsibles, closeModal, saveMod
                 <div key={c.id} data-checklist-id={c.id} className={`flex items-center gap-2 transition-opacity ${draggingChecklistId === c.id ? 'opacity-40' : ''}`}>
                   <button onPointerDown={(e) => beginChecklistDrag(e, c.id)} style={{ touchAction: 'none' }} className="p-1.5 text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-grab active:cursor-grabbing shrink-0" title="Arrastar para reordenar"><GripVertical size={16}/></button>
                   <button onClick={() => { setModal((m: any) => ({ ...m, form: { ...m.form, checklist: m.form.checklist.map((ci: any) => ci.id === c.id ? { ...ci, done: !ci.done } : ci) } })); }} className={`p-2.5 border rounded-xl transition-all shrink-0 ${c.done ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-400 shadow-[0_0_10px_rgba(99,102,241,0.2)]' : 'bg-[var(--bg-secondary)] border-[var(--border-primary)] text-[var(--text-muted)] hover:text-[var(--text-muted)] hover:bg-[var(--bg-overlay)]'}`}><Check size={16}/></button>
-                  <input value={c.text || ''} onChange={(e) => { setModal((m: any) => ({ ...m, form: { ...m.form, checklist: m.form.checklist.map((ci: any) => ci.id === c.id ? { ...ci, text: e.target.value } : ci) } })); }} className="flex-1 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 transition-all shadow-sm" placeholder="O que precisa ser feito?" />
+                  <input spellCheck={true} lang="pt-BR" value={c.text || ''} onChange={(e) => { setModal((m: any) => ({ ...m, form: { ...m.form, checklist: m.form.checklist.map((ci: any) => ci.id === c.id ? { ...ci, text: e.target.value } : ci) } })); }} className="flex-1 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 transition-all shadow-sm" placeholder="O que precisa ser feito?" />
                   {isNewModelTask && (
                     <>
                       <ChecklistItemElapsed item={c} onSetElapsed={(sec) => setItemElapsed(c.id, sec)} />
@@ -6826,7 +6826,7 @@ function TaskModal({ modal, setModal, clients, responsibles, closeModal, saveMod
             <div className="relative">
               <div className="flex items-center gap-2 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-3.5 focus-within:border-indigo-500 transition-colors">
                 <Search size={15} className="text-[var(--text-muted)] shrink-0" />
-                <input value={relatedQuery} onChange={(e) => setRelatedQuery(e.target.value)} placeholder="Buscar demanda para vincular..." className="flex-1 bg-transparent text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]" />
+                <input spellCheck={false} value={relatedQuery} onChange={(e) => setRelatedQuery(e.target.value)} placeholder="Buscar demanda para vincular..." className="flex-1 bg-transparent text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]" />
               </div>
               {relatedQueryTrim.length > 0 && (
                 <div className="absolute z-10 mt-2 w-full max-h-56 overflow-y-auto kp-scroll bg-[var(--bg-tertiary)] border border-[var(--border-primary)] rounded-xl shadow-xl">

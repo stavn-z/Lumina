@@ -104,7 +104,7 @@ export function AskDialog({ o, done }: { o: AskOptions, done: (v: any) => void }
             )}
             <label className="flex flex-col gap-1.5">
               {o.inputLabel && <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)]">{o.inputLabel}</span>}
-              <input ref={inputRef} value={text} onChange={e => setText(e.target.value)} placeholder={o.placeholder} aria-label={o.inputLabel || o.title} className={field} />
+              <input spellCheck={false} ref={inputRef} value={text} onChange={e => setText(e.target.value)} placeholder={o.placeholder} aria-label={o.inputLabel || o.title} className={field} />
             </label>
           </form>
         )}

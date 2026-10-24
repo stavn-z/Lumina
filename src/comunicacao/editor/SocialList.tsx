@@ -15,12 +15,12 @@ export function SocialList({ social, edit }: { social: EmailData['social'], edit
           <select aria-label="Rede" value={it.rede} onChange={e => { const v = e.target.value; edit(so => { so.items[i].rede = v; }); }} className={inputCls + ' cursor-pointer'}>
             {Object.entries(NETS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>
-          <input aria-label="Link da rede" placeholder="Link do perfil" value={it.link || ''} onChange={e => { const v = e.target.value.trim(); edit(so => { so.items[i].link = v; }); }} className={inputCls} />
+          <input spellCheck={false} aria-label="Link da rede" placeholder="Link do perfil" value={it.link || ''} onChange={e => { const v = e.target.value.trim(); edit(so => { so.items[i].link = v; }); }} className={inputCls} />
           <button type="button" aria-label="Remover rede" className={xBtn} onClick={async () => {
             if (!await ask({ title: 'Remover rede?', message: '“' + (NETS[it.rede] || 'Rede') + '” sairá do bloco de redes.', ok: 'Remover', tone: 'danger' })) return;
             edit(so => { so.items.splice(i, 1); });
           }}><X size={14} /></button>
-          <input aria-label="Link do ícone" placeholder={MC[it.rede] ? 'Ícone padrão em uso · cole um link para trocar' : 'Cole o link do ícone (PNG hospedado)'} value={it.icon || ''} onChange={e => { const v = e.target.value.trim(); edit(so => { so.items[i].icon = v; }); }} className={inputCls + ' col-span-2 text-xs'} />
+          <input spellCheck={false} aria-label="Link do ícone" placeholder={MC[it.rede] ? 'Ícone padrão em uso · cole um link para trocar' : 'Cole o link do ícone (PNG hospedado)'} value={it.icon || ''} onChange={e => { const v = e.target.value.trim(); edit(so => { so.items[i].icon = v; }); }} className={inputCls + ' col-span-2 text-xs'} />
           <IconPreview item={it} social={social} />
         </div>
       ))}

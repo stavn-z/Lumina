@@ -83,7 +83,7 @@ export function ImageField({ img, which, edit }: { img: EmailImage, which: 'bann
         </div>
       ) : (
         <div className="flex flex-wrap gap-2">
-          <input type="url" aria-label="URL da imagem" placeholder="https://… link direto da imagem (.png ou .jpg)" value={img.src || ''} onChange={e => { const v = e.target.value.trim(); edit(i => { i.src = v; i.upload = ''; delete i.orig; }); }} className={inputCls + ' flex-1 min-w-[180px]'} />
+          <input spellCheck={false} type="url" aria-label="URL da imagem" placeholder="https://… link direto da imagem (.png ou .jpg)" value={img.src || ''} onChange={e => { const v = e.target.value.trim(); edit(i => { i.src = v; i.upload = ''; delete i.orig; }); }} className={inputCls + ' flex-1 min-w-[180px]'} />
           {img.src && <button type="button" onClick={() => setCropSrc(cropFrom(img))} className={miniBtn}><Crop size={12} />Recortar</button>}
           <button type="button" disabled={uploading} onClick={() => file.current?.click()} className={miniBtn}>
             {uploading ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}{uploading ? 'Enviando…' : 'Enviar arquivo'}

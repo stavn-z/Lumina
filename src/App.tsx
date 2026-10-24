@@ -6130,6 +6130,26 @@ function closureToHtml(text: string): string {
 
 const GMAIL_LINK_WARN = 6000;
 
+// Cliente de cobertura: "de dd/mm a dd/mm" a partir de coverFrom/coverUntil, pela data local (sem fuso).
+function closureCoverDate(iso: string) {
+  const ms = parseDateLocal(iso);
+  if (ms === null) return '';
+  const d = new Date(ms);
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+// Nome do analista coberto: se veio todo em caixa alta, vira formato de nome (inicial maiúscula por palavra).
+function closureCoverName(raw: string) {
+  const v = (raw || '').trim().replace(/\s+/g, ' ');
+  if (!v || v !== v.toUpperCase() || v === v.toLowerCase()) return v;
+  return v.toLowerCase().split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+// "...realizadas durante o período de ausência de Fulano, de dd/mm a dd/mm" (ou "de cobertura" sem nome).
+function closureCoverTail(c: any) {
+  const name = closureCoverName(c.coverFor || '');
+  const from = closureCoverDate(c.coverFrom || ''), until = closureCoverDate(c.coverUntil || '');
+  return `realizadas durante o período de ${name ? `ausência de ${name}` : 'cobertura'}${from && until ? `, de ${from} a ${until}` : ''}`;
+}
+
 function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, countFormalizable, getElapsed }: any) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [copiedNotionId, setCopiedNotionId] = useState<string | null>(null);
@@ -6177,12 +6197,14 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, coun
       dateStr = `${d}/${m}`;
     }
     // Só fala de reunião com data ou link válido; sem os dois, o texto é o resumo da semana.
+    // Cliente de cobertura (mData.client.isCover) troca a abertura pelo tom de cobertura.
     const link = closureSafeUrl(mData?.link || '');
+    const coverTail = mData?.client?.isCover ? closureCoverTail(mData.client) : '';
     if (dateStr || link) {
-      body += `Segue o resumo da reunião de overview${dateStr ? ` realizada em ${dateStr}` : ''}, com os principais pontos e o estado das demandas.`;
+      body += `Segue o resumo da reunião de overview${dateStr ? ` realizada em ${dateStr}` : ''}, com os principais pontos e o estado das demandas${coverTail ? ` ${coverTail}` : ''}.`;
       if (link) body += `\n\n[Acesse a reunião](${link})`;
     } else {
-      body += `Segue o resumo da semana, com os principais pontos e o estado das demandas.`;
+      body += coverTail ? `Segue o resumo das demandas ${coverTail}.` : `Segue o resumo da semana, com os principais pontos e o estado das demandas.`;
     }
 
     // Organização em texto puro: marcador antes do título, recuo de 2 espaços na descrição e no
@@ -6426,7 +6448,7 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, coun
         const clientData = clients.find((c: any) => c.id === emailPopup.clientId);
         const clientName = clientData ? clientData.name : 'Sem Cliente Atribuído';
         const clientTasks = tasksByClient[emailPopup.clientId] || { done: [], inProgress: [] };
-        const mData = { date: emailPopup.date, link: emailPopup.link };
+        const mData = { date: emailPopup.date, link: emailPopup.link, client: clientData };
 
         const updateField = (patch: any) => {
           setEmailPopup((prev: any) => ({ ...prev, ...patch }));
@@ -6456,7 +6478,7 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, coun
           const descs: Record<string, string> = {};
           result.demandas.forEach(d => { const i = Number(d.id.slice(1)) - 1; if (all[i]) descs[all[i].t.id] = d.descricao; });
           setEmailPopup((prev: any) => prev && prev.clientId === popupClientId
-            ? { ...prev, aiText: generateEmailText(clientTasks, { date: prev.date, link: prev.link }, prev.includeTime, prev.splitTimeByItem, descs) }
+            ? { ...prev, aiText: generateEmailText(clientTasks, { date: prev.date, link: prev.link, client: clientData }, prev.includeTime, prev.splitTimeByItem, descs) }
             : prev);
         };
         const aiText: string | null = emailPopup.aiText ?? null;

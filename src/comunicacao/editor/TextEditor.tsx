@@ -141,7 +141,7 @@ export function TextEditor({ row, deleted, userId, names, upsertLocal, onToggleR
         <section aria-label="Conteúdo da mensagem" className={`${mobilePane === 'form' ? 'block' : 'hidden'} lg:block lg:min-h-0 lg:overflow-y-auto kp-scroll lg:pr-2`}>
           <Section title="Identificação" dot="#71717a">
             <Field label="Nome do template">
-              <input
+              <input spellCheck={false}
                 className={inputCls} value={T.nome} placeholder="Ex.: cap_wpp_grd_en_ead_prm_c1"
                 onChange={e => {
                   const el = e.target; let v = el.value;
@@ -150,7 +150,7 @@ export function TextEditor({ row, deleted, userId, names, upsertLocal, onToggleR
                 }}
               />
             </Field>
-            <Field label="Assunto / título"><input className={inputCls} value={T.assunto} placeholder="Do que se trata a mensagem" onChange={e => { const v = e.target.value; set(d => { d.assunto = v; }); }} /></Field>
+            <Field label="Assunto / título"><input spellCheck={true} lang="pt-BR" className={inputCls} value={T.assunto} placeholder="Do que se trata a mensagem" onChange={e => { const v = e.target.value; set(d => { d.assunto = v; }); }} /></Field>
           </Section>
 
           {wpp && (
@@ -165,14 +165,14 @@ export function TextEditor({ row, deleted, userId, names, upsertLocal, onToggleR
               )}
               {hd.type === 'text' && (
                 <Field label="Texto do cabeçalho" hint={<Counter n={len(hd.text)} max={LIMIT_HF} />}>
-                  <input className={inputCls} value={hd.text} placeholder="Ex.: Sua vaga está reservada!" onChange={e => { const v = e.target.value; set(d => { d.header.text = v; }); }} />
+                  <input spellCheck={true} lang="pt-BR" className={inputCls} value={hd.text} placeholder="Ex.: Sua vaga está reservada!" onChange={e => { const v = e.target.value; set(d => { d.header.text = v; }); }} />
                 </Field>
               )}
             </Section>
           )}
 
           <Section title="Mensagem" dot="#10b981">
-            <Field label="Texto"><textarea spellCheck className={inputCls + ' min-h-[300px] resize-y leading-relaxed'} value={T.texto} onChange={e => { const v = e.target.value; set(d => { d.texto = v; }); }} /></Field>
+            <Field label="Texto"><textarea spellCheck={true} lang="pt-BR" className={inputCls + ' min-h-[300px] resize-y leading-relaxed'} value={T.texto} onChange={e => { const v = e.target.value; set(d => { d.texto = v; }); }} /></Field>
             <Hint>
               {wpp
                 ? <>Formatação do WhatsApp: <code>*negrito*</code>, <code>_itálico_</code>, <code>~riscado~</code> e <code>```monoespaçado```</code>. Variáveis como <code>{'{1}'}</code>.</>
@@ -192,7 +192,7 @@ export function TextEditor({ row, deleted, userId, names, upsertLocal, onToggleR
               <Radios name="tx-ft" value={ft.type} onChange={v => set(d => { d.footer.type = v; })} options={[['none', 'Sem rodapé'], ['text', 'Texto']]} />
               {ft.type === 'text' && (
                 <Field label="Texto do rodapé" hint={<Counter n={len(ft.text)} max={LIMIT_HF} />}>
-                  <input className={inputCls} value={ft.text} placeholder="Ex.: Celso Lisboa · Centro Universitário" onChange={e => { const v = e.target.value; set(d => { d.footer.text = v; }); }} />
+                  <input spellCheck={true} lang="pt-BR" className={inputCls} value={ft.text} placeholder="Ex.: Celso Lisboa · Centro Universitário" onChange={e => { const v = e.target.value; set(d => { d.footer.text = v; }); }} />
                 </Field>
               )}
             </Section>
@@ -213,10 +213,10 @@ export function TextEditor({ row, deleted, userId, names, upsertLocal, onToggleR
                         <select aria-label="Tipo de botão" disabled={reply} value={type} onChange={e => { const v = e.target.value as WppButton['type']; set(d => { d.buttons[i].type = v; }); }} className={inputCls + ' cursor-pointer disabled:opacity-70'}>
                           {(reply ? [['reply', 'Resposta']] : [['url', 'Link'], ['phone', 'Telefone']]).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                         </select>
-                        <input aria-label="Título do botão" placeholder="Título do botão" value={b.text || ''} onChange={e => { const v = e.target.value; set(d => { d.buttons[i].text = v; }); }} className={inputCls} />
+                        <input spellCheck={true} lang="pt-BR" aria-label="Título do botão" placeholder="Título do botão" value={b.text || ''} onChange={e => { const v = e.target.value; set(d => { d.buttons[i].text = v; }); }} className={inputCls} />
                         <button type="button" aria-label="Remover botão" onClick={() => removeButton(i, b)} className={xBtn}><X size={14} /></button>
                         {type !== 'reply' && (
-                          <input aria-label="Destino do botão" placeholder={type === 'phone' ? 'Telefone com DDI e DDD, ex.: +55 21 99999-9999' : 'Endereço ou [link]'} value={b.value || ''} onChange={e => { const v = e.target.value.trim(); set(d => { d.buttons[i].value = v; }); }} className={inputCls + ' col-span-2'} />
+                          <input spellCheck={false} aria-label="Destino do botão" placeholder={type === 'phone' ? 'Telefone com DDI e DDD, ex.: +55 21 99999-9999' : 'Endereço ou [link]'} value={b.value || ''} onChange={e => { const v = e.target.value.trim(); set(d => { d.buttons[i].value = v; }); }} className={inputCls + ' col-span-2'} />
                         )}
                         <span className={type !== 'reply' ? 'self-center' : 'col-span-3'}><Counter n={len(b.text)} max={LIMIT_BTN} /></span>
                       </div>
@@ -344,7 +344,7 @@ function HeaderMedia({ header, edit }: { header: TextData['header'], edit: (fn: 
   }
   return (
     <div className="flex flex-wrap gap-2">
-      <input type="url" aria-label={header.mtype === 'image' ? 'URL da imagem' : 'Nome ou link do PDF'} placeholder={header.mtype === 'image' ? 'https://… link direto da imagem' : 'Nome ou link do PDF'} value={header.src || ''} onChange={e => { const v = e.target.value.trim(); edit(h => { h.src = v; h.upload = ''; }); }} className={inputCls + ' flex-1 min-w-[180px]'} />
+      <input spellCheck={false} type="url" aria-label={header.mtype === 'image' ? 'URL da imagem' : 'Nome ou link do PDF'} placeholder={header.mtype === 'image' ? 'https://… link direto da imagem' : 'Nome ou link do PDF'} value={header.src || ''} onChange={e => { const v = e.target.value.trim(); edit(h => { h.src = v; h.upload = ''; }); }} className={inputCls + ' flex-1 min-w-[180px]'} />
       <button type="button" disabled={busy} onClick={() => file.current?.click()} className={miniBtn}>{busy ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}{busy ? 'Enviando…' : 'Enviar arquivo'}</button>
       <input ref={file} type="file" hidden accept={header.mtype === 'image' ? 'image/png,image/jpeg' : 'application/pdf'} onChange={e => onFile(e.target.files?.[0])} />
     </div>

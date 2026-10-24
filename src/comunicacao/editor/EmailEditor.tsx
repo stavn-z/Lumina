@@ -105,20 +105,20 @@ export function EmailEditor({ row, deleted, userId, names, upsertLocal, onToggle
         {/* FORMULÁRIO */}
         <section aria-label="Conteúdo do e-mail" className={`${mobilePane === 'form' ? 'block' : 'hidden'} lg:block lg:min-h-0 lg:overflow-y-auto kp-scroll lg:pr-2`}>
           <Section title="Identificação" dot="#71717a">
-            <Field label="Nome do template"><input className={inputCls} value={S.nome} placeholder="Ex.: CAP_EML_GRD_EN_EAD_REP_C2" onChange={e => { const v = e.target.value; set(d => { d.nome = v; }); }} /></Field>
-            <Field label="Assunto"><input className={inputCls} value={S.assunto} placeholder="O que aparece como título na caixa de entrada" onChange={e => { const v = e.target.value; set(d => { d.assunto = v; }); }} /></Field>
-            <Field label="Preheader"><input className={inputCls} value={S.preheader} placeholder="Frase curta exibida ao lado do assunto" onChange={e => { const v = e.target.value; set(d => { d.preheader = v; }); }} /></Field>
+            <Field label="Nome do template"><input spellCheck={false} className={inputCls} value={S.nome} placeholder="Ex.: CAP_EML_GRD_EN_EAD_REP_C2" onChange={e => { const v = e.target.value; set(d => { d.nome = v; }); }} /></Field>
+            <Field label="Assunto"><input spellCheck={true} lang="pt-BR" className={inputCls} value={S.assunto} placeholder="O que aparece como título na caixa de entrada" onChange={e => { const v = e.target.value; set(d => { d.assunto = v; }); }} /></Field>
+            <Field label="Preheader"><input spellCheck={true} lang="pt-BR" className={inputCls} value={S.preheader} placeholder="Frase curta exibida ao lado do assunto" onChange={e => { const v = e.target.value; set(d => { d.preheader = v; }); }} /></Field>
             <Hint>O preheader também entra escondido no topo do HTML, para os clientes de e-mail exibirem.</Hint>
           </Section>
 
           <Section title="Imagem do topo" dot="#4f46e5">
             <ImageField img={S.banner} which="banner" edit={fn => set(d => fn(d.banner))} />
-            <Field label="Texto alternativo"><input className={inputCls} value={S.banner.alt} placeholder="Aparece quando a imagem não carrega" onChange={e => { const v = e.target.value; set(d => { d.banner.alt = v; }); }} /></Field>
-            <Field label="Link ao clicar (opcional)"><input type="url" className={inputCls} value={S.banner.link} placeholder="Ex.: https://www.rubeus.com.br/" onChange={e => { const v = e.target.value; set(d => { d.banner.link = v; }); }} /></Field>
+            <Field label="Texto alternativo"><input spellCheck={true} lang="pt-BR" className={inputCls} value={S.banner.alt} placeholder="Aparece quando a imagem não carrega" onChange={e => { const v = e.target.value; set(d => { d.banner.alt = v; }); }} /></Field>
+            <Field label="Link ao clicar (opcional)"><input spellCheck={false} type="url" className={inputCls} value={S.banner.link} placeholder="Ex.: https://www.rubeus.com.br/" onChange={e => { const v = e.target.value; set(d => { d.banner.link = v; }); }} /></Field>
           </Section>
 
           <Section title="Texto" dot="#f59e0b">
-            <Field label="Conteúdo"><textarea spellCheck className={inputCls + ' min-h-[260px] resize-y leading-relaxed'} value={S.texto} onChange={e => { const v = e.target.value; set(d => { d.texto = v; }); }} /></Field>
+            <Field label="Conteúdo"><textarea spellCheck={true} lang="pt-BR" className={inputCls + ' min-h-[260px] resize-y leading-relaxed'} value={S.texto} onChange={e => { const v = e.target.value; set(d => { d.texto = v; }); }} /></Field>
             <Hint>Linha em branco cria um novo parágrafo. Use <code>**negrito**</code>, <code>[texto](https://link)</code> e variáveis como <code>{'{1}'}</code> e links como <code>[link]</code>. Para colocar texto <strong>abaixo do botão</strong>, escreva <code>[botão]</code> sozinho numa linha, no ponto onde ele deve aparecer.</Hint>
             <Field label="Alinhamento"><Select value={S.textAlign} onChange={v => set(d => { d.textAlign = v; })} options={[['left', 'À esquerda'], ['justify', 'Justificado'], ['center', 'Centralizado']]} /></Field>
             <div className="grid grid-cols-2 gap-3">
@@ -129,8 +129,8 @@ export function EmailEditor({ row, deleted, userId, names, upsertLocal, onToggle
           </Section>
 
           <Section title="Botão" dot="#3b82f6">
-            <Field label="Título do botão"><input className={inputCls} value={S.btn.text} onChange={e => { const v = e.target.value; set(d => { d.btn.text = v; }); }} /></Field>
-            <Field label="Link"><input type="url" className={inputCls} value={S.btn.link} placeholder="Ex.: https://www.rubeus.com.br/" onChange={e => { const v = e.target.value; set(d => { d.btn.link = v; }); }} /></Field>
+            <Field label="Título do botão"><input spellCheck={true} lang="pt-BR" className={inputCls} value={S.btn.text} onChange={e => { const v = e.target.value; set(d => { d.btn.text = v; }); }} /></Field>
+            <Field label="Link"><input spellCheck={false} type="url" className={inputCls} value={S.btn.link} placeholder="Ex.: https://www.rubeus.com.br/" onChange={e => { const v = e.target.value; set(d => { d.btn.link = v; }); }} /></Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Cor do botão"><ColorField value={S.btn.bg} onChange={v => set(d => { d.btn.bg = v; })} /></Field>
               <Field label="Cor do título"><ColorField value={S.btn.color} onChange={v => set(d => { d.btn.color = v; })} /></Field>
@@ -140,8 +140,8 @@ export function EmailEditor({ row, deleted, userId, names, upsertLocal, onToggle
 
           <Section title="Rodapé" dot="#10b981">
             <ImageField img={S.footer} which="footer" edit={fn => set(d => fn(d.footer))} />
-            <Field label="Texto alternativo"><input className={inputCls} value={S.footer.alt} onChange={e => { const v = e.target.value; set(d => { d.footer.alt = v; }); }} /></Field>
-            <Field label="Link ao clicar (opcional)"><input type="url" className={inputCls} value={S.footer.link} placeholder="Ex.: https://www.rubeus.com.br/" onChange={e => { const v = e.target.value; set(d => { d.footer.link = v; }); }} /></Field>
+            <Field label="Texto alternativo"><input spellCheck={true} lang="pt-BR" className={inputCls} value={S.footer.alt} onChange={e => { const v = e.target.value; set(d => { d.footer.alt = v; }); }} /></Field>
+            <Field label="Link ao clicar (opcional)"><input spellCheck={false} type="url" className={inputCls} value={S.footer.link} placeholder="Ex.: https://www.rubeus.com.br/" onChange={e => { const v = e.target.value; set(d => { d.footer.link = v; }); }} /></Field>
           </Section>
 
           <Section title="Redes sociais e contato" dot="#0ea5e9" open={false}>
@@ -159,10 +159,10 @@ export function EmailEditor({ row, deleted, userId, names, upsertLocal, onToggle
               <SocialList social={S.social} edit={fn => set(d => fn(d.social))} />
             </div>
             <Hint>Instagram, Facebook, YouTube, LinkedIn, X e Pinterest já vêm com ícones fixos, hospedados no servidor público de ícones de e-mail do Mailchimp, e mudam conforme o estilo escolhido. TikTok, WhatsApp e Site não têm ícone padrão: cole o link de um ícone ou eles aparecem como texto.</Hint>
-            <Field label="Título"><input className={inputCls} value={S.social.title} placeholder="Ex.: Entre em contato conosco" onChange={e => { const v = e.target.value; set(d => { d.social.title = v; }); }} /></Field>
-            <Field label="Contatos (uma linha por item)"><textarea className={inputCls + ' min-h-[90px] resize-y'} value={S.social.contato} placeholder={'[Câmpus Taguatinga](https://goo.gl/maps/...) | [Câmpus Ceilândia](https://goo.gl/maps/...)\n[Telefone: (61) 3356-9075](https://wa.me/556133569075)'} onChange={e => { const v = e.target.value; set(d => { d.social.contato = v; }); }} /></Field>
+            <Field label="Título"><input spellCheck={true} lang="pt-BR" className={inputCls} value={S.social.title} placeholder="Ex.: Entre em contato conosco" onChange={e => { const v = e.target.value; set(d => { d.social.title = v; }); }} /></Field>
+            <Field label="Contatos (uma linha por item)"><textarea spellCheck={true} lang="pt-BR" className={inputCls + ' min-h-[90px] resize-y'} value={S.social.contato} placeholder={'[Câmpus Taguatinga](https://goo.gl/maps/...) | [Câmpus Ceilândia](https://goo.gl/maps/...)\n[Telefone: (61) 3356-9075](https://wa.me/556133569075)'} onChange={e => { const v = e.target.value; set(d => { d.social.contato = v; }); }} /></Field>
             <Check2 checked={!!S.social.unsub} onChange={v => set(d => { d.social.unsub = v; })}>Incluir linha de descadastro</Check2>
-            <Field label="Texto do descadastro"><input className={inputCls} value={S.social.unsubText} onChange={e => { const v = e.target.value; set(d => { d.social.unsubText = v; }); }} /></Field>
+            <Field label="Texto do descadastro"><input spellCheck={true} lang="pt-BR" className={inputCls} value={S.social.unsubText} onChange={e => { const v = e.target.value; set(d => { d.social.unsubText = v; }); }} /></Field>
             <Hint>A Rubeus já adiciona o próprio rodapé com descadastro. Use esta linha só se o cliente quiser o descadastro dentro do bloco, como no modelo UCB.</Hint>
           </Section>
 
@@ -178,8 +178,8 @@ export function EmailEditor({ row, deleted, userId, names, upsertLocal, onToggle
 
           <Section title="Topo e fundo" dot="#a1a1aa" open={false}>
             <Check2 checked={!!S.webview.on} onChange={v => set(d => { d.webview.on = v; })}>Mostrar “Visualizar como página web”</Check2>
-            <Field label="Texto do link"><input className={inputCls} value={S.webview.text} onChange={e => { const v = e.target.value; set(d => { d.webview.text = v; }); }} /></Field>
-            <Field label="Link da versão web"><input className={inputCls} value={S.webview.url} placeholder="URL ou variável, ex.: {2}" onChange={e => { const v = e.target.value; set(d => { d.webview.url = v; }); }} /></Field>
+            <Field label="Texto do link"><input spellCheck={true} lang="pt-BR" className={inputCls} value={S.webview.text} onChange={e => { const v = e.target.value; set(d => { d.webview.text = v; }); }} /></Field>
+            <Field label="Link da versão web"><input spellCheck={false} className={inputCls} value={S.webview.url} placeholder="URL ou variável, ex.: {2}" onChange={e => { const v = e.target.value; set(d => { d.webview.url = v; }); }} /></Field>
             <Field label="Cor de fundo atrás do e-mail"><ColorField value={S.bg} onChange={v => set(d => { d.bg = v; })} /></Field>
           </Section>
         </section>
@@ -219,7 +219,7 @@ export function EmailEditor({ row, deleted, userId, names, upsertLocal, onToggle
 
           <details ref={codeRef} className="group">
             <summary className="cursor-pointer text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] hover:text-[var(--text-primary)] outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 rounded">Ver código HTML</summary>
-            <textarea ref={codeArea} readOnly aria-label="Código HTML" value={code} className={inputCls + ' mt-2 h-64 font-mono text-[11px]'} />
+            <textarea spellCheck={false} ref={codeArea} readOnly aria-label="Código HTML" value={code} className={inputCls + ' mt-2 h-64 font-mono text-[11px]'} />
           </details>
         </section>
       </div>

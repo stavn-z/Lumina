@@ -224,7 +224,7 @@ function ClientTaxonomy({ clients, client, st, setSt, upsertLocal, removeLocal, 
             {listSelect('centro')}
             {sel.centro === 'OUT' && (
               <div className="sm:col-span-2">
-                <Field label="Sigla do centro “Outros” (até 4 letras)"><input className={inputCls} maxLength={4} placeholder="Ex.: mkt" value={sel.outro} onChange={e => setSel({ outro: e.target.value })} /></Field>
+                <Field label="Sigla do centro “Outros” (até 4 letras)"><input spellCheck={false} className={inputCls} maxLength={4} placeholder="Ex.: mkt" value={sel.outro} onChange={e => setSel({ outro: e.target.value })} /></Field>
               </div>
             )}
             {listSelect('canal')}
@@ -259,18 +259,18 @@ function ClientTaxonomy({ clients, client, st, setSt, upsertLocal, removeLocal, 
               ))}
             </div>
           </div>
-          <Field label="Número do contato"><input type="number" min={1} step={1} className={inputCls} placeholder="Ex.: 1, 2, 3" value={sel.num} onChange={e => setSel({ num: e.target.value })} /></Field>
+          <Field label="Número do contato"><input spellCheck={false} type="number" min={1} step={1} className={inputCls} placeholder="Ex.: 1, 2, 3" value={sel.num} onChange={e => setSel({ num: e.target.value })} /></Field>
         </Section>
 
         <Section title="Datas e oferta" dot="#3b82f6">
           {camp && (
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Início da campanha"><input type="date" className={inputCls} value={sel.ini} onChange={e => setSel({ ini: e.target.value })} /></Field>
-              <Field label="Fim da campanha"><input type="date" className={inputCls} value={sel.fim} onChange={e => setSel({ fim: e.target.value })} /></Field>
+              <Field label="Início da campanha"><input spellCheck={false} type="date" className={inputCls} value={sel.ini} onChange={e => setSel({ ini: e.target.value })} /></Field>
+              <Field label="Fim da campanha"><input spellCheck={false} type="date" className={inputCls} value={sel.fim} onChange={e => setSel({ fim: e.target.value })} /></Field>
             </div>
           )}
-          <Field label="Data do disparo"><input type="date" className={inputCls} value={sel.disp} onChange={e => setSel({ disp: e.target.value })} /></Field>
-          <Field label="Oferta (se houver)"><input className={inputCls} placeholder="Ex.: desc50, bolsa30" value={sel.oferta} onChange={e => setSel({ oferta: e.target.value })} /></Field>
+          <Field label="Data do disparo"><input spellCheck={false} type="date" className={inputCls} value={sel.disp} onChange={e => setSel({ disp: e.target.value })} /></Field>
+          <Field label="Oferta (se houver)"><input spellCheck={false} className={inputCls} placeholder="Ex.: desc50, bolsa30" value={sel.oferta} onChange={e => setSel({ oferta: e.target.value })} /></Field>
           {!camp && <Hint>No modo Template, o nome sai em caixa baixa e sem as datas de início e fim, igual ao gerador original.</Hint>}
         </Section>
         <div className="pt-4"><button type="button" onClick={clearFields} className={miniBtn}><Eraser size={12} />Limpar campos</button></div>
@@ -321,8 +321,8 @@ function ClientTaxonomy({ clients, client, st, setSt, upsertLocal, removeLocal, 
           <div ref={rowsRef} className="flex flex-col gap-2">
             {lists[regTab].map((o, i) => (
               <div key={i} className="grid grid-cols-[minmax(0,1fr)_96px_36px] gap-2">
-                <input aria-label="Nome da opção" placeholder="Ex.: Madureira" value={o.l} onChange={e => { const v = e.target.value; editLists(l => { l[regTab][i].l = v; }); }} className={inputCls} />
-                <input aria-label="Sigla" placeholder="MAD" value={o.c} onChange={e => setSigla(i, e.target.value)} className={inputCls + ' font-mono text-center uppercase'} />
+                <input spellCheck={true} lang="pt-BR" aria-label="Nome da opção" placeholder="Ex.: Madureira" value={o.l} onChange={e => { const v = e.target.value; editLists(l => { l[regTab][i].l = v; }); }} className={inputCls} />
+                <input spellCheck={false} aria-label="Sigla" placeholder="MAD" value={o.c} onChange={e => setSigla(i, e.target.value)} className={inputCls + ' font-mono text-center uppercase'} />
                 <button type="button" aria-label="Remover opção" onClick={() => removeOption(i)} className={xBtn}><X size={14} /></button>
               </div>
             ))}

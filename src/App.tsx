@@ -1698,6 +1698,10 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
   // Formalizar (já enviado) ou Cancelada. Reuniões e recorrências — marcadas como reunião, o
   // molde semanal (generatesCards) ou instância gerada dele (templateId) — só entram depois de
   // Concluídas: enquanto estão "pra ser executadas", não são trabalho a reportar ao cliente.
+  // O que "Formalizar" move para Formalizar: toda demanda carregada (o que o RLS deixa ver) em
+  // Concluído, do cliente informado ou de todos. Os botões só aparecem se esse conjunto não for vazio.
+  const isFormalizable = (t: any, clientId: string | null) => t.status === 'done' && (clientId === null || t.clientId === clientId);
+
   const tasksForClosure = visibleTasks.filter(t => {
     if (t.agendaOnly || ['backlog', 'formalize', 'cancelled'].includes(t.status)) return false;
     const isMeetingOrRecurring = t.isMeeting || t.generatesCards || !!t.templateId;
@@ -3150,7 +3154,9 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
       {quickAdd && <QuickAddModal clients={activeClients} onClose={() => setQuickAdd(false)} onCreate={(data: any) => setTasks((prev: any) => [...prev, { id: nextId(), title: upper(data.title), description: capitalize((data.description || '').trim()), priority: data.priority, durationMin: 0, clientId: data.clientId, responsibleId: user.id, startDate: '', dueDate: '', status: 'backlog', waitingFor: '', checklist: (data.checklist || []).map((text: string) => ({ id: nextId(), text: capitalize(text.trim()), done: false, timerRunning: false, timerStart: null, timerElapsed: 0 })), timerRunning: false, timerStart: null, timerElapsed: 0, createdAt: getBrasiliaDate(), completedAt: '', history: [histEntry('created')] }])} />}
 
       {/* Modais de Popups Principais */}
-      {closureModal && <ClosureModal tasks={tasksForClosure} clients={clients} responsibles={responsibles} getElapsed={getElapsed} onClose={() => setClosureModal(false)} onFormalize={(clientId: string | null) => { if (clientId) { setTasks((prev: any) => prev.map((t: any) => (t.status === 'done' && t.clientId === clientId) ? { ...t, status: 'formalize' } : t)); } else { setTasks((prev: any) => prev.map((t: any) => t.status === 'done' ? { ...t, status: 'formalize' } : t)); setClosureModal(false); } }} />}
+      {closureModal && <ClosureModal tasks={tasksForClosure} clients={clients} responsibles={responsibles} getElapsed={getElapsed} onClose={() => setClosureModal(false)}
+        countFormalizable={(clientId: string | null) => tasks.filter((t: any) => isFormalizable(t, clientId)).length}
+        onFormalize={(clientId: string | null) => { setTasks((prev: any) => prev.map((t: any) => isFormalizable(t, clientId) ? { ...t, status: 'formalize' } : t)); if (!clientId) setClosureModal(false); }} />}
       {modal && <TaskModal modal={modal} setModal={setModal} clients={activeClients} responsibles={responsibles} closeModal={closeModal} saveModal={saveModal} validationError={validationError} setValidationError={setValidationError} user={user} allTasks={tasks} allClients={clients} onOpenRelated={openEditModal} getElapsed={getElapsed} onToggleItemTimer={toggleChecklistItemTimer} onSetItemElapsed={setChecklistItemElapsed} allTags={allTags} />}
     </div>
   );
@@ -6122,7 +6128,7 @@ function closureToHtml(text: string): string {
 
 const GMAIL_LINK_WARN = 6000;
 
-function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getElapsed }: any) {
+function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, countFormalizable, getElapsed }: any) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [copiedNotionId, setCopiedNotionId] = useState<string | null>(null);
   const [meetingData, setMeetingData] = useState<any>({});
@@ -6131,6 +6137,7 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
   // uma vez (um cliente ou o sistema inteiro) e não tinha nenhuma trava contra clique acidental.
   const [confirmFormalize, setConfirmFormalize] = useState<{ clientId: string | null, clientName: string, count: number } | null>(null);
   const closureAi = useLuminaAi<{ demandas: { id: string, descricao: string }[] }>('closure_email');
+  const formalizableAll = countFormalizable(null);
   const [copiedHtmlId, setCopiedHtmlId] = useState<string | null>(null);
   const [copyHtmlError, setCopyHtmlError] = useState('');
   const copyingHtml = useRef(false);
@@ -6301,6 +6308,7 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
             const clientName = clientData ? clientData.name : 'Sem Cliente Atribuído';
             const mData = meetingData[clientId] || { date: '', link: '' };
             const totalTasksCount = clientTasks.done.length + clientTasks.inProgress.length;
+            const formalizableCount = countFormalizable(clientId);
             
             return (
               <div key={clientId} className="bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-3xl p-6 sm:p-8 shadow-sm">
@@ -6349,13 +6357,13 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
                   </div>
 
                   {/* Ações secundárias do cliente, agrupadas à direita (no celular, abaixo da principal). */}
-                  {clientTasks.done.length > 0 && (
+                  {formalizableCount > 0 && (
                     <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto sm:ml-auto">
                       <button
-                        onClick={() => setConfirmFormalize({ clientId, clientName, count: clientTasks.done.length })}
+                        onClick={() => setConfirmFormalize({ clientId, clientName, count: formalizableCount })}
                         className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3.5 sm:py-3 bg-transparent border border-[var(--border-primary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-emerald-500/50 hover:bg-emerald-500/10 rounded-xl text-xs font-bold uppercase tracking-widest transition-all"
                       >
-                        <CheckCircle2 size={16} /> Formalizar ({clientTasks.done.length})
+                        <CheckCircle2 size={16} /> Formalizar ({formalizableCount})
                       </button>
                     </div>
                   )}
@@ -6365,15 +6373,17 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, getE
           })}
         </div>
 
+        {formalizableAll > 0 && (
         <div className="px-5 sm:px-8 py-5 border-t border-[var(--border-primary)] flex flex-col sm:flex-row items-center sm:justify-end gap-3 sm:gap-4 bg-[var(--bg-tertiary)]">
           <span className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-widest">Todos os clientes</span>
           <button
-            onClick={() => setConfirmFormalize({ clientId: null, clientName: '', count: tasks.filter((t: any) => t.status === 'done').length })}
+            onClick={() => setConfirmFormalize({ clientId: null, clientName: '', count: formalizableAll })}
             className="w-full sm:w-auto flex items-center justify-center gap-2 px-8 py-4 sm:py-3.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold uppercase tracking-widest text-xs transition-all shadow-[0_0_15px_rgba(13,148,136,0.3)]"
           >
             <Check size={18} /> Formalizar todos
           </button>
         </div>
+        )}
       </div>
 
       {confirmFormalize && (

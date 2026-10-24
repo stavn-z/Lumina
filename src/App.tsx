@@ -6141,7 +6141,9 @@ function closureCoverDate(iso: string) {
 function closureCoverName(raw: string) {
   const v = (raw || '').trim().replace(/\s+/g, ' ');
   if (!v || v !== v.toUpperCase() || v === v.toLowerCase()) return v;
-  return v.toLowerCase().split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+  // Partículas ficam minúsculas, exceto quando abrem o nome.
+  const particles = ['da', 'de', 'di', 'do', 'du', 'das', 'dos', 'e'];
+  return v.toLowerCase().split(' ').map((w, i) => (i > 0 && particles.includes(w)) ? w : w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 }
 // "...realizadas durante o período de ausência de Fulano, de dd/mm a dd/mm" (ou "de cobertura" sem nome).
 function closureCoverTail(c: any) {

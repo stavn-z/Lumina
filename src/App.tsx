@@ -6257,9 +6257,31 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, coun
     }
   };
 
-  // Copiar Notion leva o mesmo texto simples do e-mail (padrão ou editado).
-  const handleCopyNotion = (clientId: string, text: string) => {
-    navigator.clipboard.writeText(closureToPlain(text));
+  const handleCopyNotion = (clientTasks: any, clientId: string, textOverride?: string | null) => {
+    if (textOverride != null) {
+      navigator.clipboard.writeText(closureToPlain(textOverride));
+      setCopiedNotionId(clientId);
+      setTimeout(() => setCopiedNotionId(null), 2000);
+      return;
+    }
+    let text = "";
+    if (clientTasks.done.length > 0) {
+      text += "CONCLUÍDAS\n\n";
+      clientTasks.done.forEach((t: any) => {
+        const timeMin = getElapsed(t) > 0 ? Math.round(getElapsed(t) / 60) : (t.durationMin || 0);
+        const dateStr = t.dueDate ? t.dueDate.split('-').reverse().join('/') : 'Sem data';
+        text += `- ${t.title}\n  Descrição: ${t.description || 'Sem descrição'}\n  Tempo: ${timeMin} min\n  Data: ${dateStr}\n\n`;
+      });
+    }
+    if (clientTasks.inProgress.length > 0) {
+      text += "EM ANDAMENTO\n\n";
+      clientTasks.inProgress.forEach((t: any) => {
+        const timeMin = getElapsed(t) > 0 ? Math.round(getElapsed(t) / 60) : (t.durationMin || 0);
+        const dateStr = t.dueDate ? t.dueDate.split('-').reverse().join('/') : 'Sem data';
+        text += `- ${t.title}\n  Descrição: ${t.description || 'Sem descrição'}\n  Tempo: ${timeMin} min\n  Data: ${dateStr}\n\n`;
+      });
+    }
+    navigator.clipboard.writeText(text);
     setCopiedNotionId(clientId);
     setTimeout(() => setCopiedNotionId(null), 2000);
   };
@@ -6569,7 +6591,7 @@ function ClosureModal({ tasks, clients, responsibles, onClose, onFormalize, coun
                 </button>
 
                 <button
-                  onClick={() => handleCopyNotion(emailPopup.clientId, emailText)}
+                  onClick={() => handleCopyNotion(clientTasks, emailPopup.clientId, aiText)}
                   className="justify-center inline-flex items-center gap-2 px-4 py-3.5 bg-[var(--bg-overlay)] text-[var(--text-secondary)] border border-[var(--border-overlay)] hover:bg-[var(--bg-overlay-strong)] rounded-xl text-xs font-bold uppercase tracking-widest whitespace-nowrap transition-colors"
                 >
                   {copiedNotionId === emailPopup.clientId ? <Check size={16} className="text-emerald-400" /> : <ClipboardList size={16} />}

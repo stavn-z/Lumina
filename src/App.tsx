@@ -210,6 +210,13 @@ function isClientArchived(c: any) {
   return !!c.archived || isCoverExpired(c);
 }
 // Período de atuação na cobertura: "13/10 a 22/10"; com o ano quando o período vira o ano.
+// Texto curto para seletores e chips: "cobertura até dd/mm" (ou só "cobertura" sem data de fim).
+function coverShortLabel(c: any) {
+  if (!c?.isCover) return '';
+  return c.coverUntil ? `cobertura até ${c.coverUntil.split('-').reverse().slice(0, 2).join('/')}` : 'cobertura';
+}
+const clientOptionLabel = (c: any) => c.name + (c.isCover ? ` · ${coverShortLabel(c)}` : '');
+
 function coverPeriodLabel(c: any) {
   const withYear = !!(c.coverFrom && c.coverUntil && c.coverFrom.slice(0, 4) !== c.coverUntil.slice(0, 4));
   const fmt = (iso: string) => iso ? iso.split('-').reverse().slice(0, withYear ? 3 : 2).join('/') : '';
@@ -240,8 +247,9 @@ function isScheduleWindowOver(t: any) {
 // expiração automática (que roda a cada 60s, ver useEffect de "meeting_expired") corria bem na
 // frente e limpava o scheduledStart quase na hora, e o alerta nunca chegava a disparar de fato
 // pra demandas isMeeting=true.
+// Só reuniões ativas expiram: concluídas, canceladas e formalizadas guardam o horário em que aconteceram.
 function isMeetingReadyToExpire(t: any) {
-  if (!t.scheduledStart) return false;
+  if (!t.scheduledStart || ['done', 'cancelled', 'formalize'].includes(t.status)) return false;
   const start = new Date(t.scheduledStart);
   if (isNaN(start.getTime())) return false;
   const dur = t.scheduledDurationMin > 0 ? t.scheduledDurationMin : (t.durationMin > 0 ? t.durationMin : 60);
@@ -3457,7 +3465,7 @@ function FilterSelect({ value, onChange, options, defaultLabel }: any) {
     <div className="relative flex items-center w-full lg:w-auto shrink-0 flex-1 lg:flex-none bg-[var(--bg-secondary)] lg:bg-transparent rounded-xl lg:rounded-none">
       <select value={value || 'all'} onChange={(e) => onChange(e.target.value)} className="appearance-none w-full lg:w-auto text-[11px] font-bold bg-transparent border border-[var(--border-primary)] lg:border-none pl-4 pr-10 py-3 lg:p-0 lg:pr-6 rounded-xl lg:rounded-none text-[var(--text-secondary)] outline-none cursor-pointer transition-all hover:text-[var(--text-primary)]">
         <option value="all" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">{defaultLabel}</option>
-        {options.map((o: any) => (<option key={o.id} value={o.id} className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">{o.name}</option>))}
+        {options.map((o: any) => (<option key={o.id} value={o.id} className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">{clientOptionLabel(o)}</option>))}
       </select>
       <ChevronDown size={14} className="absolute right-4 lg:right-0 text-[var(--text-muted)] pointer-events-none" />
     </div>
@@ -5033,7 +5041,7 @@ function QuickAddModal({ clients, onCreate, onClose }: any) {
             <div className="relative">
               <select value={clientId} onChange={e => { setClientId(e.target.value); setError(''); }} className="appearance-none w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl pl-4 pr-10 py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 cursor-pointer transition-colors">
                 <option value="" className="bg-[var(--bg-tertiary)]">Selecione o cliente...</option>
-                {clients.map((c: any) => <option key={c.id} value={c.id} className="bg-[var(--bg-tertiary)]">{c.name}</option>)}
+                {clients.map((c: any) => <option key={c.id} value={c.id} className="bg-[var(--bg-tertiary)]">{clientOptionLabel(c)}</option>)}
               </select>
               <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" />
             </div>
@@ -5649,6 +5657,7 @@ function CalendarView({ tasks, setTasks, clients, handleRequestMove, user, onCre
                     <div className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{t.title}</div>
                     <div className="text-[10px] uppercase tracking-widest font-bold mt-1 flex items-center gap-2 flex-wrap" style={{ color: 'var(--text-muted)' }}>
                       {clientName(t.clientId) && <span className="flex items-center gap-1 truncate"><Building2 size={10} /> {clientName(t.clientId)}</span>}
+                      {(() => { const cover = coverShortLabel(clients.find((c: any) => c.id === t.clientId)); return cover && <span className="normal-case tracking-normal font-semibold text-sky-500 whitespace-nowrap">· {cover}</span>; })()}
                       <span>{t.durationMin > 0 ? `${t.durationMin}min` : '60min'}</span>
                     </div>
                   </div>
@@ -6766,7 +6775,7 @@ function TaskModal({ modal, setModal, clients, responsibles, closeModal, saveMod
           <div><label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Título do Card *</label><input autoFocus value={modal.form.title || ''} onChange={(e) => updateForm({ title: e.target.value })} className={`w-full bg-[var(--bg-secondary)] border rounded-xl px-4 py-4 sm:py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 transition-all ${validationError && String(validationError).includes("Título") ? "border-red-500" : "border-[var(--border-primary)]"}`} placeholder="Ex: Ajustar Fluxo de E-mails..." /></div>
           <div><label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Contexto / Descrição *</label><textarea value={modal.form.description || ''} onChange={(e) => updateForm({ description: e.target.value })} rows={4} className={`w-full bg-[var(--bg-secondary)] border rounded-xl px-4 py-4 sm:py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 resize-none transition-all ${validationError && String(validationError).includes("Descrição") ? "border-red-500" : "border-[var(--border-primary)]"}`} placeholder="Descreva os requisitos técnicos ou regras de negócio..." /></div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5"><CustomSelect label="Prioridade *" required hasError={validationError && String(validationError).includes("Prioridade")} value={modal.form.priority || ''} onChange={(e: any) => updateForm({ priority: e.target.value })} options={<><option value="" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Selecione...</option><option value="Baixa" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Baixa</option><option value="Média" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Média</option><option value="Alta" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Alta</option></>} /><div><label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Est. Minutos</label><input type="number" value={(!modal.form.durationTouched && liveTask ? liveTask.durationMin : modal.form.durationMin) ?? ''} onChange={(e) => updateForm({ durationMin: e.target.value, durationTouched: true })} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-4 sm:py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 shadow-sm" placeholder="Ex: 60" /></div></div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5"><CustomSelect label="Responsável *" required hasError={validationError && String(validationError).includes("Responsável")} value={modal.form.responsibleId || ''} onChange={(e: any) => updateForm({ responsibleId: e.target.value })} options={<><option value="" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Selecione a pessoa...</option>{responsibles.map((r: any) => <option key={r.id} value={r.id} className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">{r.name}</option>)}</>} /><CustomSelect label="Cliente *" required hasError={validationError && String(validationError).includes("Cliente")} value={modal.form.clientId || ''} onChange={(e: any) => updateForm({ clientId: e.target.value })} options={<><option value="" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Selecione a empresa...</option>{clientOptions.map((c: any) => <option key={c.id} value={c.id} className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">{c.name}{isClientArchived(c) ? ' (arquivado)' : ''}</option>)}</>} /></div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5"><CustomSelect label="Responsável *" required hasError={validationError && String(validationError).includes("Responsável")} value={modal.form.responsibleId || ''} onChange={(e: any) => updateForm({ responsibleId: e.target.value })} options={<><option value="" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Selecione a pessoa...</option>{responsibles.map((r: any) => <option key={r.id} value={r.id} className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">{r.name}</option>)}</>} /><CustomSelect label="Cliente *" required hasError={validationError && String(validationError).includes("Cliente")} value={modal.form.clientId || ''} onChange={(e: any) => updateForm({ clientId: e.target.value })} options={<><option value="" className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">Selecione a empresa...</option>{clientOptions.map((c: any) => <option key={c.id} value={c.id} className="bg-[var(--bg-tertiary)] text-[var(--text-primary)]">{clientOptionLabel(c)}{isClientArchived(c) ? ' (arquivado)' : ''}</option>)}</>} /></div>
           
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
             <div><label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2 block ml-1">Data de Início</label><input type="date" value={modal.form.startDate || ''} onChange={(e) => updateForm({ startDate: e.target.value })} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-4 sm:py-3.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500 shadow-sm" /></div>

@@ -1,4 +1,4 @@
-// Edge Function "lumina-ai": recursos de IA do Lumina (Claude Haiku 5.5).
+// Edge Function "lumina-ai": recursos de IA do Lumina Work (Claude Haiku 5.5).
 // Recebe { action, payload } de um usuário logado e devolve { ok: true, data } ou { ok: false, error }.
 // A chave da Anthropic vem do secret ANTHROPIC_API_KEY e nunca sai desta função.
 import Anthropic from "npm:@anthropic-ai/sdk@0.129.0";
@@ -222,7 +222,7 @@ function friendlyApiError(err: unknown): FriendlyError {
     return new FriendlyError("Não foi possível falar com o serviço de IA. Tente de novo em instantes.", 502);
   }
   if (err instanceof Anthropic.AuthenticationError || err instanceof Anthropic.PermissionDeniedError) {
-    return new FriendlyError("A IA não está configurada corretamente. Avise o administrador do Lumina.", 503);
+    return new FriendlyError("A IA não está configurada corretamente. Avise o administrador do Lumina Work.", 503);
   }
   if (err instanceof Anthropic.RateLimitError) {
     return new FriendlyError("O serviço de IA está com muitas chamadas agora. Espere um minuto e tente de novo.", 503);
@@ -230,7 +230,7 @@ function friendlyApiError(err: unknown): FriendlyError {
   if (err instanceof Anthropic.BadRequestError) {
     // A Anthropic responde 400 quando a conta está sem crédito.
     if (/credit/i.test(err.message)) {
-      return new FriendlyError("A IA está sem crédito no momento. Avise o administrador do Lumina.", 503);
+      return new FriendlyError("A IA está sem crédito no momento. Avise o administrador do Lumina Work.", 503);
     }
     return new FriendlyError("A IA não aceitou este pedido. Tente reduzir o texto ou as demandas enviadas.", 400);
   }
@@ -250,7 +250,7 @@ function buildPrompt(action: Action, payload: Record<string, unknown>): string {
 
 async function runAction(action: Action, prompt: string, payload: Record<string, unknown>): Promise<unknown> {
   const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
-  if (!apiKey) throw new FriendlyError("A IA não está configurada corretamente. Avise o administrador do Lumina.", 503);
+  if (!apiKey) throw new FriendlyError("A IA não está configurada corretamente. Avise o administrador do Lumina Work.", 503);
   const client = new Anthropic({ apiKey, timeout: 45_000, maxRetries: 1 });
 
   let response: Anthropic.Message;
@@ -311,7 +311,7 @@ Deno.serve(async (req) => {
       auth: { persistSession: false, autoRefreshToken: false },
     });
     const { data: auth, error: authErr } = await admin.auth.getUser(token);
-    if (authErr || !auth?.user) return json({ ok: false, error: "Sua sessão expirou. Entre de novo no Lumina." }, 401);
+    if (authErr || !auth?.user) return json({ ok: false, error: "Sua sessão expirou. Entre de novo no Lumina Work." }, 401);
 
     let body: { action?: unknown; payload?: unknown };
     try {

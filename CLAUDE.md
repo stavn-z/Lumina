@@ -1,3 +1,7 @@
+## Nome do app
+
+O nome do app que o usuário vê é **Lumina Work** (título da página, login, cabeçalho, ícone do iPhone, notificações e mensagens da IA). Logo e cores continuam as do Lumina. Repositório, tabelas, funções (`lumina-ai`, `useLuminaAi`), chaves do localStorage e canais do realtime mantêm o nome `lumina`: não renomear.
+
 ## graphify
 
 This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
@@ -15,7 +19,7 @@ Exceção à regra de manter tudo em `src/App.tsx`: o módulo vive em `src/comun
 - Estrutura: `ComunicacaoArea.tsx` (abas Meus templates, Editor e Taxonomia), `lib/` (funções puras), `data/` (Supabase, salvamento automático, realtime), `editor/`, `library/`, `taxonomy/`, `ui/` (toast e diálogos próprios do módulo).
 - Banco (SQL em `src/comunicacao/sql/`): tabelas `templates` e `taxonomy_clients`, RLS liberando leitura e escrita a qualquer usuário autenticado, bucket público `imagens`.
 - `templates.updated_at` é a data da última alteração de CONTEÚDO: o trigger só a atualiza quando `data` muda. Marcar/desmarcar "Criado na Rubeus" não pode mexer nela, senão o estado "Alterado após criar" quebra.
-- Toda escrita usa controle otimista por `rev` (`update … where rev = ?`); conflito abre o aviso de edição simultânea. `created_by`/`updated_by` guardam o `responsibles.id` (o `user.id` do Lumina).
+- Toda escrita usa controle otimista por `rev` (`update … where rev = ?`); conflito abre o aviso de edição simultânea. `created_by`/`updated_by` guardam o `responsibles.id` (o `user.id` do Lumina Work).
 - O formato de `data` é o mesmo do protótipo `docs/gerador-email.html`, para o backup dele importar sem conversão. Imagens sempre como URL pública do storage, nunca base64.
 - O HTML do e-mail (`lib/emailHtml.ts`) tem de ser IDÊNTICO ao do protótipo. Depois de mexer nele, rode `node scripts/verificar-email-html.mjs`.
 - A padronização de texto das demandas (caixa alta etc.) NÃO vale para os templates. O nome do template de WhatsApp é sempre minúsculo.

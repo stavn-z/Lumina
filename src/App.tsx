@@ -589,9 +589,9 @@ function LoginScreen({ authError, clearAuthError }: any) {
       <div className="bg-[#12121a] p-8 rounded-[32px] border border-[#27272a] w-full max-w-sm shadow-[0_0_50px_rgba(79,70,229,0.05)] animate-modal-pop">
         <div className="flex flex-col items-center justify-center gap-4 mb-8">
           <div className="w-24 h-24 rounded-[22px] bg-black flex items-center justify-center border border-white/5 overflow-hidden shadow-2xl">
-            <img src="/apple-icon.png" alt="Lumina Logo" className="w-full h-full object-cover" />
+            <img src="/apple-icon.png" alt="Lumina Work Logo" className="w-full h-full object-cover" />
           </div>
-          <h1 className="text-3xl font-bold text-white tracking-tight">Lumina</h1>
+          <h1 className="text-3xl font-bold text-white tracking-tight">Lumina Work</h1>
           <p className="text-indigo-400/80 text-xs uppercase tracking-[0.2em] font-medium">Kanban & Analytics</p>
         </div>
 
@@ -780,7 +780,7 @@ export default function App() {
     return (
       <div className="fixed inset-0 bg-[#09090b] flex flex-col items-center justify-center p-4 text-center">
         <div className="w-20 h-20 rounded-[18px] bg-black border border-white/5 flex items-center justify-center overflow-hidden mb-6 animate-pulse shadow-[0_0_30px_rgba(79,70,229,0.1)]">
-          <img src="/apple-icon.png" alt="Lumina" className="w-full h-full object-cover" />
+          <img src="/apple-icon.png" alt="Lumina Work" className="w-full h-full object-cover" />
         </div>
         <div className="text-indigo-500 font-bold uppercase tracking-widest animate-pulse text-xs">Conectando...</div>
       </div>
@@ -966,7 +966,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
         try {
           if ('Notification' in window && Notification.permission === 'granted') {
             const s = new Date(occMs);
-            new Notification('Hora de começar — Lumina', { body: `${soon.title} às ${String(s.getHours()).padStart(2, '0')}:${String(s.getMinutes()).padStart(2, '0')}` });
+            new Notification('Hora de começar — Lumina Work', { body: `${soon.title} às ${String(s.getHours()).padStart(2, '0')}:${String(s.getMinutes()).padStart(2, '0')}` });
           }
         } catch {}
       }
@@ -1013,7 +1013,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
       notifiedLateRef.current.add(key);
       try {
         if ('Notification' in window && Notification.permission === 'granted') {
-          new Notification('Hora de finalizar — Lumina', { body: `${t.title} já passou do horário previsto.` });
+          new Notification('Hora de finalizar — Lumina Work', { body: `${t.title} já passou do horário previsto.` });
         }
       } catch {}
     });
@@ -2346,9 +2346,9 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
     return (
       <div className="fixed inset-0 flex flex-col items-center justify-center p-4 text-center" style={{ background: 'var(--bg-primary)' }}>
         <div className="w-20 h-20 rounded-[18px] bg-black border border-[var(--border-overlay)] flex items-center justify-center overflow-hidden mb-6 shadow-[0_0_30px_rgba(79,70,229,0.1)] animate-modal-pop">
-          <img src="/apple-icon.png" alt="Lumina" className="w-full h-full object-cover" />
+          <img src="/apple-icon.png" alt="Lumina Work" className="w-full h-full object-cover" />
         </div>
-        <div className="text-indigo-400 font-bold uppercase tracking-widest animate-pulse text-xs">Sincronizando Lumina...</div>
+        <div className="text-indigo-400 font-bold uppercase tracking-widest animate-pulse text-xs">Sincronizando Lumina Work...</div>
       </div>
     );
   }
@@ -2507,7 +2507,7 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
              <div className="absolute bottom-16 left-0 w-48 rounded-2xl shadow-xl z-50 py-2 flex flex-col animate-modal-pop" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }} onClick={e => e.stopPropagation()}>
                 <button onClick={() => { setProfileModal(true); setShowProfileMenu(false); }} className="w-full text-left px-5 py-3 text-sm hover:bg-[var(--bg-overlay)] flex items-center gap-3 font-medium" style={{ color: 'var(--text-secondary)' }}><UserCog size={16}/> Editar Perfil</button>
                 <div className="h-px w-full my-1" style={{ background: 'var(--border-primary)' }}></div>
-                <button onClick={onLogout} className="w-full text-left px-5 py-3 text-sm text-red-400 hover:bg-red-500/10 flex items-center gap-3 font-medium"><LogOut size={16}/> Sair do Lumina</button>
+                <button onClick={onLogout} className="w-full text-left px-5 py-3 text-sm text-red-400 hover:bg-red-500/10 flex items-center gap-3 font-medium"><LogOut size={16}/> Sair do Lumina Work</button>
              </div>
            )}
         </div>
@@ -2522,11 +2522,11 @@ function KanbanMain({ user, setUser, onLogout }: { user: any, setUser: any, onLo
           {/* Title (logo só no mobile — no desktop ela já está na sidebar esquerda) */}
           <div className="flex items-center gap-3 min-w-0">
             <div className="md:hidden w-10 h-10 shrink-0 rounded-[12px] bg-black flex items-center justify-center overflow-hidden border border-[var(--border-overlay)] shadow-[0_0_20px_rgba(79,70,229,0.15)]">
-              <img src="/apple-icon.png" alt="Lumina" className="w-full h-full object-cover" />
+              <img src="/apple-icon.png" alt="Lumina Work" className="w-full h-full object-cover" />
             </div>
             <div className="flex flex-col min-w-0">
               <div className="flex items-center gap-3">
-                <h1 className="font-display font-bold text-lg md:text-2xl tracking-tight truncate" style={{ color: 'var(--text-primary)' }}>Lumina</h1>
+                <h1 className="font-display font-bold text-lg md:text-2xl tracking-tight truncate" style={{ color: 'var(--text-primary)' }}>Lumina Work</h1>
                 {isCloudSynced && (
                   <span className="hidden md:flex text-[9px] text-emerald-400 font-bold uppercase tracking-widest bg-emerald-500/10 border border-emerald-500/20 px-2 py-1 rounded-md items-center gap-1 shrink-0">
                     <Cloud size={10} /> Sincronizado
@@ -4643,11 +4643,11 @@ function AnalyticsModal({ onClose, tasks, clients, responsibles, getElapsed, isC
       const elapsedH = (getElapsed(t) / 3600).toFixed(2);
       return [t.id, `"${String(t.title || '').replace(/"/g, '""')}"`, statusName, t.priority, `"${clientName}"`, `"${respName}"`, t.durationMin || 0, elapsedH].join(',');
     });
-    downloadCSV([headers.join(','), ...rows], 'lumina_tarefas.csv');
+    downloadCSV([headers.join(','), ...rows], 'lumina_work_tarefas.csv');
   };
 
   return (
-    <OverlayModal title="Lumina Analytics" icon={<BarChart3 className="text-blue-500" size={24}/>} onClose={onClose} fullWidth isClosing={isClosing}>
+    <OverlayModal title="Lumina Work Analytics" icon={<BarChart3 className="text-blue-500" size={24}/>} onClose={onClose} fullWidth isClosing={isClosing}>
       <div className="flex flex-col min-h-full fade-in pb-8">
         
         {/* Toggle View */}
@@ -4854,7 +4854,7 @@ function AnalyticsModal({ onClose, tasks, clients, responsibles, getElapsed, isC
                ) : (
                  <div className="flex-1 flex flex-col items-center justify-center text-center gap-4">
                    <div className="w-20 h-20 rounded-[24px] bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-500"><Lock size={32} /></div>
-                   <p className="text-sm text-[var(--text-secondary)] max-w-sm">O painel do Looker Studio ainda não foi configurado. Peça ao administrador do Lumina para conectar o relatório global.</p>
+                   <p className="text-sm text-[var(--text-secondary)] max-w-sm">O painel do Looker Studio ainda não foi configurado. Peça ao administrador do Lumina Work para conectar o relatório global.</p>
                  </div>
                )
             ) : (
